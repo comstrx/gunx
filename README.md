@@ -12,7 +12,7 @@ Instead of remembering different commands for every framework, `gunx` gives you 
 
 ```txt
 new → add → run → check → test → build → deploy
-````
+```
 
 ## Features
 
