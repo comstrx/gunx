@@ -17,3 +17,10 @@
 </div>
 
 `GunX` is the developer’s arsenal of reusable, product-agnostic engines for enterprise software. Turn hard engineering problems into lasting firepower. Every project sharpens the arsenal.
+
+
+## 📜 License
+
+Copyright © 2026 Abdulrahman Yasser (comstrx).
+
+Licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).

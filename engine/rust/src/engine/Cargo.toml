@@ -1,0 +1,21 @@
+[package]
+name = "engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme.workspace = true
+publish.workspace = true
+description = "The one door into the engine: one module and one feature per domain."
+categories = ["rust-patterns"]
+keywords = ["engine", "facade"]
+
+[dependencies]
+hello = { workspace = true, optional = true }
+
+[features]
+hello = ["dep:hello"]
+
+[lints]
+workspace = true

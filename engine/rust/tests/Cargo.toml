@@ -1,0 +1,23 @@
+[package]
+name = "tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Contract tests of the engine, linked the way a consumer links."
+
+[dependencies]
+engine = { workspace = true, features = ["hello"] }
+
+[[test]]
+name = "engine"
+path = "engine.rs"
+
+[[test]]
+name = "hello"
+path = "hello.rs"
+
+[lints]
+workspace = true

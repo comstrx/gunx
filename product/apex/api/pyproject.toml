@@ -1,0 +1,52 @@
+[project]
+name = "api"
+version = "0.1.0"
+description = "The backend: a workspace of services, one per business domain."
+requires-python = ">=3.15"
+license = "Apache-2.0"
+dependencies = []
+
+[dependency-groups]
+dev = ["mypy", "pip-audit", "pytest", "pytest-randomly", "pytest-timeout", "ruff"]
+
+[tool.uv]
+constraint-dependencies = [
+    "mypy==2.4.1",
+    "pip-audit==2.10.1",
+    "pytest==9.2.0",
+    "pytest-randomly==5.0.0",
+    "pytest-timeout==2.4.0",
+    "ruff==0.17.3",
+]
+build-constraint-dependencies = ["hatchling==1.33.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/api"]
+
+[tool.ruff]
+target-version = "py315"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["COM", "CPY", "D", "FBT001", "FBT002", "I", "TC", "ANN401", "E401", "E701", "N818"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["INP001", "S101", "PLR2004"]
+
+[tool.mypy]
+python_version = "3.15"
+strict = true
+mypy_path = "src"
+files = ["src", "tests"]
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib", "--timeout=30"]
+strict = true
+filterwarnings = ["error"]

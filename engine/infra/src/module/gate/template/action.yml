@@ -1,0 +1,7 @@
+name: infra
+description: Install the infra command from this checkout onto the runner PATH
+runs:
+  using: composite
+  steps:
+    - run: bash "${GITHUB_ACTION_PATH}/../../../main.sh" install --into "${RUNNER_TEMP}/bin"
+      shell: bash

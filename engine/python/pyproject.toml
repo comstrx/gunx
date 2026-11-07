@@ -1,0 +1,94 @@
+[project]
+name = "engine-workspace"
+version = "0.1.0"
+description = "The Python engine: one uv workspace, one domain per member."
+requires-python = ">=3.15"
+license = "Apache-2.0"
+dependencies = ["engine"]
+
+[dependency-groups]
+dev = [
+    "griffe",
+    "hypothesis",
+    "mypy",
+    "pip-audit",
+    "pytest",
+    "pytest-randomly",
+    "pytest-timeout",
+    "ruff",
+]
+
+[tool.uv]
+constraint-dependencies = [
+    "griffe==2.4.1",
+    "hypothesis==6.170.14",
+    "mypy==2.4.1",
+    "pip-audit==2.10.1",
+    "pytest==9.2.0",
+    "pytest-randomly==5.0.0",
+    "pytest-timeout==2.4.0",
+    "ruff==0.17.3",
+]
+build-constraint-dependencies = ["hatchling==1.33.0"]
+
+[tool.uv.workspace]
+members = ["src/*"]
+
+[tool.uv.sources]
+engine = { workspace = true }
+engine-hello = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+bypass-selection = true
+
+[tool.ruff]
+target-version = "py315"
+line-length = 120
+src = ["src/*/src", "tests", "benches", "fuzz"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = ["COM", "CPY", "D", "FBT001", "FBT002", "I", "TC", "ANN401", "E401", "E701", "N818"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["INP001", "S101", "PLR2004"]
+"benches/**" = ["INP001", "T201", "PLR2004"]
+"fuzz/**" = ["INP001", "S101", "T201", "PLR2004"]
+"src/engine/src/engine/__init__.py" = ["E402"]
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-positional-args = 8
+
+[tool.mypy]
+python_version = "3.15"
+strict = true
+strict_bytes = true
+local_partial_types = true
+warn_unreachable = true
+explicit_package_bases = true
+enable_error_code = [
+    "deprecated",
+    "exhaustive-match",
+    "explicit-override",
+    "mutable-override",
+    "possibly-undefined",
+    "redundant-expr",
+    "redundant-self",
+    "truthy-bool",
+    "truthy-iterable",
+    "unimported-reveal",
+    "unused-awaitable",
+]
+mypy_path = "src/engine/src:src/hello/src"
+files = ["src/*/src/engine", "tests", "benches", "fuzz"]
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib", "--timeout=30"]
+strict = true
+filterwarnings = ["error"]

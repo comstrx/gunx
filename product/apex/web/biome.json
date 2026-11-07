@@ -1,0 +1,49 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.5/schema.json",
+  "root": true,
+  "files": {
+    "includes": ["**", "!**/node_modules", "!bun.lock", "!**/*.d.ts"]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "domains": {
+      "project": "all",
+      "test": "all"
+    },
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "noUndeclaredVariables": "error",
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "useImportExtensions": "error"
+      },
+      "style": {
+        "useImportType": "error",
+        "noParameterAssign": "error",
+        "useConst": "error",
+        "noNonNullAssertion": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noConsole": "error"
+      },
+      "a11y": "error",
+      "security": {
+        "recommended": true
+      }
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "javascript": {
+    "globals": ["Bun"]
+  }
+}

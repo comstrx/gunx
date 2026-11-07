@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+    inputs:
+      all:
+        type: boolean
+        default: false
+      type:
+        type: string
+        default: default
+      timeout:
+        type: number
+        default: 1800
+  workflow_dispatch:
+    inputs:
+      all:
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ inputs.type || 'default' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.changes.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: $/engine/infra/src/module/gate/template
+      - id: changes
+        env:
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_ALL: ${{ inputs.all && 'true' || 'false' }}
+        run: infra changes
+  gate:
+    needs: changes
+    if: needs.changes.outputs.matrix != '[]'
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ inputs.type == 'default' && 20 || 1 }}
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ inputs.type == 'default' && 60 || 150 }}
+    env:
+      CI_PART: ${{ matrix.part }}
+      CI_PRODUCT: ${{ matrix.product }}
+      CI_TYPE: ${{ inputs.type || 'default' }}
+      CI_TIMEOUT: ${{ inputs.timeout || 1800 }}
+      CI_PASS: ${{ inputs.type != 'default' && '--pass' || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: matrix.part == 'rust' || matrix.part == 'api'
+        uses: cargo-bins/cargo-binstall@23ee8ab6b7397851bc11705bcdf46f2519ea0285 # v1.9.0
+      - if: matrix.part == 'python' || matrix.part == 'api'
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - if: matrix.part == 'go' || matrix.part == 'api'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: engine/go/go.work
+          cache: false
+      - if: matrix.part == 'bun' || matrix.part == 'web' || matrix.part == 'mobile' || matrix.part == 'desktop' || matrix.part == 'global' || matrix.part == 'tutor'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: engine/bun/package.json
+      - uses: $/engine/infra/src/module/gate/template
+      - run: infra gate --part "${CI_PART}" --product "${CI_PRODUCT:-.}" --type "${CI_TYPE}" --timeout "${CI_TIMEOUT}" ${CI_PASS}

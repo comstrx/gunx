@@ -1,0 +1,22 @@
+telemetry = false
+
+[install]
+exact = true
+linker = "hoisted"
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = [
+    "@biomejs/biome",
+    "@biomejs/cli-darwin-arm64",
+    "@biomejs/cli-darwin-x64",
+    "@biomejs/cli-linux-arm64",
+    "@biomejs/cli-linux-arm64-musl",
+    "@biomejs/cli-linux-x64",
+    "@biomejs/cli-linux-x64-musl",
+    "@biomejs/cli-win32-arm64",
+    "@biomejs/cli-win32-x64",
+    "@types/bun",
+    "typescript",
+]
+
+[test]
+randomize = true

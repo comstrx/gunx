@@ -1,0 +1,23 @@
+[package]
+name = "benches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Criterion benchmarks of the engine: numbers, never a verdict."
+
+[dependencies]
+engine = { workspace = true, features = ["hello"] }
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "hello"
+path = "hello.rs"
+harness = false
+
+[lints]
+workspace = true

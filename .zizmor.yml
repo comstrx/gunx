@@ -1,0 +1,22 @@
+rules:
+  forbidden-uses:
+    config:
+      allow:
+        - actions/checkout
+        - actions/labeler
+        - actions/setup-go
+        - astral-sh/setup-uv
+        - cargo-bins/cargo-binstall
+        - crazy-max/ghaction-github-labeler
+        - oven-sh/setup-bun
+
+    remap:
+      severity: high
+
+  unpinned-uses:
+    config:
+      policies:
+        '*': hash-pin
+
+    remap:
+      severity: high

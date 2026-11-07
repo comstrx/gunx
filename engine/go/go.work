@@ -1,0 +1,9 @@
+go 1.27.3
+
+use (
+	./benches
+	./fuzz
+	./src/engine
+	./src/hello
+	./tests
+)

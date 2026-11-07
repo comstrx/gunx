@@ -1,0 +1,67 @@
+- name: rust
+  color: 'DEA584'
+  description: The Rust engine (engine/rust)
+
+- name: python
+  color: '3572A5'
+  description: The Python engine (engine/python)
+
+- name: go
+  color: '00ADD8'
+  description: The Go engine (engine/go)
+
+- name: bun
+  color: 'F9F1E1'
+  description: The TypeScript engine (engine/bun)
+
+- name: infra
+  color: '1D76DB'
+  description: The infrastructure carrier (engine/infra)
+
+- name: api
+  color: '0E8A16'
+  description: The backend application (product/api)
+
+- name: web
+  color: '0075CA'
+  description: The SEO sites and panels (product/web)
+
+- name: mobile
+  color: 'C2E0C6'
+  description: The mobile apps (product/mobile)
+
+- name: desktop
+  color: 'F4B183'
+  description: The desktop apps (product/*/desktop)
+
+- name: tutor
+  color: 'C5DEF5'
+  description: The operating contract (tutor/)
+
+- name: global
+  color: 'BFDADC'
+  description: Root governance, shared by every part
+
+- name: ci
+  color: 'FBCA04'
+  description: Workflows and automation
+
+- name: deps
+  color: 'E4E669'
+  description: Dependencies, manifests and lockfiles
+
+- name: docs
+  color: 'D4C5F9'
+  description: Documentation only
+
+- name: security
+  color: 'B60205'
+  description: Security policy, scanning and supply chain
+
+- name: bug
+  color: 'D73A4A'
+  description: Something is not working
+
+- name: enhancement
+  color: 'A2EEEF'
+  description: A capability that does not exist yet

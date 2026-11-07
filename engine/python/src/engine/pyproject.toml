@@ -1,0 +1,19 @@
+[project]
+name = "engine"
+description = "The one door into the engine: the namespace root over every domain."
+requires-python = ">=3.15"
+license = "Apache-2.0"
+dynamic = ["version"]
+dependencies = ["engine-hello"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

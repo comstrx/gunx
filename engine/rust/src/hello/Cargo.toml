@@ -1,0 +1,15 @@
+[package]
+name = "engine-hello"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme.workspace = true
+publish.workspace = true
+description = "The first domain: one verb that proves the workspace."
+categories = ["rust-patterns"]
+keywords = ["engine", "hello"]
+
+[lints]
+workspace = true

@@ -1,0 +1,74 @@
+include = ["**/*.toml"]
+
+exclude = [
+    "**/.git/**",
+    "**/.claude/**",
+    "**/.codex/**",
+    "**/.agents/**",
+    "**/.infra/**",
+    "**/.idea/**",
+    "**/.vscode/**",
+    "**/.fleet/**",
+    "**/.zed/**",
+    "**/.stage/**",
+    "**/.cache/**",
+    "**/node_modules/**",
+    "**/.bun/**",
+    "**/.hutch/**",
+    "**/.pnpm-store/**",
+    "**/.npm/**",
+    "**/.yarn/**",
+    "**/.turbo/**",
+    "**/.vercel/**",
+    "**/.parcel-cache/**",
+    "**/.next/**",
+    "**/.nuxt/**",
+    "**/.output/**",
+    "**/.vite/**",
+    "**/_generated/**",
+    "**/generated/**",
+    "**/.expo/**",
+    "**/web-build/**",
+    "**/android/**",
+    "**/ios/**",
+    "**/Pods/**",
+    "**/.gradle/**",
+    "**/vendor/**",
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/.mypy_cache/**",
+    "**/.ruff_cache/**",
+    "**/.hypothesis/**",
+    "**/.tox/**",
+    "**/.nox/**",
+    "**/wheels/**",
+    "**/.eggs/**",
+    "**/target/**",
+    "**/fuzz/corpus/**",
+    "**/fuzz/artifacts/**",
+    "**/criterion/**",
+    "**/.benchmarks/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/out/**",
+    "**/artifacts/**",
+    "**/coverage/**",
+    "**/htmlcov/**",
+    "**/.nyc_output/**",
+    "**/test-results/**",
+    "**/blob-report/**",
+    "**/playwright-report/**",
+    "**/world/data/**",
+]
+
+[formatting]
+indent_string = "    "
+column_width = 100
+allowed_blank_lines = 1
+
+trailing_newline = true
+crlf = false
+
+align_entries = false
+align_comments = false

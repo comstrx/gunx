@@ -1,0 +1,23 @@
+{
+  "name": "desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The desktop surface: every role of the product from its spec.",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.5",
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
+  },
+  "scripts": {
+    "check": "tsc -p .",
+    "lint": "biome ci .",
+    "test": "bun test tests",
+    "audit": "bun audit --audit-level=low",
+    "gate": "bun install --frozen-lockfile && bun run check && bun run lint && bun run test && bun run audit"
+  }
+}

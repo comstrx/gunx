@@ -1,0 +1,8 @@
+[meta]
+name = "apex"
+version = "0.1.0"
+description = "The house product"
+license = "Apache-2.0"
+readme = "README.md"
+authors = ["comstrx"]
+repo = "comstrx/apex"

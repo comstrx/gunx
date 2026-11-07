@@ -1,0 +1,128 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'global(deps)'
+
+  - package-ecosystem: cargo
+    directory: /engine/rust
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      rust:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'rust(deps)'
+
+  - package-ecosystem: gomod
+    directory: /engine/go
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      go:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'go(deps)'
+
+  - package-ecosystem: uv
+    directory: /engine/python
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'python(deps)'
+
+  - package-ecosystem: bun
+    directory: /engine/bun
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      bun:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'bun(deps)'
+
+  - package-ecosystem: uv
+    directory: /product/apex/api
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      python:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'apex-api(deps)'
+
+  - package-ecosystem: bun
+    directory: /product/apex/web
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      bun:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'apex-web(deps)'
+
+  - package-ecosystem: bun
+    directory: /product/apex/mobile
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      bun:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'apex-mobile(deps)'
+
+  - package-ecosystem: bun
+    directory: /product/apex/desktop
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      bun:
+        patterns: ['*']
+    labels: [deps]
+    commit-message:
+      prefix: 'apex-desktop(deps)'

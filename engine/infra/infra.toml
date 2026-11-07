@@ -1,0 +1,119 @@
+[meta]
+name = "infra"
+version = "0.1.0"
+description = "The general engine of the work: framework, gates, extraction, mirrors, infrastructure"
+license = "Apache-2.0"
+readme = "README.md"
+authors = ["comstrx"]
+
+[paths]
+entrypoint = "src/main.sh"
+source = "src"
+build = "target"
+cache = ".infra"
+tests = "tests"
+benches = "benches"
+fuzz = "fuzz"
+
+[requires]
+runtime = "bash curl tar xz gzip git"
+
+[tools]
+shellcheck = { version = "0.11.0", binary = "shellcheck-v{version}/shellcheck", severity = "style", excludes = "SC1090,SC1091" }
+typos = { version = "1.52.0", binary = "./typos" }
+rust = { nightly = "2026-10-08" }
+bash = "5.2"
+gitleaks = "8.30.1"
+trivy = "0.76.2"
+syft = "1.56.0"
+zizmor = "1.32.0"
+taplo = "0.10.0"
+golangci = "2.15.0"
+govulncheck = "1.9.0"
+prettier = "3.9.10"
+
+[deps]
+rustx = { type = "engine", path = "engine/rust", repo = "comstrx/rustx" }
+pyx = { type = "engine", path = "engine/python", repo = "comstrx/pyx" }
+gox = { type = "engine", path = "engine/go", repo = "comstrx/gox" }
+bunx = { type = "engine", path = "engine/bun", repo = "comstrx/bunx" }
+infrax = { type = "engine", path = "engine/infra", repo = "comstrx/infrax" }
+apix = { type = "fragment", path = "product/apex/api", repo = "comstrx/apix", deps = [
+    { name = "engine", repo = "comstrx/pyx" },
+] }
+webx = { type = "fragment", path = "product/apex/web", repo = "comstrx/webx", deps = [
+    { name = "engine", repo = "comstrx/bunx" },
+] }
+mobilex = { type = "fragment", path = "product/apex/mobile", repo = "comstrx/mobilex", deps = [
+    { name = "engine", repo = "comstrx/bunx" },
+] }
+deskx = { type = "fragment", path = "product/apex/desktop", repo = "comstrx/deskx", deps = [
+    { name = "engine", repo = "comstrx/bunx" },
+] }
+skillx = { type = "tutor", path = "tutor", repo = "comstrx/skillx" }
+
+[deploy]
+stack = "native"
+
+[packages]
+xz = { apt = "xz-utils" }
+
+[archive]
+shellcheck_linux_x86_64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.x86_64.tar.xz"
+shellcheck_linux_aarch64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.aarch64.tar.xz"
+shellcheck_darwin_x86_64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.darwin.x86_64.tar.xz"
+shellcheck_darwin_aarch64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.darwin.aarch64.tar.xz"
+gitleaks_linux_x86_64 = "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_linux_x64.tar.gz"
+gitleaks_linux_aarch64 = "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_linux_arm64.tar.gz"
+gitleaks_darwin_x86_64 = "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_darwin_x64.tar.gz"
+gitleaks_darwin_aarch64 = "https://github.com/gitleaks/gitleaks/releases/download/v{version}/gitleaks_{version}_darwin_arm64.tar.gz"
+trivy_linux_x86_64 = "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_Linux-64bit.tar.gz"
+trivy_linux_aarch64 = "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_Linux-ARM64.tar.gz"
+trivy_darwin_x86_64 = "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_macOS-64bit.tar.gz"
+trivy_darwin_aarch64 = "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_macOS-ARM64.tar.gz"
+syft_linux_x86_64 = "https://github.com/anchore/syft/releases/download/v{version}/syft_{version}_linux_amd64.tar.gz"
+syft_linux_aarch64 = "https://github.com/anchore/syft/releases/download/v{version}/syft_{version}_linux_arm64.tar.gz"
+syft_darwin_x86_64 = "https://github.com/anchore/syft/releases/download/v{version}/syft_{version}_darwin_amd64.tar.gz"
+syft_darwin_aarch64 = "https://github.com/anchore/syft/releases/download/v{version}/syft_{version}_darwin_arm64.tar.gz"
+zizmor_linux_x86_64 = "https://github.com/zizmorcore/zizmor/releases/download/v{version}/zizmor-x86_64-unknown-linux-gnu.tar.gz"
+zizmor_linux_aarch64 = "https://github.com/zizmorcore/zizmor/releases/download/v{version}/zizmor-aarch64-unknown-linux-gnu.tar.gz"
+zizmor_darwin_x86_64 = "https://github.com/zizmorcore/zizmor/releases/download/v{version}/zizmor-x86_64-apple-darwin.tar.gz"
+zizmor_darwin_aarch64 = "https://github.com/zizmorcore/zizmor/releases/download/v{version}/zizmor-aarch64-apple-darwin.tar.gz"
+typos_linux_x86_64 = "https://github.com/crate-ci/typos/releases/download/v{version}/typos-v{version}-x86_64-unknown-linux-musl.tar.gz"
+typos_linux_aarch64 = "https://github.com/crate-ci/typos/releases/download/v{version}/typos-v{version}-aarch64-unknown-linux-musl.tar.gz"
+typos_darwin_x86_64 = "https://github.com/crate-ci/typos/releases/download/v{version}/typos-v{version}-x86_64-apple-darwin.tar.gz"
+typos_darwin_aarch64 = "https://github.com/crate-ci/typos/releases/download/v{version}/typos-v{version}-aarch64-apple-darwin.tar.gz"
+taplo_linux_x86_64 = "https://github.com/tamasfe/taplo/releases/download/{version}/taplo-linux-x86_64.gz"
+taplo_linux_aarch64 = "https://github.com/tamasfe/taplo/releases/download/{version}/taplo-linux-aarch64.gz"
+taplo_darwin_x86_64 = "https://github.com/tamasfe/taplo/releases/download/{version}/taplo-darwin-x86_64.gz"
+taplo_darwin_aarch64 = "https://github.com/tamasfe/taplo/releases/download/{version}/taplo-darwin-aarch64.gz"
+
+[downloads]
+shellcheck_linux_x86_64 = "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+shellcheck_linux_aarch64 = "12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
+shellcheck_darwin_x86_64 = "3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
+shellcheck_darwin_aarch64 = "56affdd8de5527894dca6dc3d7e0a99a873b0f004d7aabc30ae407d3f48b0a79"
+gitleaks_linux_x86_64 = "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+gitleaks_linux_aarch64 = "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
+gitleaks_darwin_x86_64 = "dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709"
+gitleaks_darwin_aarch64 = "b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5"
+trivy_linux_x86_64 = "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf"
+trivy_linux_aarch64 = "ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3"
+trivy_darwin_x86_64 = "e08bb9ea449ecf66c6bfb03cbb8697c503ff33d35fc585c9747e3eaeb7ed4c7b"
+trivy_darwin_aarch64 = "ae7ea358326960406b703c77b2ac490190797d80b306b5b50c2a27221da0a5b8"
+syft_linux_x86_64 = "1c2493cfcf52d3367d6cb25780d9190c111c2219c34c820574c43e8bae15c528"
+syft_linux_aarch64 = "ace61b9397ae28189c674ae332d67a8074dafd71e87724dfb8b22412d8253bb5"
+syft_darwin_x86_64 = "ff37fb20e8d072e193cb659ecb932994ba2add772cbf86909c368fb95a630c50"
+syft_darwin_aarch64 = "c19b97a8c175ac7bd8105b8c8240ce740bf078333b12cc62ea49002c1b33e6e0"
+zizmor_linux_x86_64 = "bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b"
+zizmor_linux_aarch64 = "cb152b207f815116d7fa1c1ee4614f61578803351395052908095e79adfd9fd0"
+zizmor_darwin_x86_64 = "6983143c719ada6845a69cc4dd2bacc215f971662fecd8bbd2678388e5ce5969"
+zizmor_darwin_aarch64 = "6efed18c4539a663fd3c851a2be9533fd8456c4e646d9416206da059154a0d3c"
+typos_linux_x86_64 = "6155d4114f9a0f5b8f6d4fda96266c9d5f6add71df80da7f684ee5e72eb14588"
+typos_linux_aarch64 = "63b7d4478d467a61fe47cdb3162f720c6797856e61a04f7e125d1cdc282488b8"
+typos_darwin_x86_64 = "8de057f425909b02c0184892539755d70ecc3244c4b214ae9382cedd691127e0"
+typos_darwin_aarch64 = "90724dd2905cb1ce033343c71ed60e52fe898674f882803e3110cd228e09e1c5"
+taplo_linux_x86_64 = "8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eabeb6156"
+taplo_linux_aarch64 = "033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3"
+taplo_darwin_x86_64 = "898122cde3a0b1cd1cbc2d52d3624f23338218c91b5ddb71518236a4c2c10ef2"
+taplo_darwin_aarch64 = "713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d"

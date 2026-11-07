@@ -1,0 +1,120 @@
+[files]
+extend-exclude = [
+    "**/.git/**",
+    "**/.claude/**",
+    "**/.codex/**",
+    "**/.agents/**",
+    "**/.infra/**",
+    "**/.idea/**",
+    "**/.vscode/**",
+    "**/.fleet/**",
+    "**/.zed/**",
+    "**/.stage/**",
+    "**/.cache/**",
+    "**/node_modules/**",
+    "**/.bun/**",
+    "**/.hutch/**",
+    "**/.pnpm-store/**",
+    "**/.npm/**",
+    "**/.yarn/**",
+    "**/.turbo/**",
+    "**/.vercel/**",
+    "**/.parcel-cache/**",
+    "**/.next/**",
+    "**/.nuxt/**",
+    "**/.output/**",
+    "**/.vite/**",
+    "**/_generated/**",
+    "**/generated/**",
+    "**/.expo/**",
+    "**/web-build/**",
+    "**/android/**",
+    "**/ios/**",
+    "**/Pods/**",
+    "**/.gradle/**",
+    "**/vendor/**",
+    "**/.venv/**",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/.mypy_cache/**",
+    "**/.ruff_cache/**",
+    "**/.hypothesis/**",
+    "**/.tox/**",
+    "**/.nox/**",
+    "**/wheels/**",
+    "**/.eggs/**",
+    "**/target/**",
+    "**/.infra/**",
+    "**/fuzz/corpus/**",
+    "**/fuzz/artifacts/**",
+    "**/criterion/**",
+    "**/.benchmarks/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/out/**",
+    "**/artifacts/**",
+    "**/coverage/**",
+    "**/htmlcov/**",
+    "**/.nyc_output/**",
+    "**/test-results/**",
+    "**/blob-report/**",
+    "**/playwright-report/**",
+    "**/world/data/**",
+]
+
+ignore-files = true
+ignore-dot = true
+ignore-vcs = true
+ignore-hidden = false
+ignore-global = false
+ignore-parent = false
+
+[default]
+binary = false
+check-filename = true
+check-file = true
+unicode = true
+locale = "en-us"
+
+extend-ignore-words-re = ["(?i)^fpr$"]
+
+extend-ignore-re = [
+    "(?s)-----BEGIN PGP SIGNATURE-----.*?-----END PGP SIGNATURE-----",
+    "\\bnl -ba\\b",
+]
+
+[type.lock]
+extend-glob = ["**/*.lock", "**/package-lock.json", "**/pnpm-lock.yaml", "**/go.sum"]
+check-file = false
+check-filename = false
+
+[type.media]
+extend-glob = [
+    "**/*.svg",
+    "**/*.webp",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.jpeg",
+    "**/*.avif",
+    "**/*.gif",
+    "**/*.ico",
+    "**/*.woff",
+    "**/*.woff2",
+    "**/*.otf",
+    "**/*.ttf",
+]
+
+check-file = false
+check-filename = false
+
+[type.minified]
+extend-glob = ["**/*.min.js", "**/*.min.css"]
+check-file = false
+
+[type.generated]
+extend-glob = ["**/generated/**", "**/_generated/**", "**/*.gen.*", "**/*.g.*"]
+check-file = false
+
+[default.extend-words]
+brin = "brin"
+certifi = "certifi"
