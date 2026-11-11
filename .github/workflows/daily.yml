@@ -1,0 +1,39 @@
+name: daily
+
+on:
+  schedule:
+    - cron: '17 1 * * *'
+    - cron: '17 6 * * *'
+
+  workflow_dispatch:
+    inputs:
+      job:
+        type: choice
+        options: [all, fuzz, bench]
+        default: all
+
+concurrency:
+  group: daily-${{ github.event.schedule || inputs.job }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    if: github.event.schedule == '17 1 * * *' || inputs.job == 'all' || inputs.job == 'fuzz'
+
+    uses: $/.github/workflows/ci.yml
+    with:
+      all: true
+      type: deps,fuzz
+      timeout: 3600
+
+  bench:
+    if: github.event.schedule == '17 6 * * *' || inputs.job == 'all' || inputs.job == 'bench'
+
+    uses: $/.github/workflows/ci.yml
+    with:
+      all: true
+      type: deps,bench
+      timeout: 3600

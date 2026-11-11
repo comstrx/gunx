@@ -1,0 +1,17 @@
+{
+  "name": "engine-test",
+  "private": true,
+  "type": "module",
+  "description": "Test stage: env, temp dirs, swapped globals, spies, waits, logs, live sockets",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-error": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-log": "workspace:*",
+    "engine-socket": "workspace:*",
+    "mitata": "catalog:"
+  }
+}

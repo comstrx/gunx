@@ -1,0 +1,3 @@
+from engine.event import Signal
+
+class Event(Signal): ...

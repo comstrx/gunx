@@ -1,0 +1,16 @@
+{
+  "name": "engine-history",
+  "private": true,
+  "type": "module",
+  "description": "History: hrefs as path, query and hash, navigation port, memory and web adapters",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-parse": "workspace:*"
+  }
+}

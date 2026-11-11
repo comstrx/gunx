@@ -1,0 +1,16 @@
+{
+  "name": "engine-geo",
+  "private": true,
+  "type": "module",
+  "description": "Geo: points, distances, bounds, paths, geohash, polylines, tiles, locating",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-device": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-number": "workspace:*"
+  }
+}

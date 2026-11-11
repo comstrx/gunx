@@ -1,0 +1,21 @@
+[project]
+name = "engine-adapter"
+description = "The adapter law: families, names, capabilities, one manager per family"
+dynamic = ["version"]
+dependencies = [
+    "engine-error",
+    "engine-log",
+    "engine-rand",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

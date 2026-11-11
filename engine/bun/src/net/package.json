@@ -1,0 +1,21 @@
+{
+  "name": "engine-net",
+  "private": true,
+  "type": "module",
+  "description": "Network: URLs, guarded fetch with timeouts, retries, caps, SSE, polls, headers",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-date": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-event": "workspace:*",
+    "engine-func": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-parse": "workspace:*",
+    "engine-rand": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

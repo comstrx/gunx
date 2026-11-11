@@ -1,0 +1,14 @@
+{
+  "name": "engine-list",
+  "private": true,
+  "type": "module",
+  "description": "Arrays: shaping, grouping, sorting, searching, paging and bounded async lanes",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-number": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

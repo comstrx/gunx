@@ -1,0 +1,17 @@
+[project]
+name = "engine-metric"
+description = "Counters, gauges and histograms exposed as Prometheus text"
+dynamic = ["version"]
+dependencies = ["engine-error", "engine-log"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

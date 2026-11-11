@@ -92,7 +92,6 @@ scan:
     - '**/target'
     - '**/.infra'
     - '**/fuzz/corpus'
-    - '**/fuzz/artifacts'
     - '**/criterion'
     - '**/.benchmarks'
     - '**/dist'

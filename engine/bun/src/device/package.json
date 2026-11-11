@@ -1,0 +1,15 @@
+{
+  "name": "engine-device",
+  "private": true,
+  "type": "module",
+  "description": "Device: one port for facts, permissions, location, clipboard, share, keys, media",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-json": "workspace:*"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "engine-rand",
+  "private": true,
+  "type": "module",
+  "description": "Randomness: secure ids, ulid, tokens, otp, seeded generators, picks and shuffles",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-list": "workspace:*",
+    "engine-number": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

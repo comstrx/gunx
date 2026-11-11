@@ -1,0 +1,16 @@
+{
+  "name": "engine-crypto",
+  "private": true,
+  "type": "module",
+  "description": "Crypto on WebCrypto: hashes, HMAC, AES-GCM seals, signed tokens, PBKDF2 hashes",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-rand": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

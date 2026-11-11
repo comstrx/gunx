@@ -6,8 +6,8 @@ Welcome to `GunX` 👋 We love high-quality contributions.
 
 ## Where to go
 
-| You want to...                    | Use...                                                                  |
-| --------------------------------- | ----------------------------------------------------------------------- |
+| You want to...                    | Use...                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------- |
 | Ask a question / propose a design | 💬 [Discussions](https://github.com/comstrx/gunx/discussions)          |
 | Report a reproducible bug         | 🐞 [Issues](https://github.com/comstrx/gunx/issues)                    |
 | Report a security issue (private) | 🔒 [Security](https://github.com/comstrx/gunx/security/advisories/new) |

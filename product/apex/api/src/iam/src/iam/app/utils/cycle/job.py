@@ -1,0 +1,3 @@
+from engine.queue import Work
+
+class Job(Work): ...

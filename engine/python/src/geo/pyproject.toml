@@ -1,0 +1,17 @@
+[project]
+name = "engine-geo"
+description = "Geography: distance, bearing, geohash, bounds, provider geocoding"
+dynamic = ["version"]
+dependencies = ["engine-adapter", "engine-error", "engine-net", "engine-number"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

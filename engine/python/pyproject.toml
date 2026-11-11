@@ -8,11 +8,14 @@ dependencies = ["engine"]
 
 [dependency-groups]
 dev = [
+    "asyncpg-stubs",
     "griffe",
     "hypothesis",
     "mypy",
     "pip-audit",
+    "pyjwt",
     "pytest",
+    "pytest-asyncio",
     "pytest-randomly",
     "pytest-timeout",
     "ruff",
@@ -20,14 +23,51 @@ dev = [
 
 [tool.uv]
 constraint-dependencies = [
+    "aiohttp==3.14.5",
+    "aiokafka==0.15.0",
+    "aiormq==7.2.5",
+    "aiosmtplib==5.1.3",
+    "apsw==3.54.1.0",
+    "argon2-cffi==25.1.0",
+    "asyncmy==0.2.18",
+    "asyncpg==0.32.0",
+    "asyncpg-stubs==0.32.0",
+    "av==19.0.2",
+    "blake3==1.0.11",
+    "cachebox==6.2.10",
+    "caio==0.12.10",
+    "certifi==2026.10.23",
+    "clickhouse-connect==1.12.0",
+    "cryptography==50.0.2",
+    "hiredis==3.5.0",
+    "dnspython==2.9.2",
     "griffe==2.4.1",
-    "hypothesis==6.170.14",
+    "hypothesis==6.170.15",
+    "jinja2==3.1.6",
+    "msgspec==0.22.0",
     "mypy==2.4.1",
+    "obstore==0.12.1",
+    "orjson==3.13.0",
+    "pamqp==5.0.0",
+    "pillow==13.0.0",
     "pip-audit==2.10.1",
+    "pyjwt==2.15.1",
+    "pymongo==4.19.0",
+    "pyroaring==1.2.0",
     "pytest==9.2.0",
-    "pytest-randomly==5.0.0",
+    "pytest-randomly==5.1.0",
     "pytest-timeout==2.4.0",
-    "ruff==0.17.3",
+    "rapidfuzz==3.14.6",
+    "redis==8.1.0",
+    "ruff==0.17.4",
+    "sanic==25.12.1",
+    "stringzilla==5.3.2",
+    "structlog==26.1.0",
+    "urllib3==2.8.0",
+    "uvloop==0.23.0",
+    "watchfiles==1.3.0",
+    "websockets==17.4",
+    "yarl==1.25.1",
 ]
 build-constraint-dependencies = ["hatchling==1.33.0"]
 
@@ -36,7 +76,55 @@ members = ["src/*"]
 
 [tool.uv.sources]
 engine = { workspace = true }
-engine-hello = { workspace = true }
+engine-adapter = { workspace = true }
+engine-ai = { workspace = true }
+engine-array = { workspace = true }
+engine-auth = { workspace = true }
+engine-broadcast = { workspace = true }
+engine-broker = { workspace = true }
+engine-cache = { workspace = true }
+engine-cli = { workspace = true }
+engine-config = { workspace = true }
+engine-context = { workspace = true }
+engine-crypto = { workspace = true }
+engine-database = { workspace = true }
+engine-date = { workspace = true }
+engine-domain = { workspace = true }
+engine-error = { workspace = true }
+engine-event = { workspace = true }
+engine-exception = { workspace = true }
+engine-fake = { workspace = true }
+engine-fs = { workspace = true }
+engine-func = { workspace = true }
+engine-gateway = { workspace = true }
+engine-geo = { workspace = true }
+engine-health = { workspace = true }
+engine-http = { workspace = true }
+engine-json = { workspace = true }
+engine-log = { workspace = true }
+engine-mail = { workspace = true }
+engine-metric = { workspace = true }
+engine-net = { workspace = true }
+engine-notify = { workspace = true }
+engine-number = { workspace = true }
+engine-parse = { workspace = true }
+engine-queue = { workspace = true }
+engine-rag = { workspace = true }
+engine-rand = { workspace = true }
+engine-schedule = { workspace = true }
+engine-search = { workspace = true }
+engine-sms = { workspace = true }
+engine-socket = { workspace = true }
+engine-storage = { workspace = true }
+engine-stream = { workspace = true }
+engine-string = { workspace = true }
+engine-test = { workspace = true }
+engine-thread = { workspace = true }
+engine-token = { workspace = true }
+engine-translate = { workspace = true }
+engine-validate = { workspace = true }
+engine-video = { workspace = true }
+engine-view = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -52,13 +140,103 @@ src = ["src/*/src", "tests", "benches", "fuzz"]
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["COM", "CPY", "D", "FBT001", "FBT002", "I", "TC", "ANN401", "E401", "E701", "N818"]
+ignore = [
+    "COM",
+    "CPY",
+    "D",
+    "FBT001",
+    "FBT002",
+    "I",
+    "TC",
+    "ANN401",
+    "E401",
+    "E701",
+    "N818",
+    "EM101",
+    "EM102",
+    "TRY003",
+    "N811",
+    "N812",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["INP001", "S101", "PLR2004"]
-"benches/**" = ["INP001", "T201", "PLR2004"]
-"fuzz/**" = ["INP001", "S101", "T201", "PLR2004"]
+"tests/**" = [
+    "INP001",
+    "S101",
+    "S105",
+    "S106",
+    "PLR0915",
+    "PLR2004",
+    "PT012",
+    "PT018",
+    "ARG001",
+    "ARG002",
+    "E501",
+]
+"benches/**" = ["INP001", "T201", "PLR2004", "ARG001", "E501"]
+"fuzz/**" = ["INP001", "S101", "T201", "PLR2004", "PT018", "E501"]
 "src/engine/src/engine/__init__.py" = ["E402"]
+"src/*/src/engine/*/__init__.py" = ["PLC0414"]
+"src/ai/src/engine/ai/ai.py" = ["BLE001"]
+"src/schedule/src/engine/schedule/schedule.py" = ["BLE001"]
+"src/socket/src/engine/socket/sockets.py" = ["BLE001"]
+"src/broadcast/src/engine/broadcast/broadcast.py" = ["BLE001"]
+"src/ai/src/engine/ai/model.py" = ["ARG002"]
+"src/adapter/src/engine/adapter/manager.py" = ["BLE001"]
+"src/array/src/engine/array/array.py" = ["PLC0415"]
+"src/broker/src/engine/broker/broker.py" = ["BLE001"]
+"src/broker/src/engine/broker/driver.py" = ["ARG002"]
+"src/broker/src/engine/broker/kafka.py" = ["PLC0415"]
+"src/cache/src/engine/cache/channel.py" = ["PLC0415"]
+"src/cli/src/engine/cli/cli.py" = ["BLE001"]
+"src/context/src/engine/context/deferral.py" = ["BLE001"]
+"src/database/src/engine/database/clickhousedriver.py" = ["PLC0415"]
+"src/database/src/engine/database/database.py" = ["PLC0415"]
+"src/database/src/engine/database/dialect.py" = ["ARG002", "S608"]
+"src/database/src/engine/database/driver.py" = ["ARG002", "ASYNC109"]
+"src/database/src/engine/database/lane.py" = ["BLE001"]
+"src/database/src/engine/database/mongo.py" = ["PLC0415"]
+"src/database/src/engine/database/mysqldriver.py" = ["PLC0415", "PLR0911"]
+"src/database/src/engine/database/outbox.py" = ["BLE001"]
+"src/database/src/engine/database/postgresdriver.py" = ["C901", "PLR0911"]
+"src/database/src/engine/database/session.py" = ["ASYNC109"]
+"src/database/src/engine/database/sql.py" = ["S608"]
+"src/database/src/engine/database/sqlitedriver.py" = ["ASYNC109", "PLR0911"]
+"src/domain/src/engine/domain/registrar.py" = ["ARG002"]
+"src/event/src/engine/event/events.py" = ["ASYNC109", "BLE001"]
+"src/exception/src/engine/exception/exceptions.py" = ["BLE001"]
+"src/fs/src/engine/fs/file.py" = ["PLC0415"]
+"src/fs/src/engine/fs/watch.py" = ["PLC0415"]
+"src/func/src/engine/func/batch.py" = ["BLE001"]
+"src/func/src/engine/func/func.py" = ["ASYNC109"]
+"src/func/src/engine/func/limiter.py" = ["ASYNC110"]
+"src/gateway/src/engine/gateway/provider.py" = ["ARG002"]
+"src/geo/src/engine/geo/geocoder.py" = ["ARG002"]
+"src/health/src/engine/health/health.py" = ["BLE001"]
+"src/http/src/engine/http/app.py" = ["BLE001"]
+"src/http/src/engine/http/request.py" = ["S104"]
+"src/log/src/engine/log/log.py" = ["LOG004"]
+"src/mail/src/engine/mail/mailer.py" = ["ARG002"]
+"src/net/src/engine/net/net.py" = ["ASYNC109", "PLR0913"]
+"src/notify/src/engine/notify/pusher.py" = ["ARG002"]
+"src/rag/src/engine/rag/store.py" = ["ARG002"]
+"src/rand/src/engine/rand/rand.py" = ["S311"]
+"src/search/src/engine/search/engine.py" = ["ARG002"]
+"src/search/src/engine/search/vespa.py" = ["S608"]
+"src/sms/src/engine/sms/texter.py" = ["ARG002"]
+"src/socket/src/engine/socket/socket.py" = ["BLE001"]
+"src/string/src/engine/string/arch.py" = ["RUF001"]
+"src/string/src/engine/string/string.py" = ["PLC0415"]
+"src/test/src/engine/test/bench.py" = ["T201"]
+"src/test/src/engine/test/reply.py" = ["PLR2004"]
+"src/test/src/engine/test/stage.py" = ["ARG001"]
+"src/thread/src/engine/thread/cluster.py" = ["PLC0415"]
+"src/thread/src/engine/thread/thread.py" = ["ASYNC109", "BLE001", "PLR0913", "PLR0917"]
+"src/video/src/engine/video/driver.py" = ["ARG002"]
+"src/video/src/engine/video/videos.py" = ["C901", "PLC0415", "PLR0912"]
+
+[tool.ruff.lint.flake8-builtins]
+builtins-ignorelist = ["dir"]
 
 [tool.ruff.lint.pylint]
 max-args = 8
@@ -84,11 +262,22 @@ enable_error_code = [
     "unimported-reveal",
     "unused-awaitable",
 ]
-mypy_path = "src/engine/src:src/hello/src"
+mypy_path = "src/engine/src:src/adapter/src:src/ai/src:src/array/src:src/auth/src:src/broadcast/src:src/broker/src:src/cache/src:src/cli/src:src/config/src:src/context/src:src/crypto/src:src/database/src:src/date/src:src/domain/src:src/error/src:src/event/src:src/exception/src:src/fake/src:src/fs/src:src/func/src:src/gateway/src:src/geo/src:src/health/src:src/http/src:src/json/src:src/log/src:src/mail/src:src/metric/src:src/net/src:src/notify/src:src/number/src:src/parse/src:src/queue/src:src/rag/src:src/rand/src:src/schedule/src:src/search/src:src/sms/src:src/socket/src:src/storage/src:src/stream/src:src/string/src:src/test/src:src/thread/src:src/token/src:src/translate/src:src/validate/src:src/video/src:src/view/src"
 files = ["src/*/src/engine", "tests", "benches", "fuzz"]
+
+[[tool.mypy.overrides]]
+module = ["stringzilla", "pyroaring", "aiokafka", "aiokafka.*", "ray", "ray.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["engine.http.app", "engine.cache.channel", "engine.video.videos"]
+disallow_untyped_calls = false
 
 [tool.pytest]
 testpaths = ["tests"]
-addopts = ["--import-mode=importlib", "--timeout=30"]
+addopts = ["--import-mode=importlib", "--timeout=60"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 strict = true
-filterwarnings = ["error"]
+filterwarnings = ["error", "ignore:'return' in a 'finally' block:SyntaxWarning"]

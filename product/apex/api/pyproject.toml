@@ -1,52 +1,221 @@
 [project]
 name = "api"
 version = "0.1.0"
-description = "The backend: a workspace of services, one per business domain."
+description = "The backend: one workspace of services, one per business domain"
 requires-python = ">=3.15"
 license = "Apache-2.0"
-dependencies = []
+dependencies = ["api-contract", "api-gateway", "api-hello", "api-iam", "api-notify"]
 
 [dependency-groups]
-dev = ["mypy", "pip-audit", "pytest", "pytest-randomly", "pytest-timeout", "ruff"]
+dev = [
+    "aiohttp",
+    "engine-test",
+    "mypy",
+    "pip-audit",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-randomly",
+    "pytest-timeout",
+    "ruff",
+]
 
 [tool.uv]
+package = false
 constraint-dependencies = [
     "mypy==2.4.1",
     "pip-audit==2.10.1",
     "pytest==9.2.0",
-    "pytest-randomly==5.0.0",
+    "pytest-asyncio==1.4.1.post1",
+    "pytest-randomly==5.1.0",
     "pytest-timeout==2.4.0",
-    "ruff==0.17.3",
+    "ruff==0.17.4",
 ]
 build-constraint-dependencies = ["hatchling==1.33.0"]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.uv.workspace]
+members = ["src/*"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/api"]
+[tool.uv.sources]
+api-contract = { workspace = true }
+api-gateway = { workspace = true }
+api-hello = { workspace = true }
+api-iam = { workspace = true }
+api-notify = { workspace = true }
+engine = { path = "../../../engine/python/src/engine", editable = true }
+engine-adapter = { path = "../../../engine/python/src/adapter", editable = true }
+engine-ai = { path = "../../../engine/python/src/ai", editable = true }
+engine-array = { path = "../../../engine/python/src/array", editable = true }
+engine-auth = { path = "../../../engine/python/src/auth", editable = true }
+engine-broadcast = { path = "../../../engine/python/src/broadcast", editable = true }
+engine-broker = { path = "../../../engine/python/src/broker", editable = true }
+engine-cache = { path = "../../../engine/python/src/cache", editable = true }
+engine-cli = { path = "../../../engine/python/src/cli", editable = true }
+engine-config = { path = "../../../engine/python/src/config", editable = true }
+engine-context = { path = "../../../engine/python/src/context", editable = true }
+engine-crypto = { path = "../../../engine/python/src/crypto", editable = true }
+engine-database = { path = "../../../engine/python/src/database", editable = true }
+engine-date = { path = "../../../engine/python/src/date", editable = true }
+engine-domain = { path = "../../../engine/python/src/domain", editable = true }
+engine-error = { path = "../../../engine/python/src/error", editable = true }
+engine-event = { path = "../../../engine/python/src/event", editable = true }
+engine-exception = { path = "../../../engine/python/src/exception", editable = true }
+engine-fake = { path = "../../../engine/python/src/fake", editable = true }
+engine-fs = { path = "../../../engine/python/src/fs", editable = true }
+engine-func = { path = "../../../engine/python/src/func", editable = true }
+engine-gateway = { path = "../../../engine/python/src/gateway", editable = true }
+engine-geo = { path = "../../../engine/python/src/geo", editable = true }
+engine-health = { path = "../../../engine/python/src/health", editable = true }
+engine-http = { path = "../../../engine/python/src/http", editable = true }
+engine-json = { path = "../../../engine/python/src/json", editable = true }
+engine-log = { path = "../../../engine/python/src/log", editable = true }
+engine-mail = { path = "../../../engine/python/src/mail", editable = true }
+engine-metric = { path = "../../../engine/python/src/metric", editable = true }
+engine-net = { path = "../../../engine/python/src/net", editable = true }
+engine-notify = { path = "../../../engine/python/src/notify", editable = true }
+engine-number = { path = "../../../engine/python/src/number", editable = true }
+engine-parse = { path = "../../../engine/python/src/parse", editable = true }
+engine-queue = { path = "../../../engine/python/src/queue", editable = true }
+engine-rag = { path = "../../../engine/python/src/rag", editable = true }
+engine-rand = { path = "../../../engine/python/src/rand", editable = true }
+engine-schedule = { path = "../../../engine/python/src/schedule", editable = true }
+engine-search = { path = "../../../engine/python/src/search", editable = true }
+engine-sms = { path = "../../../engine/python/src/sms", editable = true }
+engine-socket = { path = "../../../engine/python/src/socket", editable = true }
+engine-storage = { path = "../../../engine/python/src/storage", editable = true }
+engine-stream = { path = "../../../engine/python/src/stream", editable = true }
+engine-string = { path = "../../../engine/python/src/string", editable = true }
+engine-test = { path = "../../../engine/python/src/test", editable = true }
+engine-thread = { path = "../../../engine/python/src/thread", editable = true }
+engine-token = { path = "../../../engine/python/src/token", editable = true }
+engine-translate = { path = "../../../engine/python/src/translate", editable = true }
+engine-validate = { path = "../../../engine/python/src/validate", editable = true }
+engine-video = { path = "../../../engine/python/src/video", editable = true }
+engine-view = { path = "../../../engine/python/src/view", editable = true }
 
 [tool.ruff]
 target-version = "py315"
 line-length = 120
-src = ["src", "tests"]
+src = [
+    "src/contract/src",
+    "src/gateway/src",
+    "src/hello/src",
+    "src/iam/src",
+    "src/notify/src",
+    "tests",
+    "benches",
+]
 
 [tool.ruff.lint]
 select = ["ALL"]
-ignore = ["COM", "CPY", "D", "FBT001", "FBT002", "I", "TC", "ANN401", "E401", "E701", "N818"]
+ignore = [
+    "COM",
+    "CPY",
+    "D",
+    "FBT001",
+    "FBT002",
+    "I",
+    "TC",
+    "ANN401",
+    "E401",
+    "E701",
+    "N818",
+    "PLR0913",
+    "PLR2004",
+    "S101",
+    "SIM105",
+    "SIM108",
+    "TRY003",
+    "EM101",
+    "EM102",
+    "RET505",
+    "PLC0105",
+    "PLW2901",
+    "TRY300",
+    "PERF203",
+    "PLR0911",
+    "PLR0912",
+    "C901",
+    "ERA001",
+    "FBT003",
+    "ARG002",
+    "TID252",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["INP001", "S101", "PLR2004"]
+"**/tests/**" = [
+    "INP001",
+    "S105",
+    "S106",
+    "PT012",
+    "PT018",
+    "ARG001",
+    "ANN001",
+    "ANN201",
+    "E501",
+    "PLR0915",
+]
+"**/config/app.py" = ["S105"]
+"**/bootstrap/**" = ["ARG001"]
+"**/benches/**" = ["INP001", "T201", "TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"aiohttp".msg = "the engine wraps it"
+"aiokafka".msg = "the engine wraps it"
+"aiormq".msg = "the engine wraps it"
+"aiosmtplib".msg = "the engine wraps it"
+"apsw".msg = "the engine wraps it"
+"argon2".msg = "the engine wraps it"
+"asyncmy".msg = "the engine wraps it"
+"asyncpg".msg = "the engine wraps it"
+"av".msg = "the engine wraps it"
+"blake3".msg = "the engine wraps it"
+"cachebox".msg = "the engine wraps it"
+"caio".msg = "the engine wraps it"
+"clickhouse_connect".msg = "the engine wraps it"
+"cryptography".msg = "the engine wraps it"
+"dns".msg = "the engine wraps it"
+"hiredis".msg = "the engine wraps it"
+"jinja2".msg = "the engine wraps it"
+"jwt".msg = "the engine wraps it"
+"msgspec".msg = "the engine wraps it"
+"obstore".msg = "the engine wraps it"
+"orjson".msg = "the engine wraps it"
+"PIL".msg = "the engine wraps it"
+"pymongo".msg = "the engine wraps it"
+"pyroaring".msg = "the engine wraps it"
+"rapidfuzz".msg = "the engine wraps it"
+"redis".msg = "the engine wraps it"
+"sanic".msg = "the engine wraps it"
+"stringzilla".msg = "the engine wraps it"
+"structlog".msg = "the engine wraps it"
+"uvloop".msg = "the engine wraps it"
+"websockets".msg = "the engine wraps it"
 
 [tool.mypy]
 python_version = "3.15"
 strict = true
-mypy_path = "src"
-files = ["src", "tests"]
+mypy_path = "src/contract/src:src/gateway/src:src/hello/src:src/iam/src:src/notify/src"
+files = [
+    "src/contract/src",
+    "src/gateway/src",
+    "src/hello/src",
+    "src/iam/src",
+    "src/notify/src",
+    "tests",
+    "benches",
+]
+explicit_package_bases = true
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = ["stringzilla", "stringzilla.*", "pyroaring", "pyroaring.*"]
+ignore_missing_imports = true
 
 [tool.pytest]
 testpaths = ["tests"]
-addopts = ["--import-mode=importlib", "--timeout=30"]
+addopts = ["--timeout=60", "-p", "no:cacheprovider"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 strict = true
-filterwarnings = ["error"]
+filterwarnings = ["error", "ignore:'return' in a 'finally' block:SyntaxWarning"]

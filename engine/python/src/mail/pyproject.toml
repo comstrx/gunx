@@ -1,0 +1,27 @@
+[project]
+name = "engine-mail"
+description = "Mail: one Message, adapters for log, SMTP and HTTP providers, templates"
+dynamic = ["version"]
+dependencies = [
+    "engine-adapter",
+    "engine-error",
+    "engine-log",
+    "engine-net",
+    "engine-rand",
+    "engine-string",
+    "engine-validate",
+    "engine-view",
+    "aiosmtplib",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

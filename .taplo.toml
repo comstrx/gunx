@@ -15,6 +15,7 @@ exclude = [
     "**/node_modules/**",
     "**/.bun/**",
     "**/.hutch/**",
+    "**/.cottontail-tmp/**",
     "**/.pnpm-store/**",
     "**/.npm/**",
     "**/.yarn/**",
@@ -46,7 +47,6 @@ exclude = [
     "**/.eggs/**",
     "**/target/**",
     "**/fuzz/corpus/**",
-    "**/fuzz/artifacts/**",
     "**/criterion/**",
     "**/.benchmarks/**",
     "**/dist/**",
@@ -67,8 +67,8 @@ indent_string = "    "
 column_width = 100
 allowed_blank_lines = 1
 
-trailing_newline = true
 crlf = false
+trailing_newline = true
 
 align_entries = false
 align_comments = false

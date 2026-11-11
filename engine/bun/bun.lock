@@ -10,50 +10,432 @@
       "devDependencies": {
         "@biomejs/biome": "catalog:",
         "@types/bun": "catalog:",
+        "@types/react": "catalog:",
+        "@types/react-dom": "catalog:",
         "fast-check": "catalog:",
         "mitata": "catalog:",
+        "react": "catalog:",
+        "react-dom": "catalog:",
         "typescript": "catalog:",
+        "zod": "catalog:",
+      },
+    },
+    "src/adapter": {
+      "name": "engine-adapter",
+      "dependencies": {
+        "engine-error": "workspace:*",
+      },
+    },
+    "src/api": {
+      "name": "engine-api",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-fake": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-list": "workspace:*",
+        "engine-net": "workspace:*",
+        "engine-parse": "workspace:*",
+        "engine-rand": "workspace:*",
+        "engine-socket": "workspace:*",
+        "engine-validate": "workspace:*",
+      },
+    },
+    "src/auth": {
+      "name": "engine-auth",
+      "dependencies": {
+        "engine-cache": "workspace:*",
+        "engine-crypto": "workspace:*",
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-state": "workspace:*",
+      },
+    },
+    "src/cache": {
+      "name": "engine-cache",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-crypto": "workspace:*",
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/crypto": {
+      "name": "engine-crypto",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-rand": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/date": {
+      "name": "engine-date",
+      "dependencies": {
+        "engine-number": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/device": {
+      "name": "engine-device",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-json": "workspace:*",
       },
     },
     "src/engine": {
       "name": "engine",
       "dependencies": {
-        "engine-hello": "workspace:*",
+        "engine-adapter": "workspace:*",
+        "engine-api": "workspace:*",
+        "engine-auth": "workspace:*",
+        "engine-cache": "workspace:*",
+        "engine-crypto": "workspace:*",
+        "engine-date": "workspace:*",
+        "engine-device": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
+        "engine-fake": "workspace:*",
+        "engine-form": "workspace:*",
+        "engine-fs": "workspace:*",
+        "engine-func": "workspace:*",
+        "engine-geo": "workspace:*",
+        "engine-history": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-list": "workspace:*",
+        "engine-log": "workspace:*",
+        "engine-net": "workspace:*",
+        "engine-number": "workspace:*",
+        "engine-parse": "workspace:*",
+        "engine-queue": "workspace:*",
+        "engine-rand": "workspace:*",
+        "engine-search": "workspace:*",
+        "engine-seo": "workspace:*",
+        "engine-socket": "workspace:*",
+        "engine-spec": "workspace:*",
+        "engine-state": "workspace:*",
+        "engine-string": "workspace:*",
+        "engine-test": "workspace:*",
+        "engine-tool": "workspace:*",
+        "engine-translate": "workspace:*",
+        "engine-validate": "workspace:*",
+        "engine-value": "workspace:*",
+        "engine-virtual": "workspace:*",
+        "engine-world": "workspace:*",
       },
     },
-    "src/hello": {
-      "name": "engine-hello",
+    "src/error": {
+      "name": "engine-error",
+      "dependencies": {
+        "engine-json": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/event": {
+      "name": "engine-event",
+      "dependencies": {
+        "engine-error": "workspace:*",
+      },
+    },
+    "src/fake": {
+      "name": "engine-fake",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-rand": "workspace:*",
+        "engine-string": "workspace:*",
+        "engine-validate": "workspace:*",
+        "engine-value": "workspace:*",
+        "engine-world": "workspace:*",
+      },
+    },
+    "src/form": {
+      "name": "engine-form",
+      "dependencies": {
+        "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-list": "workspace:*",
+        "engine-rand": "workspace:*",
+        "engine-state": "workspace:*",
+        "engine-validate": "workspace:*",
+      },
+    },
+    "src/fs": {
+      "name": "engine-fs",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-crypto": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-list": "workspace:*",
+        "engine-number": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/func": {
+      "name": "engine-func",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+      },
+    },
+    "src/geo": {
+      "name": "engine-geo",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-device": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-number": "workspace:*",
+      },
+    },
+    "src/history": {
+      "name": "engine-history",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-parse": "workspace:*",
+      },
+    },
+    "src/json": {
+      "name": "engine-json",
+      "dependencies": {
+        "engine-list": "workspace:*",
+        "engine-number": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/list": {
+      "name": "engine-list",
+      "dependencies": {
+        "engine-number": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/log": {
+      "name": "engine-log",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-json": "workspace:*",
+      },
+    },
+    "src/net": {
+      "name": "engine-net",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
+        "engine-func": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-parse": "workspace:*",
+        "engine-rand": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/number": {
+      "name": "engine-number",
+    },
+    "src/parse": {
+      "name": "engine-parse",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-string": "workspace:*",
+        "engine-value": "workspace:*",
+      },
+    },
+    "src/queue": {
+      "name": "engine-queue",
+      "dependencies": {
+        "engine-cache": "workspace:*",
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
+        "engine-func": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-rand": "workspace:*",
+      },
+    },
+    "src/rand": {
+      "name": "engine-rand",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-list": "workspace:*",
+        "engine-number": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/search": {
+      "name": "engine-search",
+      "dependencies": {
+        "engine-json": "workspace:*",
+        "engine-list": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/seo": {
+      "name": "engine-seo",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/socket": {
+      "name": "engine-socket",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
+        "engine-func": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-rand": "workspace:*",
+      },
+    },
+    "src/spec": {
+      "name": "engine-spec",
+      "dependencies": {
+        "engine-auth": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-list": "workspace:*",
+        "engine-parse": "workspace:*",
+        "engine-string": "workspace:*",
+        "engine-validate": "workspace:*",
+        "engine-world": "workspace:*",
+      },
+    },
+    "src/state": {
+      "name": "engine-state",
+      "dependencies": {
+        "engine-cache": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
+        "engine-json": "workspace:*",
+        "zustand": "catalog:",
+      },
+      "peerDependencies": {
+        "react": ">=19.0.0",
+      },
+    },
+    "src/string": {
+      "name": "engine-string",
+    },
+    "src/test": {
+      "name": "engine-test",
+      "dependencies": {
+        "engine-error": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-log": "workspace:*",
+        "engine-socket": "workspace:*",
+        "mitata": "catalog:",
+      },
+    },
+    "src/tool": {
+      "name": "engine-tool",
+      "dependencies": {
+        "engine-error": "workspace:*",
+        "engine-fs": "workspace:*",
+        "engine-json": "workspace:*",
+      },
+    },
+    "src/translate": {
+      "name": "engine-translate",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-number": "workspace:*",
+        "engine-string": "workspace:*",
+        "engine-value": "workspace:*",
+      },
+    },
+    "src/validate": {
+      "name": "engine-validate",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-value": "workspace:*",
+        "zod": "catalog:",
+      },
+    },
+    "src/value": {
+      "name": "engine-value",
+      "dependencies": {
+        "engine-date": "workspace:*",
+        "engine-json": "workspace:*",
+        "engine-number": "workspace:*",
+        "engine-string": "workspace:*",
+      },
+    },
+    "src/virtual": {
+      "name": "engine-virtual",
+      "dependencies": {
+        "engine-number": "workspace:*",
+      },
+    },
+    "src/world": {
+      "name": "engine-world",
+      "dependencies": {
+        "engine-adapter": "workspace:*",
+        "engine-cache": "workspace:*",
+        "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
+        "engine-list": "workspace:*",
+        "engine-number": "workspace:*",
+        "engine-string": "workspace:*",
+        "engine-value": "workspace:*",
+      },
     },
   },
   "catalog": {
-    "@biomejs/biome": "2.6.5",
+    "@biomejs/biome": "2.6.6",
     "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "fast-check": "4.10.2",
     "mitata": "1.0.34",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "subset-font": "2.9.0",
     "typescript": "7.0.2",
+    "zod": "4.6.7",
+    "zustand": "5.0.16",
   },
   "packages": {
-    "@biomejs/biome": ["@biomejs/biome@2.6.5", "", { "optionalDependencies": { "@biomejs/cli-android-arm64": "2.6.5", "@biomejs/cli-android-x64": "2.6.5", "@biomejs/cli-darwin-arm64": "2.6.5", "@biomejs/cli-darwin-x64": "2.6.5", "@biomejs/cli-linux-arm64": "2.6.5", "@biomejs/cli-linux-arm64-musl": "2.6.5", "@biomejs/cli-linux-x64": "2.6.5", "@biomejs/cli-linux-x64-musl": "2.6.5", "@biomejs/cli-win32-arm64": "2.6.5", "@biomejs/cli-win32-x64": "2.6.5" }, "bin": { "biome": "bin/biome" } }, "sha512-n0sp74QbSVEkWXlH659TKv4oJNylwAvDeZ8K8vt/PbcF1xneuNWe57z/G0Bxfh00cufhWXF6DiStLM8+jcLUpg=="],
+    "@biomejs/biome": ["@biomejs/biome@2.6.6", "", { "optionalDependencies": { "@biomejs/cli-android-arm64": "2.6.6", "@biomejs/cli-android-x64": "2.6.6", "@biomejs/cli-darwin-arm64": "2.6.6", "@biomejs/cli-darwin-x64": "2.6.6", "@biomejs/cli-linux-arm64": "2.6.6", "@biomejs/cli-linux-arm64-musl": "2.6.6", "@biomejs/cli-linux-x64": "2.6.6", "@biomejs/cli-linux-x64-musl": "2.6.6", "@biomejs/cli-win32-arm64": "2.6.6", "@biomejs/cli-win32-x64": "2.6.6" }, "bin": { "biome": "bin/biome" } }, "sha512-NCgVJRyrU1+hsW1ILNaRqNAb9fRL4n49bwyef+wjVJQ488/bXbp0BfnNqTTExkiNQT3ugkgYKR1vK8NxsjlNSQ=="],
 
-    "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.6.5", "", { "os": "darwin", "cpu": "arm64" }, "sha512-bKd0EOREgnVjeZm4s9knQ+WdPOkWS3JHB+eWGHlx+Pq66bqQA1/KybwU0O+zuyAyXiphSCBcrLruZt3YtnJoaQ=="],
+    "@biomejs/cli-darwin-arm64": ["@biomejs/cli-darwin-arm64@2.6.6", "", { "os": "darwin", "cpu": "arm64" }, "sha512-/vSAqWx3by3p8w5ew+HVJDgguuaTK3U6Fb5gk/oDUH21iWOopm3gOlhT6tZfy5mTaM5R4CVc3uFWkxBtEDrKyw=="],
 
-    "@biomejs/cli-darwin-x64": ["@biomejs/cli-darwin-x64@2.6.5", "", { "os": "darwin", "cpu": "x64" }, "sha512-UkT9BECNOXSiW6SGddjyaRACy362Sc9n3vDaTFkccL0bC2gW7JzM16i4+JKPbEaDn1Sa+oETHV8KungnI/y40Q=="],
+    "@biomejs/cli-darwin-x64": ["@biomejs/cli-darwin-x64@2.6.6", "", { "os": "darwin", "cpu": "x64" }, "sha512-lLdOAJKbrAoDs+3GvTyVmMW345D9IhrIE3GgoL2eeHwO1boN4VhrSlALtFYsP0p+Jy4udUp4bTguij0qjKrH8w=="],
 
-    "@biomejs/cli-linux-arm64": ["@biomejs/cli-linux-arm64@2.6.5", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-H9cVMWBqW/lkFK9NHJdt0bpM2q7PacUDEjQoff9+m0dCV09H/jmBykfTCkbDthHf8+jCuWDJWiQFJ7bDkiGOcA=="],
+    "@biomejs/cli-linux-arm64": ["@biomejs/cli-linux-arm64@2.6.6", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-UzJdUCg9dbEGpZOuZRyehEPrnwKjx9z4Um7sWLG5x6txu7UjeWdJZuBXVGlyAdD39w2Hx0nZeK1jKC4NFUTCNQ=="],
 
-    "@biomejs/cli-linux-arm64-musl": ["@biomejs/cli-linux-arm64-musl@2.6.5", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-kfc3AePW1a0/d/gUpcIz95nf3Ce8YY2/xL0Fk3fLqAhKsotqUi6PN6BaVWss4p6ijWbiuacZ9NQ4NiQtpjbYpw=="],
+    "@biomejs/cli-linux-arm64-musl": ["@biomejs/cli-linux-arm64-musl@2.6.6", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-rw2Vsoi/WZGDyRjMXx9KZH9zsHe79LIzkdWHkLqsIkeKZm6qiGxtiIApxn7cmJSoEPaSvHaH5pRj1FhTcyL/XA=="],
 
-    "@biomejs/cli-linux-x64": ["@biomejs/cli-linux-x64@2.6.5", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-e6/WMSN/+FhH+ZOoBevps/euxFQmv6BXqYNuTn1+ITR6O4XYFjHF5PeVSNZnjkgSYmvhcDkfepSX5lXczMijGA=="],
+    "@biomejs/cli-linux-x64": ["@biomejs/cli-linux-x64@2.6.6", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-l8/aPXc1cz8VpUyd4hb5Pm5zx+X3voQBks4aLYbp5pC8KSchuHyvqDfY5xax39qCHomI/2xn6NKEot+zebG38g=="],
 
-    "@biomejs/cli-linux-x64-musl": ["@biomejs/cli-linux-x64-musl@2.6.5", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-0mHVpLNt7/FugfZ2VPugUIEIiooWIyHGGJUqU9StxamBln9hz+maXRFIECU50jaf5/ZB93veGIViN5VKgw2AEA=="],
+    "@biomejs/cli-linux-x64-musl": ["@biomejs/cli-linux-x64-musl@2.6.6", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-DiKejs+GnFbOVQsBnukUpiB+T13tqUDFGwwjsTq51vatAsaflzFzVD0BOgjVUGRrqKgE0K0Xf+wNtkcmdN2chw=="],
 
-    "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.6.5", "", { "os": "win32", "cpu": "arm64" }, "sha512-uBbfpdR/cH5up1iRJFGAPP97xKMzrgMs685CSrY7NM+Q4Unw7chY0o3JulEvJdmU6c6hGQxwqotMq7DDH0DzxA=="],
+    "@biomejs/cli-win32-arm64": ["@biomejs/cli-win32-arm64@2.6.6", "", { "os": "win32", "cpu": "arm64" }, "sha512-DjVXwQAQeHrO1JEZAEus54k40Tnh4glyU3VFLcDBKwoz0xnxCEnqw6TCMXoujcQMQynWd3AY8bLrbR1o0XNqow=="],
 
-    "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.6.5", "", { "os": "win32", "cpu": "x64" }, "sha512-07LaCeN9vvmbAAMOMsUjMfL5UbsCDkvVeyMJIgwNRc0xYqhizBGkjVzx05LYEwCXl2AiHcdzqVPR4IOYAsI1QQ=="],
+    "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.6.6", "", { "os": "win32", "cpu": "x64" }, "sha512-B7KMG26A4I9lAuxwBGMmiVcjMGAeJRoz+pzFt9brRvOAsIrgOu8ptJld5rUWui6tM1uiJwxeJhhDPuAiZtxXdw=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
     "@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
+
+    "@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
+
+    "@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
 
     "@typescript/typescript-aix-ppc64": ["@typescript/typescript-aix-ppc64@7.0.2", "", { "os": "aix", "cpu": "ppc64" }, "sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ=="],
 
@@ -97,9 +479,81 @@
 
     "bun-types": ["bun-types@1.4.4", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ=="],
 
+    "csstype": ["csstype@3.2.3", "", {}, "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ=="],
+
     "engine": ["engine@workspace:src/engine"],
 
-    "engine-hello": ["engine-hello@workspace:src/hello"],
+    "engine-adapter": ["engine-adapter@workspace:src/adapter"],
+
+    "engine-api": ["engine-api@workspace:src/api"],
+
+    "engine-auth": ["engine-auth@workspace:src/auth"],
+
+    "engine-cache": ["engine-cache@workspace:src/cache"],
+
+    "engine-crypto": ["engine-crypto@workspace:src/crypto"],
+
+    "engine-date": ["engine-date@workspace:src/date"],
+
+    "engine-device": ["engine-device@workspace:src/device"],
+
+    "engine-error": ["engine-error@workspace:src/error"],
+
+    "engine-event": ["engine-event@workspace:src/event"],
+
+    "engine-fake": ["engine-fake@workspace:src/fake"],
+
+    "engine-form": ["engine-form@workspace:src/form"],
+
+    "engine-fs": ["engine-fs@workspace:src/fs"],
+
+    "engine-func": ["engine-func@workspace:src/func"],
+
+    "engine-geo": ["engine-geo@workspace:src/geo"],
+
+    "engine-history": ["engine-history@workspace:src/history"],
+
+    "engine-json": ["engine-json@workspace:src/json"],
+
+    "engine-list": ["engine-list@workspace:src/list"],
+
+    "engine-log": ["engine-log@workspace:src/log"],
+
+    "engine-net": ["engine-net@workspace:src/net"],
+
+    "engine-number": ["engine-number@workspace:src/number"],
+
+    "engine-parse": ["engine-parse@workspace:src/parse"],
+
+    "engine-queue": ["engine-queue@workspace:src/queue"],
+
+    "engine-rand": ["engine-rand@workspace:src/rand"],
+
+    "engine-search": ["engine-search@workspace:src/search"],
+
+    "engine-seo": ["engine-seo@workspace:src/seo"],
+
+    "engine-socket": ["engine-socket@workspace:src/socket"],
+
+    "engine-spec": ["engine-spec@workspace:src/spec"],
+
+    "engine-state": ["engine-state@workspace:src/state"],
+
+    "engine-string": ["engine-string@workspace:src/string"],
+
+    "engine-test": ["engine-test@workspace:src/test"],
+
+    "engine-tool": ["engine-tool@workspace:src/tool"],
+
+    "engine-translate": ["engine-translate@workspace:src/translate"],
+
+    "engine-validate": ["engine-validate@workspace:src/validate"],
+
+    "engine-value": ["engine-value@workspace:src/value"],
+
+    "engine-virtual": ["engine-virtual@workspace:src/virtual"],
+
+    "engine-world": ["engine-world@workspace:src/world"],
 
     "fast-check": ["fast-check@4.10.2", "", { "dependencies": { "pure-rand": "^8.0.0" } }, "sha512-iK2f+YrcmoeGqk6fA0ea2bptcu/itMIm4NfEozq6N25+aG6h7s5HZbB/k1aV7b5w5sFLMCbbtRUsTVR+BgC3xw=="],
 
@@ -107,8 +561,18 @@
 
     "pure-rand": ["pure-rand@8.4.2", "", {}, "sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng=="],
 
+    "react": ["react@19.3.0", "", {}, "sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog=="],
+
+    "react-dom": ["react-dom@19.3.0", "", { "dependencies": { "scheduler": "^0.28.0" }, "peerDependencies": { "react": "^19.3.0" } }, "sha512-JDk8dgif51OjFoDE70+OT9ICyYr+69HlmihNwp1+Nsfbna3t5sIiCa9ZJktDmQ4/1b/rn26hIAR2uYXDMr5r0Q=="],
+
+    "scheduler": ["scheduler@0.28.0", "", {}, "sha512-juorfCmIkIw8tT+p5BXSm6PJjQF/ycEYmKyzURCIt/RaZIhL+PulbQ9Yu2z1HdOJDdqDTlxA1+xKBmHXJsczAw=="],
+
     "typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
+
+    "zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
+
+    "zustand": ["zustand@5.0.16", "", { "peerDependencies": { "@types/react": ">=18.0.0", "immer": ">=9.0.6", "react": ">=18.0.0", "use-sync-external-store": ">=1.2.0" }, "optionalPeers": ["@types/react", "immer", "react", "use-sync-external-store"] }, "sha512-Uv7e327ihlCfayfja3hDc0M64Upev1LWBKpRobdK4NyovDDPeeX4imWXc/wzC1yc6fkYPoAY/ncKVPAs2jrtQw=="],
   }
 }

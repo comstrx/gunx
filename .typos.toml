@@ -14,6 +14,7 @@ extend-exclude = [
     "**/node_modules/**",
     "**/.bun/**",
     "**/.hutch/**",
+    "**/.cottontail-tmp/**",
     "**/.pnpm-store/**",
     "**/.npm/**",
     "**/.yarn/**",
@@ -46,7 +47,6 @@ extend-exclude = [
     "**/target/**",
     "**/.infra/**",
     "**/fuzz/corpus/**",
-    "**/fuzz/artifacts/**",
     "**/criterion/**",
     "**/.benchmarks/**",
     "**/dist/**",
@@ -60,6 +60,7 @@ extend-exclude = [
     "**/blob-report/**",
     "**/playwright-report/**",
     "**/world/data/**",
+    "**/assets/constants/**",
 ]
 
 ignore-files = true
@@ -118,3 +119,8 @@ check-file = false
 [default.extend-words]
 brin = "brin"
 certifi = "certifi"
+fo = "fo"
+jod = "jod"
+labelled = "labelled"
+nd = "nd"
+seh = "seh"

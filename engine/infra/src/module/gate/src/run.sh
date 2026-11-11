@@ -1,166 +1,124 @@
-declare -ga GATE_PARTS=( rust python go bun infra api web mobile desktop tutor global )
-declare -ga GATE_TYPES=( deps check lint test safety audit quality security bench fuzz )
-declare -ga GATE_DEFAULT=( deps check lint test safety audit quality security )
+declare -ga GATE_TYPES=( deps check lint test safety audit quality security twins bench fuzz )
+declare -ga GATE_DEFAULT=( deps check lint test safety audit quality security twins )
+declare -ga GATE_ENGINE_ONLY=( audit fuzz )
+declare -ga GATE_FRAGMENT_ONLY=( twins )
 
 module:gate:run () {
 
-    local root="" part="" product="" type="" seconds="" pass=false failed=0
-    local -a parts=() types=()
+    local root=""
 
     root="$(core:git:root "${TOOL_ENGINE}")" || return
-    part="$(core:cli:value --part)" || part=""
-    product="$(core:cli:value --product)" || product=""
+
+    module:gate:since "${root}" ""
+
+}
+module:gate:ci () {
+
+    local root="" base=""
+
+    root="$(core:git:root "${TOOL_ENGINE}")" || return
+    base="$(module:gate:base "${root}")" || return
+
+    module:gate:since "${root}" "${base}"
+
+}
+module:gate:since () {
+
+    local root="${1}" base="${2:-}" show="${3:-}" paths="" selected=""
+    local -a targets=()
+
+    [[ -z "${base}" ]] || paths="$(core:git:changed "${root}" "${base}")" || return
+
+    selected="$(module:gate:select "${root}" "${base}" "${paths}")" || return
+    [[ -z "${selected}" ]] || mapfile -t targets <<< "${selected}"
+
+    if [[ -n "${show}" ]]; then module:gate:view "${root}" "${base}" "${paths}" "${targets[@]}"
+    else module:gate:each "${root}" "${base}" "${targets[@]}"
+    fi
+
+}
+module:gate:each () {
+
+    local root="${1}" base="${2:-}" type="" seconds="" pass=false list="" target="" part="" product=""
+    local -a types=() failed=()
+
+    shift 2
+
     type="$(core:cli:value --type)" || type=default
     seconds="$(core:cli:value --timeout)" || seconds=1800
 
     ! core:cli:flag --pass || pass=true
 
     seconds="$(core:process:seconds "${seconds}" --timeout)" || return
-    mapfile -t types < <(module:gate:types "${type}") || return
-    (( ${#types[@]} > 0 )) || return 1
+    list="$(module:gate:types "${type}")" || return
+    mapfile -t types <<< "${list}"
 
-    if [[ -n "${part}" ]]; then
-        core:list:has "${part}" "${GATE_PARTS[@]}" || { @err "Unknown part: ${part}; one of ${GATE_PARTS[*]}"; return; }
-        parts=( "${part}" )
-    else
-        mapfile -t parts < <(module:gate:present "${root}")
-    fi
+    (( $# > 0 )) || { module:gate:idle "${root}" "${base}"; return 0; }
 
-    (( ${#parts[@]} > 0 )) || { @err "Nothing to gate under ${root}"; return; }
+    @info "gates of $(core:str:join ', ' "$@")${base:+, changed since ${base}}"
 
-    for part in "${parts[@]}"; do
-        module:gate:one "${root}" "${part}" "${product}" "${types[*]}" "${seconds}" "${pass}" || failed=1
+    for target in "$@"; do
+
+        read -r part product <<< "${target}"
+
+        module:gate:one "${root}" "${part}" "${product}" "${types[*]}" "${seconds}" "${pass}" || failed+=( "${target}" )
+
     done
 
-    (( failed == 0 )) || { @err "A gate failed"; return; }
+    (( ${#failed[@]} == 0 )) || { @err "A gate failed: $(core:str:join ', ' "${failed[@]}")"; return; }
+
+}
+module:gate:idle () {
+
+    local root="${1}" base="${2:-}" part=""
+
+    part="$(core:cli:value --part)" || part=""
+
+    if [[ -n "${base}" ]]; then @succ "Nothing changed since ${base}${part:+ in ${part}}"
+    else @warn "Nothing to gate under ${root}${part:+ as ${part}}"
+    fi
 
 }
 module:gate:types () {
 
     local wanted="${1}" type=""
+    local -a types=()
 
     case "${wanted}" in
-        default)
-            printf '%s\n' "${GATE_DEFAULT[@]}"
-        ;;
-        all)
-            printf '%s\n' "${GATE_TYPES[@]}"
-        ;;
-        *)
-            for type in ${wanted//,/ }; do
-
-                core:list:has "${type}" "${GATE_TYPES[@]}" \
-                    || { @err "Unknown type: ${type}; one of default, all, ${GATE_TYPES[*]}"; return; }
-
-                @print "${type}"
-
-            done
-        ;;
+        default) types=( "${GATE_DEFAULT[@]}" ) ;;
+        all)     types=( "${GATE_TYPES[@]}" ) ;;
+        *)       read -r -a types <<< "${wanted//,/ }" ;;
     esac
 
-}
-module:gate:present () {
+    (( ${#types[@]} > 0 )) || types=( "${wanted}" )
 
-    local root="${1}" part="" product=""
+    for type in "${types[@]}"; do
 
-    if [[ ! -d "${root}/engine" && ! -d "${root}/product" ]]; then module:gate:self "${root}"; return 0; fi
+        core:list:has "${type}" "${GATE_TYPES[@]}" \
+            || { @err "Unknown type: ${type}; one of default, all, ${GATE_TYPES[*]}"; return; }
 
-    for part in rust python go bun infra; do
-        [[ ! -d "${root}/engine/${part}" ]] || @print "${part}"
     done
 
-    [[ ! -d "${root}/tutor" ]] || @print tutor
-
-    @print global
-
-    product="$(module:gate:product "${root}" "")" || return 0
-
-    for part in api web mobile desktop; do
-        [[ ! -d "${root}/product/${product}/${part}" ]] || @print "${part}"
-    done
+    @print "${types[@]}"
 
 }
-module:gate:product () {
+module:gate:fits () {
 
-    local root="${1}" wanted="${2:-}" directory=""
+    local part="${1}" chain="${2}" type="${3}"
 
-    if [[ -n "${wanted}" ]]; then
+    declare -F "module:gate:${chain}:${type}" >/dev/null || { @debug "no ${type} for ${part}"; return 1; }
 
-        [[ "${wanted}" == . || -d "${root}/product/${wanted}" ]] \
-            || { @err "Unknown product: ${wanted}; see ${root}/product"; return; }
-
-        @print "${wanted}"
-        return 0
-
+    if core:list:has "${part}" "${GATE_FRAGMENTS[@]}"; then
+        ! core:list:has "${type}" "${GATE_ENGINE_ONLY[@]}" || { @debug "${type} belongs to the engines; ${part} skips it"; return 1; }
+    else
+        ! core:list:has "${type}" "${GATE_FRAGMENT_ONLY[@]}" || { @debug "${type} belongs to the fragments; ${part} skips it"; return 1; }
     fi
-
-    for directory in "${root}"/product/*/; do
-
-        [[ -d "${directory}" ]] || continue
-        directory="${directory%/}"
-
-        @print "${directory##*/}"
-        return 0
-
-    done
-
-    [[ -d "${root}/product" ]] && { @err "No product under ${root}/product"; return; }
-
-    @print .
-
-}
-module:gate:home () {
-
-    local root="${1}" part="${2}" product="${3:-}" home="${1}"
-
-    case "${part}" in
-        rust|python|go|bun|infra)
-            home="${root}/engine/${part}"
-        ;;
-        tutor)
-            home="${root}/tutor"
-        ;;
-        global)
-            home="${root}"
-        ;;
-        api|web|mobile|desktop)
-            product="$(module:gate:product "${root}" "${product}")" || return
-            [[ "${product}" == . ]] || home="${root}/product/${product}/${part}"
-        ;;
-        *)
-            @err "Unknown part: ${part}"
-            return
-        ;;
-    esac
-
-    [[ -d "${home}" ]] || home="${root}"
-
-    @print "${home}"
-
-}
-module:gate:chain () {
-
-    local home="${1}" part="${2}" engine=""
-
-    case "${part}" in
-        api)
-            engine="$(module:gate:engine "${home}")" || { @err "No manifest for an api under ${home}"; return; }
-            [[ "${engine}" != bun ]] || { @err "An api is never a Bun package: ${home}"; return; }
-
-            @print "${engine}"
-        ;;
-        web|mobile|desktop)
-            @print bun
-        ;;
-        *)
-            @print "${part}"
-        ;;
-    esac
 
 }
 module:gate:one () {
 
-    local root="${1}" part="${2}" product="${3}" wanted="${4}" seconds="${5}" pass="${6}" home="" chain="" type="" verb="" status=0 ran=""
+    local root="${1}" part="${2}" product="${3}" wanted="${4}" seconds="${5}" pass="${6}" home="" chain="" type="" status=0 ran=""
+    local -a types=()
 
     home="$(module:gate:home "${root}" "${part}" "${product}")" || return
     [[ -d "${home}" ]] || { @err "Not a directory: ${home}"; return; }
@@ -168,14 +126,17 @@ module:gate:one () {
     chain="$(module:gate:chain "${home}" "${part}")" || return
 
     for type in ${wanted}; do
+        ! module:gate:fits "${part}" "${chain}" "${type}" || types+=( "${type}" )
+    done
 
-        verb="module:gate:${chain}:${type}"
-        declare -F "${verb}" >/dev/null || { @debug "no ${type} for ${part}"; continue; }
+    [[ "${types[*]}" != deps || "${wanted}" == deps ]] || { @debug "deps alone prepares nothing; ${part} skips it"; types=(); }
+
+    for type in "${types[@]}"; do
 
         @info "gate ${part}:${type} in ${home} (${seconds}s)"
 
         status=0
-        module:gate:budget "${home}" "${seconds}" "${verb}" || status=$?
+        module:gate:budget "${home}" "${seconds}" "module:gate:${chain}:${type}" || status=$?
 
         if (( status == 0 )); then ran+="${ran:+ }${type}"; continue; fi
 

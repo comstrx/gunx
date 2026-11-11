@@ -1,10 +1,58 @@
 [project]
 name = "engine"
 description = "The one door into the engine: the namespace root over every domain."
-requires-python = ">=3.15"
-license = "Apache-2.0"
 dynamic = ["version"]
-dependencies = ["engine-hello"]
+dependencies = [
+    "engine-adapter",
+    "engine-ai",
+    "engine-array",
+    "engine-auth",
+    "engine-broadcast",
+    "engine-broker",
+    "engine-cache",
+    "engine-cli",
+    "engine-config",
+    "engine-context",
+    "engine-crypto",
+    "engine-database",
+    "engine-date",
+    "engine-domain",
+    "engine-error",
+    "engine-event",
+    "engine-exception",
+    "engine-fake",
+    "engine-fs",
+    "engine-func",
+    "engine-gateway",
+    "engine-geo",
+    "engine-health",
+    "engine-http",
+    "engine-json",
+    "engine-log",
+    "engine-mail",
+    "engine-metric",
+    "engine-net",
+    "engine-notify",
+    "engine-number",
+    "engine-parse",
+    "engine-queue",
+    "engine-rag",
+    "engine-rand",
+    "engine-schedule",
+    "engine-search",
+    "engine-sms",
+    "engine-socket",
+    "engine-storage",
+    "engine-stream",
+    "engine-string",
+    "engine-test",
+    "engine-thread",
+    "engine-token",
+    "engine-translate",
+    "engine-validate",
+    "engine-video",
+    "engine-view",
+]
 
 [build-system]
 requires = ["hatchling"]

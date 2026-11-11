@@ -9,14 +9,11 @@ rules:
         - cargo-bins/cargo-binstall
         - crazy-max/ghaction-github-labeler
         - oven-sh/setup-bun
-
     remap:
       severity: high
-
   unpinned-uses:
     config:
       policies:
         '*': hash-pin
-
     remap:
       severity: high

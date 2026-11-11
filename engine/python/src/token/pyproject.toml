@@ -1,0 +1,24 @@
+[project]
+name = "engine-token"
+description = "Signed tokens: JWT pairs with fingerprints and opaque stored tokens"
+dynamic = ["version"]
+dependencies = [
+    "engine-crypto",
+    "engine-date",
+    "engine-error",
+    "engine-json",
+    "engine-rand",
+    "engine-string",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

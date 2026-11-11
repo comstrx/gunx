@@ -3,6 +3,11 @@ core:git:is () {
     git -C "${1}" rev-parse --show-toplevel >/dev/null 2>&1
 
 }
+core:git:has () {
+
+    git -C "${1}" rev-parse --verify --quiet "${2}^{commit}" >/dev/null 2>&1
+
+}
 core:git:root () {
 
     local root=""
@@ -26,7 +31,8 @@ core:git:changed () {
 
     local root="${1}" base="${2}"
 
-    git -C "${root}" diff --name-only "${base}" -- 2>/dev/null || { core:error:fail "Cannot diff against ${base}"; return; }
+    git -C "${root}" diff --name-only --no-renames "${base}" -- 2>/dev/null || { core:error:fail "Cannot diff against ${base}"; return; }
+    git -C "${root}" ls-files --others --exclude-standard
 
 }
 core:git:head () {

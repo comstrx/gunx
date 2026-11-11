@@ -1,0 +1,16 @@
+{
+  "name": "engine-validate",
+  "private": true,
+  "type": "module",
+  "description": "Validation: the zod door, engine fields, Laravel rules, faults and field facts",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-date": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-value": "workspace:*",
+    "zod": "catalog:"
+  }
+}

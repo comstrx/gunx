@@ -1,0 +1,16 @@
+{
+  "name": "engine-parse",
+  "private": true,
+  "type": "module",
+  "description": "Parsers: durations, sizes, ranges, semver, env files, query strings, patterns",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-date": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-string": "workspace:*",
+    "engine-value": "workspace:*"
+  }
+}

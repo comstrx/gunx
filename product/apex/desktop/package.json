@@ -3,21 +3,37 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The desktop surface: every role of the product from its spec.",
+  "description": "The desktop surface: every office role from its spec, in an Electrobun window.",
   "packageManager": "bun@1.4.4",
   "engines": {
     "bun": ">=1.4.4"
   },
+  "dependencies": {
+    "engine": "link:engine",
+    "react": "link:react",
+    "react-dom": "link:react-dom"
+  },
   "devDependencies": {
-    "@biomejs/biome": "2.6.5",
+    "@biomejs/biome": "2.6.6",
+    "@tailwindcss/postcss": "4.3.4",
     "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "postcss": "8.5.32",
+    "tailwindcss": "4.3.4",
     "typescript": "7.0.2"
   },
   "scripts": {
-    "check": "tsc -p .",
-    "lint": "biome ci .",
-    "test": "bun test tests",
-    "audit": "bun audit --audit-level=low",
-    "gate": "bun install --frozen-lockfile && bun run check && bun run lint && bun run test && bun run audit"
+    "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/bun && pwd)/.bun\" bun install --frozen-lockfile && bun run --cwd native deps",
+    "compile": "bun tools/compile.ts",
+    "check": "bun tools/compile.ts && tsc -p . && bun tools/analyze.ts && bun run --cwd native typecheck",
+    "typecheck": "tsc -p .",
+    "lint": "biome ci . && bun run --cwd native check",
+    "test": "bun test ./tests && bun run --cwd native test",
+    "build": "bun tools/build.ts",
+    "native": "bun run --cwd native",
+    "app": "bun tools/build.ts && bun run --cwd native app",
+    "audit": "bun audit --audit-level=low && bun run --cwd native audit",
+    "gate": "bun run deps && bun run check && bun run lint && bun run test && bun run build && bun run audit"
   }
 }

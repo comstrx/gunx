@@ -1,0 +1,18 @@
+{
+  "name": "engine-fake",
+  "private": true,
+  "type": "module",
+  "description": "Fake data: seeded Arabic and English people, places, commerce, dates, schemas",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-date": "workspace:*",
+    "engine-rand": "workspace:*",
+    "engine-string": "workspace:*",
+    "engine-validate": "workspace:*",
+    "engine-value": "workspace:*",
+    "engine-world": "workspace:*"
+  }
+}

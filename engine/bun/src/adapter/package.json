@@ -1,0 +1,13 @@
+{
+  "name": "engine-adapter",
+  "private": true,
+  "type": "module",
+  "description": "Ports: typed ports with fallbacks and scoped overrides, families, runtime facts",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-error": "workspace:*"
+  }
+}

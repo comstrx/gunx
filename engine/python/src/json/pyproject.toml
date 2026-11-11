@@ -1,0 +1,17 @@
+[project]
+name = "engine-json"
+description = "Fast JSON values on orjson: encode, decode, walks, merges, prunes"
+dynamic = ["version"]
+dependencies = ["engine-error", "orjson"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

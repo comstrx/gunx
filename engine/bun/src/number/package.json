@@ -1,0 +1,10 @@
+{
+  "name": "engine-number",
+  "private": true,
+  "type": "module",
+  "description": "Numbers: math, bounded rounding, Intl formatting, CLDR plural categories, words",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

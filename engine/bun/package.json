@@ -12,11 +12,18 @@
     "src/*"
   ],
   "catalog": {
-    "@biomejs/biome": "2.6.5",
+    "@biomejs/biome": "2.6.6",
     "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "fast-check": "4.10.2",
     "mitata": "1.0.34",
-    "typescript": "7.0.2"
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "subset-font": "2.9.0",
+    "typescript": "7.0.2",
+    "zod": "4.6.7",
+    "zustand": "5.0.16"
   },
   "dependencies": {
     "engine": "workspace:*"
@@ -24,17 +31,24 @@
   "devDependencies": {
     "@biomejs/biome": "catalog:",
     "@types/bun": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "fast-check": "catalog:",
     "mitata": "catalog:",
-    "typescript": "catalog:"
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": "catalog:",
+    "zod": "catalog:"
   },
   "scripts": {
     "check": "tsc -p .",
     "lint": "biome ci .",
-    "test": "bun test tests",
-    "fuzz": "bun test fuzz",
-    "bench": "bun run benches/hello.bench.ts",
+    "test": "bun test ./tests --coverage && bun tests/coverage.ts",
+    "fuzz": "bun test ./fuzz",
+    "bench": "for file in benches/*.bench.ts; do bun \"$file\" || exit 1; done",
     "audit": "bun audit --audit-level=low",
-    "gate": "bun install --frozen-lockfile && bun run check && bun run lint && bun run test && bun run fuzz && bun run audit"
+    "gate": "bun install --frozen-lockfile && bun run link && bun run check && bun run lint && bun run test && bun run fuzz && bun run audit",
+    "link": "BUN_INSTALL_GLOBAL_DIR=\"$(pwd)/.bun\" sh -c 'cd src/engine && bun link && cd ../../node_modules/react && bun link && cd ../react-dom && bun link'",
+    "record": "bun tests/record.ts"
   }
 }

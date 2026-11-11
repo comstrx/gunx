@@ -1,0 +1,15 @@
+{
+  "name": "engine-seo",
+  "private": true,
+  "type": "module",
+  "description": "SEO: metadata, titles, canonical and language links, robots, sitemaps, JSON-LD",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-date": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

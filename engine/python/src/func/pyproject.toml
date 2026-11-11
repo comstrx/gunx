@@ -1,0 +1,17 @@
+[project]
+name = "engine-func"
+description = "Retries, breakers, memo, batching, callable metadata and the native core picker"
+dynamic = ["version"]
+dependencies = ["engine-error", "engine-log", "engine-rand", "engine-thread"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

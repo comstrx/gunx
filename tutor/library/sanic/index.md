@@ -1,39 +1,43 @@
 # Sanic
 
-Status: not in `engine/python` yet; this file governs the day `engine.http` lands.
+Status: Sanic 25.12 under the Python engine's `http` domain; every Python api service is an `http.App`.
 
-The HTTP framework of `engine/python`, owned by one domain, `engine.http`, and seen by nobody else. Every Python `api` is a Sanic application built by the engine; Sanic's `Sanic`, `Request`, `HTTPResponse`, `Blueprint` and `Config` types never cross the facade.
+The HTTP framework of the Python engine, owned by one domain, `http`, and seen by nobody else: `Sanic`, `HTTPResponse`, `Blueprint` and `Config` never cross the facade, and a service's lint refuses `sanic` outright.
 
 ## Owner
 
-| Concern                         | Engine home                   | Sanic underneath                                               |
-| ------------------------------- | ----------------------------- | -------------------------------------------------------------- |
-| application, workers, lifecycle | `http.create`, `http.serve`   | `Sanic(name)`, the worker manager, `before_server_start`       |
-| routes, groups, params, guards  | `http.Router` (the route DSL) | `app.add_route`, blueprints only inside the engine             |
-| request, binder, validation     | `http.Request`, `http.bind`   | `sanic.Request` read once into engine values                   |
-| one response, the envelope      | `http.Response`               | `HTTPResponse` with the envelope of `global/work`              |
-| throttle, trace, idempotency    | `http` middlewares            | request and response middleware registered by the engine       |
-| websockets                      | `socket`                      | Sanic's websocket route behind the engine's frames             |
-| errors                          | `http` exception handler      | one handler rendering `Fault`; no Sanic error reaches a client |
+| Concern                         | Engine home                                    | Sanic underneath                                                       |
+| ------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------- |
+| application, workers, lifecycle | `app.py`: `App`, `seal`, `serve`               | `Sanic(name)`, `before_server_start`, `after_server_stop`, `run`       |
+| routes, groups, params, guards  | `route.py` `group.py` `router.py`              | `add_route` with one wrapper per route at `seal`; blueprints never     |
+| request, binder, validation     | `Request` (a `sanic.Request`), `Binder`        | `request_class=Request`; the binder reads the signature once           |
+| one answer, the envelope        | `Response` builds, `Answer` annotates          | `HTTPResponse` and `ResponseStream`, bodies encoded by the engine      |
+| trace, throttle, CORS, headers  | `edge.py`: `Edge`; `throttle.py`: `Throttle`   | `on_request`, `on_response`; the onion runs inside the route wrapper   |
+| websockets                      | `channel.py`: `Channel` over the socket domain | `add_websocket_route`, guards run in `trace` before the upgrade        |
+| errors                          | `App.render`, the exception domain             | one `exception(Exception)`; a `SanicException` becomes a `Fault` first |
+| documentation                   | `/openapi.json` from the routes (`Docs`)       | one plain route, hidden routes left out                                |
 
 ## Laws
 
-- **Final wrapper:** a handler receives `http.Request` and returns `http.Response` or raises `Fault`; a status, a header or a body is never written by hand above the engine; `http.Response` is the only constructor of an answer (`ok created accepted empty page fail stream file`).
-- **Workers:** Sanic's own worker manager, one process per core by default, `uvloop`, `orjson` as the serializer, access logs off (the engine's `trace` replaces them); `single_process` only in tests.
-- **Binder:** path, query, headers, cookies and body are bound into one typed shape per route through the engine's `validate`; an unknown field is refused; a body ceiling per route class; multipart through the engine's upload policy.
-- **Lifecycle:** `setup` of every domain in `before_server_start` through the application's registry; `close` in `after_server_stop`; nothing opens a connection at import time.
-- **Middleware order:** `trace` first (request id, locale, actor), then `throttle`, `idempotent`, `cacheable`, the route, then the response middleware that stamps `X-Request-Id` and security headers; the order is a tuple in one file and a test pins it.
-- **Streaming:** server-sent events and ndjson through `http.Response.stream`, chunked, with a heartbeat and a client-disconnect check; a websocket is a `socket` channel.
-- **Client:** outbound HTTP is `net`, never Sanic; the same egress, timeout, retry and breaker laws as `library/hyper`.
+- **One answer:** a handler receives `http.Request` and returns an `http.Answer` built by `http.Response` (`ok created accepted empty page fail problem json text html raw redirect file stream sse`), plain data (wrapped by `Response.ok`) or `None` (204), or raises `Fault`; a status, a header or a body is never written by hand above the engine.
+- **Workers:** `serve(host, port, workers)`: one worker runs `single_process`, more run Sanic's worker manager; `uvloop` and `TOUCHUP` only in `serve`; access logs, motd and auto-extend off; the service's settings choose the count.
+- **Binder:** each parameter is bound by name and annotation: `request`, a path parameter coerced through `parse` (`int float bool`), a `validate.Shape` decoded once from the body (msgspec, unknown fields refused), any other required name from the query; a missing or bad one is `VALIDATION` with `http.param`; a shape on a non-JSON body is `UNSUPPORTED_MEDIA` with `http.media`; one body ceiling per application (`Limits.body_bytes`), header, timeout, keep-alive, shutdown and frame limits beside it.
+- **Lifecycle:** `App.lifecycle(*factories)` enters async context managers in `before_server_start` through one `AsyncExitStack` and closes them in reverse in `after_server_stop`; nothing opens a connection at import time; `ready` flips only after every factory entered; `seal()` adds every route once before `listen` or `serve`, and a later `mount` is `http.sealed`; `down(retry)` answers 503 with `Retry-After` beside the probes and `/ready` fails while draining or down.
+- **Phases:** `trace → down → preflight → actor → throttle → guards → middleware → handler → render → stamp`, recorded in `App.describe()["phases"]`. `trace` takes or mints the request id (64 alphanumeric characters at most), refuses duplicated `Authorization`, `Content-Length` and `Host`, answers 503 while `down`, answers a CORS preflight, reads the bearer into the actor and runs socket guards; `stamp` writes `X-Request-Id`, the security headers, the rate-limit limit and remainder and the CORS headers for an allowed origin, then flushes deferred context work; a 401 carries `WWW-Authenticate: Bearer`, a 405 `Allow`, a 429 `Retry-After` and `X-RateLimit-Limit`.
+- **CORS:** origins are an allowlist given to `App(origins=…)`; a preflight from an allowed origin gets 204 with fixed methods, headers and a 600-second age; any other origin gets `FORBIDDEN` with `http.origin`; `*` echoes the origin and no answer allows credentials (bearer tokens, never cookies).
+- **Errors:** one handler maps and reports once (a `SanicException` becomes a `Fault` first), then the nearest renderer by class answers, or `Response.fail`; a 5xx shows only the code's message.
+- **Streaming:** server-sent events and byte streams through `Response.stream` (chunked) and `Response.sse` (a `retry` frame, `no-cache`, `X-Accel-Buffering: no`); a websocket is a channel of the engine's socket domain, guarded before the upgrade.
+- **Client:** outbound HTTP is the engine's `net`, never Sanic or aiohttp directly.
 
 ## Traps
 
-- Sanic reads a body lazily: a handler that returns before `await request.body` leaves the stream; the binder always drains or refuses by size first.
-- `app.config` is global and mutable: the engine writes it once in `create` and never reads it afterward; settings live in the engine's `config`.
-- Blueprint groups copy middleware on registration; a middleware added after a blueprint is attached does not reach it, so the engine registers in a fixed order.
-- A sync handler blocks the loop; every handler is `async`; CPU work goes through `thread.offload`.
-- Sanic's own `json` response uses the stdlib unless the serializer is set; the engine sets `orjson` once in `create`.
+- One Sanic name per process: a second `Sanic("x")` raises; the engine names each app `<name>_<n>` from a counter.
+- A router finalizes once: `seal()` adds every route once, and `listen()` resets `router` and `signal_router` after stop, so a test can serve the same app twice.
+- Keep-alive clients hold `after_server_stop` until their timeout: `listen()` closes idle clients before `close()`, which took a test suite from 32 s to 1 s.
+- `app.config` is global and mutable: the engine writes it once in `_configure_` and in `serve`, and settings live in the engine's `config`.
+- A sync handler blocks the loop; every handler is `async`; CPU work goes through the thread offload.
+- Sanic's own `json()` uses its default dumps; the engine never calls it: every body is encoded by the engine's `json` inside `Response`.
 
 ## Direction
 
-Laravel's route ergonomics on Sanic's speed: groups, names, guards, limits, constraints and generated OpenAPI from the same declarations, the route DSL of `stack/engine/python`.
+Per-route body ceilings and multipart through the upload policy are the next laws to land.

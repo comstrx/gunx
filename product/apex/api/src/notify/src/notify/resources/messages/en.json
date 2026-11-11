@@ -1,0 +1,7 @@
+{
+  "reasons": {
+    "device.input": "Check the token and the platform",
+    "notice.missing": "No such notification",
+    "notice.paging": "Check the page and the limit"
+  }
+}

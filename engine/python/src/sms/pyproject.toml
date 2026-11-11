@@ -1,0 +1,25 @@
+[project]
+name = "engine-sms"
+description = "SMS and WhatsApp: one Text, adapters for log and HTTP providers"
+dynamic = ["version"]
+dependencies = [
+    "engine-adapter",
+    "engine-error",
+    "engine-log",
+    "engine-net",
+    "engine-parse",
+    "engine-rand",
+    "engine-validate",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

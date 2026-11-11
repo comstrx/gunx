@@ -1,0 +1,39 @@
+[project]
+name = "engine-http"
+description = "HTTP lifecycle: bootstrap, route, middleware, request, response, socket, docs"
+dynamic = ["version"]
+dependencies = [
+    "engine-array",
+    "engine-cache",
+    "engine-context",
+    "engine-crypto",
+    "engine-date",
+    "engine-error",
+    "engine-exception",
+    "engine-health",
+    "engine-json",
+    "engine-log",
+    "engine-parse",
+    "engine-rand",
+    "engine-socket",
+    "engine-thread",
+    "engine-token",
+    "engine-translate",
+    "engine-validate",
+    "multidict",
+    "sanic",
+    "uvloop",
+    "websockets",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

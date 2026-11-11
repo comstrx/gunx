@@ -1,0 +1,18 @@
+{
+  "name": "engine-cache",
+  "private": true,
+  "type": "module",
+  "description": "Cache: memory maps, cookies, one storage port for local/session/native, boxes",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-crypto": "workspace:*",
+    "engine-date": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

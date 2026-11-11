@@ -1,0 +1,14 @@
+{
+  "name": "engine-date",
+  "private": true,
+  "type": "module",
+  "description": "Dates: UTC calendar math, parts, ranges, locale weeks, Arabic and English text",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-number": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

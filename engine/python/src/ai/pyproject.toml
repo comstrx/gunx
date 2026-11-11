@@ -1,0 +1,30 @@
+[project]
+name = "engine-ai"
+description = "Models routed by task: chat, complete, embed over provider adapters"
+dynamic = ["version"]
+dependencies = [
+    "engine-adapter",
+    "engine-cache",
+    "engine-crypto",
+    "engine-error",
+    "engine-fs",
+    "engine-json",
+    "engine-log",
+    "engine-net",
+    "engine-rand",
+    "engine-string",
+    "engine-thread",
+    "engine-validate",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

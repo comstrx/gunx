@@ -1,0 +1,45 @@
+import * as geo from "engine/geo";
+import { bench, do_not_optimize, run } from "mitata";
+
+const cairo = { lat: 30.0444, lng: 31.2357 };
+const riyadh = { lat: 24.7136, lng: 46.6753 };
+const path = Array.from({ length: 500 }, ( _, index ) => ({ lat: 30 + index * 0.001, lng: 31 + Math.sin(index) * 0.001 }));
+const spots = Array.from({ length: 2000 }, ( _, index ) => geo.destination(cairo, (index % 50) * 100, (index * 37) % 360));
+const wide = Array.from({ length: 2000 }, ( _, index ) => ({ lat: -60 + (index % 120), lng: -170 + ((index * 7) % 340) }));
+const line = geo.encode(path);
+const hash = geo.geohash(cairo, 9);
+const box = geo.bounds(spots) as geo.Bounds;
+const polygon = [{ lat: 29, lng: 30 }, { lat: 29, lng: 32 }, { lat: 31, lng: 32 }, { lat: 31, lng: 30 }];
+
+bench("geo.distance", () => do_not_optimize(geo.distance(cairo, riyadh)));
+bench("geo.bearing", () => do_not_optimize(geo.bearing(cairo, riyadh)));
+bench("geo.destination", () => do_not_optimize(geo.destination(cairo, 1000, 45)));
+bench("geo.interpolate", () => do_not_optimize(geo.interpolate(cairo, riyadh, 0.3)));
+bench("geo.parse", () => do_not_optimize(geo.parse("30.0444, 31.2357")));
+bench("geo.format", () => do_not_optimize(geo.format(cairo)));
+bench("geo.link", () => do_not_optimize(geo.link(cairo, "apple", "Tahrir")));
+bench("geo.geohash 9", () => do_not_optimize(geo.geohash(cairo, 9)));
+bench("geo.ungeohash", () => do_not_optimize(geo.ungeohash(hash)));
+bench("geo.neighbors", () => do_not_optimize(geo.neighbors(hash)));
+bench("geo.encode 500", () => do_not_optimize(geo.encode(path)));
+bench("geo.decode 500", () => do_not_optimize(geo.decode(line)));
+bench("geo.tile", () => do_not_optimize(geo.tile(cairo, 15)));
+bench("geo.untile", () => do_not_optimize(geo.untile({ x: 19230, y: 13526, z: 15 })));
+bench("geo.bounds 2000", () => do_not_optimize(geo.bounds(wide)));
+bench("geo.fit 2000", () => do_not_optimize(geo.fit(wide, { width: 800, height: 600 })));
+bench("geo.contains", () => do_not_optimize(geo.contains(box, cairo)));
+bench("geo.inside polygon", () => do_not_optimize(geo.inside(cairo, polygon)));
+bench("geo.area", () => do_not_optimize(geo.area(polygon)));
+bench("geo.length 500", () => do_not_optimize(geo.length(path)));
+bench("geo.along 500", () => do_not_optimize(geo.along(path, 30_000)));
+bench("geo.simplify 500", () => do_not_optimize(geo.simplify(path, 20)));
+bench("geo.snap 500", () => do_not_optimize(geo.snap(riyadh, path)));
+bench("geo.progress 500", () => do_not_optimize(geo.progress(riyadh, path)));
+bench("geo.nearest 2000", () => do_not_optimize(geo.nearest(riyadh, spots)));
+bench("geo.near 2000 r1km", () => do_not_optimize(geo.near(cairo, spots, 1000)));
+bench("geo.centroid 2000", () => do_not_optimize(geo.centroid(spots)));
+bench("geo.cluster 2000 r500", () => do_not_optimize(geo.cluster(spots, 500)));
+bench("geo.cluster 2000 r5km", () => do_not_optimize(geo.cluster(spots, 5000)));
+bench("geo.cluster wide 2000 r50km", () => do_not_optimize(geo.cluster(wide, 50_000)));
+
+await run();

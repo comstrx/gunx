@@ -1,0 +1,17 @@
+[project]
+name = "engine-stream"
+description = "Byte streams: ranges, pacing, pipes, tees, HLS/DASH playlists, resumable uploads"
+dynamic = ["version"]
+dependencies = ["engine-date", "engine-error", "engine-fs", "engine-json", "engine-thread"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

@@ -1,0 +1,32 @@
+[project]
+name = "api-gateway"
+version = "0.1.0"
+description = "The one external door: doors per audience, relayed identity, the gathered docs"
+requires-python = ">=3.15"
+license = "Apache-2.0"
+dependencies = [
+    "api-contract",
+    "engine-auth",
+    "engine-config",
+    "engine-database",
+    "engine-error",
+    "engine-event",
+    "engine-health",
+    "engine-http",
+    "engine-json",
+    "engine-log",
+    "engine-metric",
+    "engine-net",
+    "engine-queue",
+    "engine-token",
+    "engine-translate",
+    "engine-validate",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gateway"]
+dev-mode-dirs = ["src"]

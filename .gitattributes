@@ -133,6 +133,7 @@ uv.lock               linguist-generated=true merge=binary
 bun.lock              linguist-generated=true merge=binary
 Cargo.lock            linguist-generated=true merge=binary
 go.sum                linguist-generated=true merge=binary
+go.work.sum           linguist-generated=true merge=binary
 package-lock.json     linguist-generated=true merge=binary
 pnpm-lock.yaml        linguist-generated=true merge=binary
 yarn.lock             linguist-generated=true merge=binary

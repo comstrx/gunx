@@ -1,0 +1,3 @@
+from engine.validate import Shape
+
+class Dna(Shape): ...

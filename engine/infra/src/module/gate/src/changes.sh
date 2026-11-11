@@ -1,106 +1,85 @@
-module:gate:parts () {
+module:gate:changes () {
 
-    local path="" project="" fragment=""
+    local root="" base=""
+
+    root="$(core:git:root "${TOOL_ENGINE}")" || return
+    base="$(module:gate:base "${root}")" || return
+
+    module:gate:since "${root}" "${base}" view
+
+}
+module:gate:base () {
+
+    local root="${1}" base=""
+
+    ! core:cli:flag --all && [[ "${CI_ALL:-false}" != true ]] || return 0
+
+    if base="$(core:cli:value --base)"; then
+
+        core:git:has "${root}" "${base}" || { @err "Cannot diff against ${base}"; return; }
+
+    else
+
+        base="${CI_BASE:-HEAD~1}"
+        core:git:has "${root}" "${base}" || { @warn "Cannot diff against ${base}; everything is gated"; return 0; }
+
+    fi
+
+    @print "${base}"
+
+}
+module:gate:owners () {
+
+    local path="" rest="" project="" owner=""
 
     while IFS= read -r path; do
 
         [[ -n "${path}" ]] || continue
 
+        owner="root=root"
+
         case "${path}" in
             engine/*/*)
-                @print "engine=${path#engine/}" | sed 's#/.*##'
+                rest="${path#engine/}"
+                ! core:list:has "${rest%%/*}" "${GATE_ENGINES[@]}" || owner="engine=${rest%%/*}"
             ;;
-            product/*/*)
-                project="${path#product/}"
-                fragment="${project#*/}"
-                project="${project%%/*}"
-                @print "product=${project}/${fragment%%/*}"
+            product/*/*/*)
+                rest="${path#product/}"
+                project="${rest%%/*}"
+                rest="${rest#*/}"
+                ! core:list:has "${rest%%/*}" "${GATE_FRAGMENTS[@]}" || owner="product=${project}/${rest%%/*}"
             ;;
             tutor/*)
-                @print "tutor=tutor"
-            ;;
-            *)
-                @print "global=root"
+                owner="tutor=tutor"
             ;;
         esac
 
-    done | sort -u
+        printf '%s\t%s\n' "${owner}" "${path}"
+
+    done
 
 }
-module:gate:changes () {
+module:gate:parts () {
 
-    local root="" base="" line="" key="" value="" fragment="" part="" project="" touched=0 every=0
+    module:gate:owners | cut -f1 | sort -u
 
-    local -a products=() projects=() rows=()
-    local -A moved=()
+}
+module:gate:files () {
 
-    root="$(core:git:root "${TOOL_ENGINE}")" || return
-    base="$(core:cli:value --base)" || base="${CI_BASE:-HEAD~1}"
+    local root="${1}" part="${2}" product="${3:-}" wanted="root=root" owner="" path=""
 
-    ! core:cli:flag --all && [[ "${CI_ALL:-false}" != true ]] || every=1
-
-    if (( every == 0 )); then
-
-        while IFS= read -r line; do
-
-            key="${line%%=*}"
-            value="${line#*=}"
-            touched=1
-
-            case "${key}" in
-                engine)  moved["${value}"]=1 ;;
-                product) products+=( "${value}" ) ;;
-                tutor)   moved[tutor]=1 ;;
-                global)  moved[global]=1 ;;
-            esac
-
-        done < <(core:git:changed "${root}" "${base}" | module:gate:parts)
-
+    if core:list:has "${part}" "${GATE_ENGINES[@]}"; then wanted="engine=${part}"
+    elif core:list:has "${part}" "${GATE_FRAGMENTS[@]}"; then wanted="product=${product}/${part}"
+    elif [[ "${part}" == tutor ]]; then wanted="tutor=tutor"
     fi
 
-    if [[ ! -d "${root}/product" && ! -d "${root}/engine" ]]; then
+    module:gate:mono "${root}" || wanted=""
 
-        (( every == 1 || touched == 1 )) || { module:gate:emit; return; }
+    module:gate:owners | while IFS=$'\t' read -r owner path; do
 
-        while IFS= read -r part; do
-            module:gate:row rows "${part}" ""
-        done < <(module:gate:self "${root}")
-
-        module:gate:emit "${rows[@]}"
-
-        return 0
-
-    fi
-
-    for part in rust python go bun infra; do
-
-        [[ -d "${root}/engine/${part}" ]] || continue
-        (( every == 1 )) || [[ -n "${moved[${part}]+x}" ]] || continue
-
-        module:gate:row rows "${part}" ""
+        [[ -n "${wanted}" && "${owner}" != "${wanted}" ]] || @print "${path}"
 
     done
-
-    if [[ -d "${root}/tutor" ]] && { (( every == 1 )) || [[ -n "${moved[tutor]+x}" ]]; }; then module:gate:row rows tutor ""; fi
-    if (( every == 1 )) || [[ -n "${moved[global]+x}" || -n "${moved[infra]+x}" ]]; then module:gate:row rows global ""; fi
-
-    for fragment in api web mobile desktop; do
-
-        if (( every == 1 )); then mapfile -t projects < <(module:gate:projects "${root}" "${fragment}")
-        else mapfile -t projects < <(module:gate:fragment "${root}" "${fragment}" "${products[*]}" "${!moved[*]}" "${touched}")
-        fi
-
-        for project in "${projects[@]}"; do
-
-            [[ -n "${project}" ]] || continue
-
-            module:gate:row rows "${fragment}" "${project}"
-
-        done
-
-    done
-
-    module:gate:emit "${rows[@]}"
 
 }
 module:gate:fragment () {
@@ -126,85 +105,127 @@ module:gate:fragment () {
     done
 
 }
-module:gate:manifest () {
+module:gate:plan () {
 
-    module:gate:engine "${1}" >/dev/null
+    local root="${1}" every="${2:-0}" paths="${3:-}" owner="" part="" project="" touched=0
+    local -a products=() projects=()
+    local -A moved=()
 
-}
-module:gate:engine () {
+    while IFS= read -r owner; do
 
-    local directory="${1}"
+        touched=1
 
-    if [[ -f "${directory}/pyproject.toml" ]]; then @print python
-    elif [[ -f "${directory}/Cargo.toml" ]]; then @print rust
-    elif [[ -f "${directory}/go.work" || -f "${directory}/go.mod" ]]; then @print go
-    elif [[ -f "${directory}/package.json" ]]; then @print bun
-    else return 1
-    fi
+        case "${owner}" in
+            engine=*)  moved["${owner#*=}"]=1 ;;
+            product=*) products+=( "${owner#*=}" ) ;;
+            *)         moved["${owner%%=*}"]=1 ;;
+        esac
 
-}
-module:gate:projects () {
+    done < <(module:gate:parts <<< "${paths}")
 
-    local root="${1}" fragment="${2}" directory=""
+    if ! module:gate:mono "${root}"; then
 
-    if [[ ! -d "${root}/product" ]]; then
-        ! module:gate:manifest "${root}" || @print .
+        (( every == 0 && touched == 0 )) || module:gate:self "${root}"
+
         return 0
+
     fi
 
-    for directory in "${root}"/product/*/"${fragment}"; do
+    for part in "${GATE_ENGINES[@]}"; do
 
-        module:gate:manifest "${directory}" || continue
+        [[ -d "${root}/engine/${part}" ]] || continue
+        (( every == 1 )) || [[ -n "${moved[${part}]+x}" ]] || continue
 
-        directory="${directory%/*}"
-        @print "${directory##*/}"
+        @print "${part}"
 
     done
 
-}
-module:gate:row () {
+    if [[ -d "${root}/tutor" ]] && { (( every == 1 )) || [[ -n "${moved[tutor]+x}" ]]; }; then @print tutor; fi
+    if (( every == 1 )) || [[ -n "${moved[root]+x}" || -n "${moved[infra]+x}" ]]; then @print root; fi
 
-    local -n _rows="${1}"
-    local part="${2}" product="${3}" os=""
+    for part in "${GATE_FRAGMENTS[@]}"; do
 
-    for os in $(module:gate:runners "${part}"); do
-        _rows+=( "{\"part\":\"${part}\",\"product\":\"${product}\",\"os\":\"${os}\"}" )
-    done
-
-}
-module:gate:runners () {
-
-    case "${1}" in
-        infra|global) @print ubuntu-latest macos-latest ;;
-        *)            @print ubuntu-latest ;;
-    esac
-
-}
-module:gate:self () {
-
-    local root="${1}" engine=""
-
-    if [[ -f "${root}/infra.toml" && -f "${root}/src/main.sh" ]]; then
-        @print infra
-    elif engine="$(module:gate:engine "${root}")"; then
-        if [[ "${engine}" == bun ]] && grep -q '"gate"' -- "${root}/package.json"; then @print web
-        else @print "${engine}"
+        if (( every == 1 )); then mapfile -t projects < <(module:gate:projects "${root}" "${part}")
+        else mapfile -t projects < <(module:gate:fragment "${root}" "${part}" "${products[*]}" "${!moved[*]}" "${touched}")
         fi
-    elif [[ -f "${root}/index.md" ]]; then
-        @print tutor
-    fi
 
-    @print global
+        for project in "${projects[@]}"; do
+
+            [[ -z "${project}" ]] || @print "${part} ${project}"
+
+        done
+
+    done
 
 }
-module:gate:emit () {
+module:gate:pick () {
 
-    local body=""
+    local wanted="${1:-}" only="${2:-}" part="" product=""
 
-    (( $# == 0 )) || body="$(core:str:join , "$@")"
+    while read -r part product; do
 
-    @print "matrix=[${body}]"
+        [[ -n "${part}" ]] || continue
+        [[ -z "${wanted}" || "${part}" == "${wanted}" ]] || continue
+        [[ -z "${only}" || -z "${product}" || "${product}" == "${only}" ]] || continue
 
-    [[ -z "${GITHUB_OUTPUT:-}" ]] || printf 'matrix=[%s]\n' "${body}" >> "${GITHUB_OUTPUT}"
+        @print "${part}${product:+ ${product}}"
+
+    done
+
+}
+module:gate:present () {
+
+    local root="${1}" first="" part="" product=""
+
+    first="$(module:gate:product "${root}" "" 2>/dev/null)" || first=""
+
+    module:gate:plan "${root}" 1 | module:gate:pick "" "${first}" | while read -r part product; do
+        @print "${part}"
+    done
+
+}
+module:gate:select () {
+
+    local root="${1}" base="${2:-}" paths="${3:-}" part="" product="" every=0
+
+    part="$(core:cli:value --part)" || part=""
+    product="$(core:cli:value --product)" || product=""
+
+    [[ -z "${part}" ]] || module:gate:known "${part}" || return
+    [[ -z "${product}" ]] || module:gate:product "${root}" "${product}" >/dev/null || return
+    [[ -n "${base}" ]] || every=1
+
+    module:gate:plan "${root}" "${every}" "${paths}" | module:gate:pick "${part}" "${product}"
+
+}
+module:gate:view () {
+
+    local root="${1}" base="${2}" paths="${3}" detail="" target="" part="" product=""
+    local -a files=() rows=()
+
+    shift 3
+
+    (( $# > 0 )) || { module:gate:idle "${root}" "${base}"; return 0; }
+
+    detail="$(core:cli:value --part)" || detail=""
+
+    if [[ -n "${base}" ]]; then @info "Changes since ${base}"
+    else @info "Everything under ${root}"
+    fi
+
+    for target in "$@"; do
+
+        read -r part product <<< "${target}"
+        mapfile -t files < <(module:gate:files "${root}" "${part}" "${product}" <<< "${paths}")
+
+        if [[ -z "${base}" ]]; then rows+=( "${target}" )
+        elif (( ${#files[@]} == 0 )); then rows+=( "${target}"$'\t'"follows what it builds on" )
+        elif [[ -z "${detail}" ]]; then rows+=( "${target}"$'\t'"${#files[@]} changed" )
+        else @print "${files[@]}"
+        fi
+
+    done
+
+    (( ${#rows[@]} == 0 )) || @print "${rows[@]}" | core:ui:table
 
 }

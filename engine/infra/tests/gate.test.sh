@@ -12,8 +12,8 @@ fixture:module:gate:repo () {
 }
 test:module:gate:lists-the-types () {
 
-    @eq "$(module:gate:types default | tr '\n' ' ')" 'deps check lint test safety audit quality security '
-    @eq "$(module:gate:types all | tr '\n' ' ')" 'deps check lint test safety audit quality security bench fuzz '
+    @eq "$(module:gate:types default | tr '\n' ' ')" 'deps check lint test safety audit quality security twins '
+    @eq "$(module:gate:types all | tr '\n' ' ')" 'deps check lint test safety audit quality security twins bench fuzz '
     @eq "$(module:gate:types deps,fuzz | tr '\n' ' ')" 'deps fuzz '
     @errors 'Unknown type: nope' module:gate:types nope
     @errors 'Unknown type: nope' module:gate:types check,nope
@@ -97,5 +97,34 @@ TOOL
     @contains "$(module:gate:one "${root}" infra '' 'check test' 7 true 2>&1)" 'gate infra passed: check test!'
     @errors 'ran out of its 1s budget' module:gate:one "${root}" infra '' 'bench' 1 false
     @contains "$(module:gate:one "${root}" infra '' 'lint' 7 false 2>&1)" 'nothing to run'
+
+}
+
+test:module:gate:twins-compare-the-shared-files-of-a-product () {
+
+    local root=""
+
+    root="$(fixture:module:gate:repo)"
+    mkdir -p "${root}/product/demo/web/src/types" "${root}/product/demo/mobile/src/types" "${root}/product/demo/desktop/src/types"
+    printf 'export type A = 1;\n' > "${root}/product/demo/web/src/types/index.ts"
+    printf 'export type A = 1;\n' > "${root}/product/demo/mobile/src/types/index.ts"
+    cd "${root}/product/demo/web" || return
+
+    @contains "$(module:gate:bun:twins 2>&1)" 'twins agree'
+    printf 'export type A = 2;\n' > "${root}/product/demo/desktop/src/types/index.ts"
+    @errors 'twins drift: src/types/index.ts differs between web and desktop' module:gate:bun:twins
+    printf 'export type A = 1;\n' > "${root}/product/demo/desktop/src/types/index.ts"
+    mkdir -p "${root}/product/demo/web/src/elements" "${root}/product/demo/mobile/src/elements" "${root}/product/demo/desktop/src/elements"
+    printf 'dom\n' > "${root}/product/demo/web/src/elements/block.tsx"
+    printf 'native\n' > "${root}/product/demo/mobile/src/elements/block.tsx"
+    printf 'dom\n' > "${root}/product/demo/desktop/src/elements/block.tsx"
+    @contains "$(module:gate:bun:twins 2>&1)" 'twins agree'
+    printf 'drift\n' > "${root}/product/demo/desktop/src/elements/block.tsx"
+    @errors 'twins drift: src/elements/block.tsx differs between web and desktop' module:gate:bun:twins
+    rm -f -- "${root}/product/demo/web/src/elements/block.tsx" "${root}/product/demo/mobile/src/elements/block.tsx" "${root}/product/demo/desktop/src/elements/block.tsx"
+    rm -f -- "${root}/product/demo/mobile/src/types/index.ts" "${root}/product/demo/desktop/src/types/index.ts"
+    @contains "$(module:gate:bun:twins 2>&1)" 'no twin surface'
+    cd "${root}/product/demo/api" || return
+    @contains "$(module:gate:one "${root}" api demo 'twins' 7 false 2>&1)" 'nothing to run'
 
 }

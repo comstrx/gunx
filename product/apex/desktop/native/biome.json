@@ -1,0 +1,90 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.6/schema.json",
+  "root": true,
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!bun.lock",
+      "!**/*.d.ts",
+      "!.hutch",
+      "!.cottontail-tmp",
+      "!build",
+      "!artifacts"
+    ]
+  },
+  "formatter": {
+    "enabled": false
+  },
+  "linter": {
+    "domains": {
+      "project": "all",
+      "test": "all"
+    },
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUndeclaredVariables": "error",
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "useImportExtensions": "error"
+      },
+      "style": {
+        "useImportType": "error",
+        "noParameterAssign": "error",
+        "useConst": "error",
+        "noNonNullAssertion": "error"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noConsole": "error"
+      },
+      "a11y": "error",
+      "security": {
+        "preset": "recommended"
+      },
+      "complexity": {
+        "preset": "recommended",
+        "useMaxParams": {
+          "level": "error",
+          "options": {
+            "max": 6
+          }
+        }
+      }
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "javascript": {
+    "globals": ["Bun"]
+  },
+  "overrides": [
+    {
+      "includes": ["tools/**", "src/index.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/**", "tests/**", "electrobun.config.ts"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredDependencies": "off",
+            "noUnresolvedImports": "off"
+          }
+        }
+      }
+    }
+  ]
+}

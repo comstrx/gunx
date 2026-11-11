@@ -1,0 +1,22 @@
+{
+  "name": "engine-api",
+  "private": true,
+  "type": "module",
+  "description": "Api: contracts, wire laws, one client over the envelope, realtime, fakes, stubs",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-date": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-fake": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-list": "workspace:*",
+    "engine-net": "workspace:*",
+    "engine-parse": "workspace:*",
+    "engine-rand": "workspace:*",
+    "engine-socket": "workspace:*",
+    "engine-validate": "workspace:*"
+  }
+}

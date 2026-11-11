@@ -1,0 +1,25 @@
+[project]
+name = "engine-broadcast"
+description = "Fan-out of events to sockets across workers through Redis"
+dynamic = ["version"]
+dependencies = [
+    "engine-cache",
+    "engine-error",
+    "engine-json",
+    "engine-log",
+    "engine-rand",
+    "engine-socket",
+    "engine-thread",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

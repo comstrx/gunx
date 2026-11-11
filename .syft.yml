@@ -1,9 +1,11 @@
+check-for-app-update: false
+scope: 'squashed'
+parallelism: 0
+
 log:
   quiet: false
   level: 'warn'
   verbosity: 0
-
-check-for-app-update: false
 
 format:
   pretty: false
@@ -19,9 +21,6 @@ format:
 
   cyclonedx-xml:
     pretty: false
-
-scope: 'squashed'
-parallelism: 0
 
 relationships:
   package-file-ownership: true
@@ -85,7 +84,6 @@ exclude:
   - '**/target'
   - '**/.infra'
   - '**/fuzz/corpus'
-  - '**/fuzz/artifacts'
   - '**/criterion'
   - '**/.benchmarks'
   - '**/dist'
@@ -114,6 +112,7 @@ file:
     selection: 'owned-by-package'
     digests:
       - 'sha256'
+
   content:
     skip-files-above-size: 256000
 

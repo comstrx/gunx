@@ -1,0 +1,21 @@
+{
+  "name": "engine-spec",
+  "private": true,
+  "type": "module",
+  "description": "Spec: screens, features, blocks, conditions and effects, compiled then run",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-auth": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-event": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-list": "workspace:*",
+    "engine-parse": "workspace:*",
+    "engine-string": "workspace:*",
+    "engine-validate": "workspace:*",
+    "engine-world": "workspace:*"
+  }
+}

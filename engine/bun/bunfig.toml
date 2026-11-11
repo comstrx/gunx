@@ -19,7 +19,9 @@ minimumReleaseAgeExcludes = [
     "mitata",
     "typescript",
 ]
-globalDir = ".bun"
 
 [test]
 randomize = true
+coverageReporter = ["text", "lcov"]
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["tests/**", "fuzz/**", "benches/**"]

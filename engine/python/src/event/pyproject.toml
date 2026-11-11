@@ -1,0 +1,30 @@
+[project]
+name = "engine-event"
+description = "Domain events: dispatch, listen, publish through the broker, durable, idempotent"
+dynamic = ["version"]
+dependencies = [
+    "engine-broker",
+    "engine-context",
+    "engine-database",
+    "engine-date",
+    "engine-error",
+    "engine-json",
+    "engine-log",
+    "engine-queue",
+    "engine-rand",
+    "engine-string",
+    "engine-thread",
+    "engine-validate",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

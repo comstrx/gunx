@@ -1,0 +1,27 @@
+{
+  "name": "desktop-native",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The desktop runtime: the main process, the page bridge and the app, replaceable as one folder.",
+  "packageManager": "bun@1.4.4",
+  "engines": {
+    "bun": ">=1.4.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.6",
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
+  },
+  "scripts": {
+    "deps": "bun install --frozen-lockfile",
+    "prepare": "bun tools/electrobun.ts prepare",
+    "dev": "bun tools/electrobun.ts dev --watch",
+    "app": "bun tools/app.ts",
+    "check": "biome ci .",
+    "typecheck": "tsc -p .",
+    "test": "bun test ./tests",
+    "audit": "bun audit --audit-level=low",
+    "gate": "bun run check && bun run typecheck && bun run test"
+  }
+}

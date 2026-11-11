@@ -1,0 +1,14 @@
+{
+  "name": "engine-func",
+  "private": true,
+  "type": "module",
+  "description": "Functions: once, memo, debounce, throttle, retry, timeout, breaker, lane",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-date": "workspace:*",
+    "engine-error": "workspace:*"
+  }
+}

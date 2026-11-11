@@ -1,0 +1,20 @@
+{
+  "name": "engine-world",
+  "private": true,
+  "type": "module",
+  "description": "Places, money, languages, emoji, flags, fonts, icons, colors, themes and motion",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-cache": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-event": "workspace:*",
+    "engine-list": "workspace:*",
+    "engine-number": "workspace:*",
+    "engine-string": "workspace:*",
+    "engine-value": "workspace:*"
+  }
+}

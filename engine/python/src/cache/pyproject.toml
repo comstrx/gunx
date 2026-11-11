@@ -1,0 +1,29 @@
+[project]
+name = "engine-cache"
+description = "Memory and Redis caches: remember, tags, locks, rate hits, a pub/sub channel"
+dynamic = ["version"]
+dependencies = [
+    "engine-crypto",
+    "engine-date",
+    "engine-error",
+    "engine-json",
+    "engine-log",
+    "engine-parse",
+    "engine-rand",
+    "engine-thread",
+    "cachebox",
+    "hiredis",
+    "redis",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

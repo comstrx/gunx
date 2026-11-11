@@ -1,0 +1,16 @@
+{
+  "name": "engine-value",
+  "private": true,
+  "type": "module",
+  "description": "Values: casts from the unknown, typed canonical values, exact decimals and money",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-date": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-number": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

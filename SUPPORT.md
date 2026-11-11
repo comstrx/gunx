@@ -4,8 +4,8 @@ Welcome! This page is the fastest way to get help with `gunx` with the least bac
 
 ## Choose the right place
 
-| You want to...                    | Go to...                                                                |
-| --------------------------------- | ----------------------------------------------------------------------- |
+| You want to...                    | Go to...                                                               |
+| --------------------------------- | ---------------------------------------------------------------------- |
 | Ask a question / discuss design   | 💬 [Discussions](https://github.com/comstrx/gunx/discussions)          |
 | Report a reproducible bug         | 🐞 [Issues](https://github.com/comstrx/gunx/issues)                    |
 | Report a security issue (private) | 🔒 [Security](https://github.com/comstrx/gunx/security/advisories/new) |

@@ -1,0 +1,13 @@
+{
+  "name": "engine-event",
+  "private": true,
+  "type": "module",
+  "description": "Events: typed emitters, a topic bus with wildcards and replay, signals, waits",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-error": "workspace:*"
+  }
+}

@@ -20,3 +20,4 @@ minimumReleaseAgeExcludes = [
 
 [test]
 randomize = true
+preload = ["./tests/setup.ts"]

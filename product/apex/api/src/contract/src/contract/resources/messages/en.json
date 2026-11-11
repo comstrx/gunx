@@ -1,0 +1,28 @@
+{
+  "reasons": {
+    "auth.missing": "Sign in first",
+    "auth.role": "Your role does not allow this",
+    "auth.scope": "Your access does not cover this",
+    "relay.signature": "The edge signature is wrong",
+    "token.expired": "The session expired",
+    "token.invalid": "The token is not valid",
+    "token.kind": "The token is of the wrong kind",
+    "token.fingerprint": "The token belongs to another device",
+    "http.body": "The body must be a JSON object",
+    "http.header": "A header is repeated",
+    "http.media": "The body must be JSON",
+    "http.origin": "This origin is not allowed",
+    "http.param": "A parameter is missing or invalid",
+    "http.throttled": "Too many requests, wait a moment",
+    "http.not_found": "Nothing lives at this address",
+    "http.method_not_allowed": "This method is not allowed here",
+    "http.too_large": "The request is too large",
+    "validate.shape": "The given data is invalid",
+    "validate.payload": "The body is not valid JSON",
+    "validate.rule": "A field breaks its rule",
+    "validate.guarded": "A field cannot be changed",
+    "net.segment": "This path part is not allowed",
+    "contract.service": "The service is not in the contract",
+    "auth.revoked": "The session was ended"
+  }
+}

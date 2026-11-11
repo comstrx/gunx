@@ -1,0 +1,19 @@
+{
+  "name": "engine-form",
+  "private": true,
+  "type": "module",
+  "description": "Form: values, touched and dirty paths, schema and server errors, watch, submit",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-error": "workspace:*",
+    "engine-event": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-list": "workspace:*",
+    "engine-rand": "workspace:*",
+    "engine-state": "workspace:*",
+    "engine-validate": "workspace:*"
+  }
+}

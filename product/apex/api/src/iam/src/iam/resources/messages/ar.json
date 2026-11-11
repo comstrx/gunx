@@ -1,0 +1,10 @@
+{
+  "reasons": {
+    "session.code": "الرمز غير صحيح",
+    "session.unknown": "لا يوجد حساب بهذا البريد",
+    "session.revoked": "تم إنهاء الجلسة",
+    "session.input": "راجع البريد والرمز",
+    "session.tenant": "مساحة العمل هذه غير متاحة",
+    "session.member": "أنت لست عضواً في مساحة العمل هذه"
+  }
+}

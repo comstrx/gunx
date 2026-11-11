@@ -1,0 +1,10 @@
+{
+  "name": "engine-string",
+  "private": true,
+  "type": "module",
+  "description": "Text: cases, folding, Arabic-aware masks and plurals, encodings, fuzzy compare",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

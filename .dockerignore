@@ -45,15 +45,10 @@
 **/*.rs.bk
 **/*.rs.tmp
 **/*.pdb
-**/*.dSYM/
 **/mutants.out*/
 **/rustc-ice-*.txt
-**/src-tauri/gen/schemas/
-**/fuzz/artifacts/
 **/fuzz/corpus/
-**/fuzz/coverage/
 **/flamegraph.svg
-**/perf.data*
 **/*.prof
 **/*.profraw
 **/*.profdata
@@ -89,6 +84,7 @@
 **/.turbo/
 **/.bun/
 **/.hutch/
+**/.cottontail-tmp/
 **/artifacts/
 **/hutch.lock
 **/bun-debug.log*
@@ -145,3 +141,9 @@
 **/.eggs/
 **/.tox/
 **/.nox/
+**/storage/app/**
+**/storage/logs/**
+!**/storage/app/**/
+!**/storage/logs/**/
+!**/storage/app/**/.gitkeep
+!**/storage/logs/**/.gitkeep

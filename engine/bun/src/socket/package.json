@@ -1,0 +1,19 @@
+{
+  "name": "engine-socket",
+  "private": true,
+  "type": "module",
+  "description": "Sockets: one live connection, json frames, channels, acks, reconnect, heartbeat",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-date": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-event": "workspace:*",
+    "engine-func": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-rand": "workspace:*"
+  }
+}

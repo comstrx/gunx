@@ -1,0 +1,13 @@
+{
+  "name": "engine-virtual",
+  "private": true,
+  "type": "module",
+  "description": "Virtual scrolling: window math for lists and grids, measured sizes",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-number": "workspace:*"
+  }
+}

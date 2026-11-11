@@ -1,0 +1,10 @@
+{
+  "reasons": {
+    "session.code": "The code does not match",
+    "session.unknown": "No account carries this email",
+    "session.revoked": "The session was ended",
+    "session.input": "Check the email and the code",
+    "session.tenant": "This workspace is not available",
+    "session.member": "You are not a member of this workspace"
+  }
+}

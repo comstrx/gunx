@@ -1,0 +1,10 @@
+{
+  "hello": {
+    "world": "hello world",
+    "name": "hello {name}"
+  },
+  "reasons": {
+    "hello.name": "The name is too long",
+    "hello.greeting": "No greeting exists for this locale"
+  }
+}

@@ -1,0 +1,29 @@
+[project]
+name = "engine-video"
+description = "Video: one DSL over local FFmpeg and Cloudflare Stream, HLS and playback"
+dynamic = ["version"]
+dependencies = [
+    "engine-adapter",
+    "engine-ai",
+    "engine-error",
+    "engine-fs",
+    "engine-log",
+    "engine-net",
+    "engine-rand",
+    "engine-storage",
+    "engine-stream",
+    "engine-thread",
+    "av",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

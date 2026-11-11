@@ -1,0 +1,30 @@
+[project]
+name = "api-hello"
+version = "0.1.0"
+description = "The first business domain: one greeting in two languages and three tones"
+requires-python = ">=3.15"
+license = "Apache-2.0"
+dependencies = [
+    "api-contract",
+    "engine-auth",
+    "engine-config",
+    "engine-database",
+    "engine-error",
+    "engine-event",
+    "engine-http",
+    "engine-log",
+    "engine-metric",
+    "engine-queue",
+    "engine-rand",
+    "engine-string",
+    "engine-translate",
+    "engine-validate",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hello"]
+dev-mode-dirs = ["src"]

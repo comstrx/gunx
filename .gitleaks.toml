@@ -20,6 +20,7 @@ paths = [
     '''(^|/)node_modules/''',
     '''(^|/)\.bun/''',
     '''(^|/)\.hutch/''',
+    '''(^|/)\.cottontail-tmp/''',
     '''(^|/)\.pnpm-store/''',
     '''(^|/)\.npm/''',
     '''(^|/)\.yarn/''',
@@ -52,7 +53,6 @@ paths = [
     '''(^|/)target/''',
     '''(^|/)\.infra/''',
     '''(^|/)fuzz/corpus/''',
-    '''(^|/)fuzz/artifacts/''',
     '''(^|/)criterion/''',
     '''(^|/)\.benchmarks/''',
     '''(^|/)dist/''',
@@ -82,7 +82,6 @@ regexes = [
 
 [[allowlists]]
 description = "The lab Reverb key: a public app key bound to a loopback socket"
-
 condition = "AND"
 regexTarget = "line"
 

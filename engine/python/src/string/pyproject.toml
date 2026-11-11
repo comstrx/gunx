@@ -1,0 +1,17 @@
+[project]
+name = "engine-string"
+description = "Text: fluent chains, search, folding, slugs, cases, inflection, scripts"
+dynamic = ["version"]
+dependencies = ["engine-error", "engine-func", "rapidfuzz", "stringzilla"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

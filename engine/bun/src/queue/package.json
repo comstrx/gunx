@@ -1,0 +1,19 @@
+{
+  "name": "engine-queue",
+  "private": true,
+  "type": "module",
+  "description": "Queue: a durable outbox of owned jobs with retries, delays, dedupe keys, replay",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-date": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-event": "workspace:*",
+    "engine-func": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-rand": "workspace:*",
+    "engine-cache": "workspace:*"
+  }
+}

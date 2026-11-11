@@ -3,21 +3,37 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The web surface: every role of the product from its spec.",
+  "description": "The web surface: every web role from its spec, on Next over the engine.",
   "packageManager": "bun@1.4.4",
   "engines": {
     "bun": ">=1.4.4"
   },
+  "dependencies": {
+    "engine": "link:engine",
+    "next": "16.4.5",
+    "react": "link:react",
+    "react-dom": "link:react-dom"
+  },
   "devDependencies": {
-    "@biomejs/biome": "2.6.5",
+    "@biomejs/biome": "2.6.6",
+    "@tailwindcss/postcss": "4.3.4",
     "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "postcss": "8.5.32",
+    "tailwindcss": "4.3.4",
     "typescript": "7.0.2"
   },
   "scripts": {
-    "check": "tsc -p .",
+    "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/bun && pwd)/.bun\" bun install --frozen-lockfile",
+    "compile": "bun tools/compile.ts",
+    "check": "bun tools/compile.ts && tsc -p . && bun tools/analyze.ts",
+    "typecheck": "tsc -p .",
     "lint": "biome ci .",
-    "test": "bun test tests",
+    "test": "bun test ./tests",
+    "build": "bun tools/build.ts",
+    "dev": "bun tools/compile.ts && next dev",
     "audit": "bun audit --audit-level=low",
-    "gate": "bun install --frozen-lockfile && bun run check && bun run lint && bun run test && bun run audit"
+    "gate": "bun run deps && bun run check && bun run lint && bun run test && bun run build && bun run audit"
   }
 }

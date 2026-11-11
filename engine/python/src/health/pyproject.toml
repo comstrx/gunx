@@ -1,0 +1,17 @@
+[project]
+name = "engine-health"
+description = "Liveness and readiness probes gathered from every domain"
+dynamic = ["version"]
+dependencies = ["engine-error", "engine-json", "engine-log", "engine-thread"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

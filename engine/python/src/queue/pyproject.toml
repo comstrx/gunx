@@ -1,0 +1,30 @@
+[project]
+name = "engine-queue"
+description = "Background jobs: typed tasks, retries, uniqueness, delays, workers, a graveyard"
+dynamic = ["version"]
+dependencies = [
+    "engine-broker",
+    "engine-cache",
+    "engine-context",
+    "engine-database",
+    "engine-date",
+    "engine-error",
+    "engine-json",
+    "engine-log",
+    "engine-parse",
+    "engine-rand",
+    "engine-thread",
+    "engine-validate",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "regex"
+path = "../../pyproject.toml"
+pattern = '^version = "(?P<version>[^"]+)"$'
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/engine"]

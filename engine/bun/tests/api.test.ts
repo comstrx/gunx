@@ -1,18 +1,26 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test as it } from "bun:test";
 import * as engine from "engine";
-import * as hello from "engine/hello";
-import surface from "./api.json";
+import surface from "./api.json" with { type: "json" };
+import { names } from "./record.ts";
+
+const recorded = surface as Record<string, string[]>;
 
 describe("api", () => {
 
-    test("every member exports exactly its recorded surface", () => {
+    it("every member exports exactly its recorded surface, nested namespaces by their dotted names", async () => {
 
-        expect(Object.keys(hello).sort()).toEqual(surface.hello);
+        for ( const [member, listed] of Object.entries(recorded) ) {
+
+            const loaded: Record<string, unknown> = await import(`engine/${member}`);
+
+            expect(names(loaded)).toEqual(listed);
+
+        }
 
     });
-    test("the facade names exactly the recorded members", () => {
+    it("the facade names exactly the recorded members", () => {
 
-        expect(Object.keys(engine).sort()).toEqual(Object.keys(surface).sort());
+        expect(Object.keys(engine).sort()).toEqual(Object.keys(recorded).sort());
 
     });
 

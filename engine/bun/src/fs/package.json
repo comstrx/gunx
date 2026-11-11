@@ -1,0 +1,19 @@
+{
+  "name": "engine-fs",
+  "private": true,
+  "type": "module",
+  "description": "Files: paths and globs, mime and accept rules, blobs and uploads, one disk port",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-adapter": "workspace:*",
+    "engine-crypto": "workspace:*",
+    "engine-error": "workspace:*",
+    "engine-json": "workspace:*",
+    "engine-list": "workspace:*",
+    "engine-number": "workspace:*",
+    "engine-string": "workspace:*"
+  }
+}

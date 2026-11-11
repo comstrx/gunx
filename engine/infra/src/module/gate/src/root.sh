@@ -13,12 +13,12 @@ module:gate:tutor:quality () {
     @tool typos . && module:gate:prettier --check '**/*.md'
 
 }
-module:gate:global:deps () {
+module:gate:root:deps () {
 
     @fetch gitleaks trivy syft zizmor typos taplo
 
 }
-module:gate:global:security () {
+module:gate:root:security () {
 
     local sbom=""
 
@@ -37,7 +37,7 @@ module:gate:global:security () {
     @info "sbom written to ${sbom}"
 
 }
-module:gate:global:quality () {
+module:gate:root:quality () {
 
     @tool typos . \
         && @tool taplo fmt --check \
