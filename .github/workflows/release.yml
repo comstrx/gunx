@@ -29,9 +29,9 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - uses: cargo-bins/cargo-binstall@23ee8ab6b7397851bc11705bcdf46f2519ea0285 # v1.9.0
+      - uses: cargo-bins/cargo-binstall@851112458b5f28a29e5bc14a690c3f283d9dcc6f # v1.26.2
 
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: false
 
