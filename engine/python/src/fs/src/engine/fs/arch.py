@@ -5,7 +5,7 @@ from typing import Any
 
 from compression import zstd
 from engine.date import date
-from PIL import Image as Pil
+lazy from PIL import Image as Pil
 import asyncio, bz2, gzip, lzma, os, pathlib, tarfile, zipfile, zlib
 
 type Target  = str | os.PathLike[str]

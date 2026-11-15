@@ -1,18 +1,6 @@
-import { type AnyPort, drain, type Listener, type Port, scoped } from "./port.ts";
+import type { AnyPort, Bindings, Bundle, Ports } from "./arch.ts";
+import { drain, scoped } from "./port.ts";
 import { probe } from "./runtime.ts";
-
-export type Ports = Record<string, AnyPort>;
-export type Bindings<P extends Ports> = { [K in keyof P]?: P[K] extends Port<infer T> ? T : never };
-export type Bundle<P extends Ports> = {
-    readonly ports: P;
-    use: ( bindings: Bindings<P> ) => () => void;
-    with: <R>( bindings: Bindings<P>, work: () => R ) => R;
-    watch: ( listener: Listener ) => () => void;
-    names: () => string[];
-    matrix: () => Record<string, "bound" | "fallback" | "unbound">;
-    missing: () => string[];
-    reset: () => void;
-};
 
 export function bundle<P extends Ports> ( ports: P ): Bundle<P> {
 

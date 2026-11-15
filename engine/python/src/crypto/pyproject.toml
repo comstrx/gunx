@@ -1,7 +1,7 @@
 [project]
 name = "engine-crypto"
-description = "Hashing, HMAC, AES-GCM with key rotation, argon2id passwords"
-dynamic = ["version"]
+description = "Authenticated encryption, signatures, streaming hashes and Argon2id"
+dynamic = ["version", "requires-python", "license"]
 dependencies = [
     "engine-error",
     "engine-parse",
@@ -13,13 +13,14 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "tomli-w"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-source = "regex"
-path = "../../pyproject.toml"
-pattern = '^version = "(?P<version>[^"]+)"$'
+[tool.hatch.metadata.hooks.custom]
+path = "../../metadata.py"
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "../../distribution.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engine"]

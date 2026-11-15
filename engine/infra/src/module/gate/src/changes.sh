@@ -85,8 +85,11 @@ module:gate:files () {
 module:gate:fragment () {
 
     local root="${1}" fragment="${2}" changed="${3}" moved="${4}" touched="${5:-0}" project="" home="" engine=""
+    local -a projects=()
 
-    for project in $(module:gate:projects "${root}" "${fragment}"); do
+    mapfile -t projects < <(module:gate:projects "${root}" "${fragment}")
+
+    for project in "${projects[@]}"; do
 
         if [[ "${project}" == . ]]; then home="${root}"
         else home="${root}/product/${project}/${fragment}"

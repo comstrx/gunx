@@ -1,6 +1,11 @@
 from engine.context import context
-from engine.error import Fault
-from engine.log import Render, log
+from engine.error import Code, Fault
+from engine.log import Log, Logger, Render, log
+from engine.log.sink import Sink
+from structlog.typing import EventDict
+from concurrent.futures import ThreadPoolExecutor
+from io import StringIO
+import asyncio, json, os, structlog
 from pathlib import Path
 from typing import override
 import pytest, time
@@ -153,7 +158,7 @@ def test_cleans_nested_values_and_objects () -> None:
 
     kept = Path("/srv/app")
 
-    assert Render.clean(kept) is kept and Render.clean(7) == 7
+    assert Render.clean(kept) == repr(kept) and Render.clean(7) == 7
 
 def test_redaction_stays_linear () -> None:
 
@@ -265,3 +270,338 @@ def test_debugging_is_a_plain_flag () -> None:
     log.setup("info")
 
     assert (log.debugging, log.enabled("debug"), log.enabled("warning")) == (False, False, True)
+
+@pytest.mark.parametrize("name", ["x" * 300 + "_password", "password_" + "x" * 300, "x" * 300 + "_token_" + "x" * 300])
+def test_long_names_keep_full_redaction ( name: str ) -> None:
+
+    value = "hunter22-hunter22-hunter22"
+
+    assert value not in repr(Render.clean({ name: value }))
+    assert value not in Render.scrub(f"{name}={value}")
+    assert Render.clean({ "x" * 600: "ordinary" }) == { "x" * 600: "ordinary" }
+
+def test_capture_nested_empty_scopes_restore_the_outer () -> None:
+
+    local = Log()
+    local.setup(file=Path(os.devnull))
+
+    with local.capture() as outer:
+
+        with local.capture() as inner: pass
+
+        local.info("outer")
+
+        with local.capture() as second: local.info("both")
+
+        local.info("last")
+
+    local.info("after")
+
+    assert [event["event"] for event in outer] == ["outer", "both", "last"]
+    assert inner == [] and [event["event"] for event in second] == ["both"]
+
+    local.close()
+
+async def test_capture_isolates_sibling_tasks_and_cancellation () -> None:
+
+    local = Log()
+    local.setup(file=Path(os.devnull))
+    ready = asyncio.Event()
+    resume = asyncio.Event()
+
+    async def first () -> list[EventDict]:
+
+        with local.capture() as events:
+
+            ready.set()
+            await resume.wait()
+            local.info("first")
+
+        return events
+
+    async def second () -> list[EventDict]:
+
+        await ready.wait()
+
+        with local.capture() as events:
+
+            local.info("second")
+            resume.set()
+
+        return events
+
+    left, right = await asyncio.gather(first(), second())
+
+    assert [event["event"] for event in left] == ["first"]
+    assert [event["event"] for event in right] == ["second"]
+
+    with pytest.raises(asyncio.CancelledError), local.capture() as cancelled, local.span("cancelled"):
+
+        raise asyncio.CancelledError
+
+    assert cancelled[0]["error"] == "CancelledError"
+
+    with local.capture() as fresh: local.info("fresh")
+
+    assert len(cancelled) == 1 and fresh[0]["event"] == "fresh"
+
+    local.close()
+
+async def test_inherited_capture_stops_when_its_owner_closes () -> None:
+
+    local = Log()
+    local.setup(file=Path(os.devnull))
+    ready = asyncio.Event()
+    resume = asyncio.Event()
+
+    async def child () -> None:
+
+        local.info("inside")
+        ready.set()
+        await resume.wait()
+        local.info("outside")
+
+    with local.capture() as events:
+
+        task = asyncio.create_task(child())
+        await ready.wait()
+
+    resume.set()
+    await task
+
+    assert [event["event"] for event in events] == ["inside"]
+
+    local.close()
+
+def test_instances_and_external_structlog_config_are_isolated ( tmp_path: Path ) -> None:
+
+    before = structlog.get_config().copy()
+    first, second = Log(), Log()
+
+    first.setup("info", "json", tmp_path / "first.log")
+    second.setup("error", "json", tmp_path / "second.log")
+
+    with first.capture() as a, second.capture() as b:
+
+        first.get("worker").info("first")
+        second.info("filtered")
+        second.get().error("second")
+
+    first.close()
+    second.close()
+
+    assert [event["event"] for event in a] == ["first"] and a[0]["logger"] == "worker"
+    assert [event["event"] for event in b] == ["second"]
+    assert json.loads((tmp_path / "first.log").read_text())["event"] == "first"
+    assert json.loads((tmp_path / "second.log").read_text())["event"] == "second"
+    assert structlog.get_config() == before
+
+def test_failed_setup_preserves_current_sink_and_config ( tmp_path: Path ) -> None:
+
+    local = Log()
+    target = tmp_path / "kept.log"
+
+    local.setup("info", "json", target)
+    bound = local.bind(job="keep")
+    before = local.describe()
+
+    with pytest.raises(Fault) as failed: local.setup("error", "console", tmp_path)
+
+    assert failed.value.reason == "log.open" and isinstance(failed.value.__cause__, OSError)
+
+    assert local.describe() == before
+
+    bound.info("bound")
+    local.info("live")
+    local.close()
+
+    assert [json.loads(line)["event"] for line in target.read_text().splitlines()] == ["bound", "live"]
+
+def test_span_merges_fields_and_owns_reserved_metadata () -> None:
+
+    local = Log()
+    local.setup(file=Path(os.devnull))
+    failure = Fault(Code.INTERNAL, reason="original")
+
+    with local.capture() as events:
+
+        with local.span("work", rows=1, ms=-1) as fields:
+
+            fields.update(rows=2, ms=-2, event="spoofed", level="critical")
+
+        with pytest.raises(Fault) as caught, local.span("broken", error="wrong", ms=-1) as fields:
+
+            fields.update(error="also-wrong", ms=-2, event="spoofed", level="critical")
+
+            raise failure
+
+    assert events[0]["event"] == "work" and events[0]["level"] == "info" and events[0]["rows"] == 2
+    assert events[0]["ms"] >= 0 and events[1]["ms"] >= 0
+    assert events[1]["event"] == "broken.failed" and events[1]["error"] == "Fault"
+    assert caught.value is failure
+
+    local.close()
+
+def test_span_preserves_original_error_when_logging_fails () -> None:
+
+    class Broken:
+
+        def error ( self, *_: object, **__: object ) -> None: raise RuntimeError("logging failed")
+
+    failure = ValueError("business failure")
+
+    with pytest.raises(ValueError, match="business failure") as caught, Logger(Broken()).span("broken"): raise failure
+
+    assert caught.value is failure
+
+def test_objects_cannot_serialize_secrets_after_redaction ( tmp_path: Path ) -> None:
+
+    class Hidden:
+
+        @override
+        def __repr__ ( self ) -> str: return "safe"
+
+        @override
+        def __str__ ( self ) -> str: return "password=unredacted"
+
+        def __structlog__ ( self ) -> dict[str, str]: return { "password": "unredacted" }
+
+    class Broken:
+
+        @override
+        def __repr__ ( self ) -> str: raise ValueError("unredacted")
+
+    local = Log()
+
+    for renderer in ("json", "console"):
+
+        target = tmp_path / f"{renderer}.log"
+
+        local.setup("info", renderer, target)
+        local.info("objects", data=Hidden(), broken=Broken(), nested=[Hidden()])
+        local.close()
+
+        text = target.read_text()
+
+        assert "unredacted" not in text and "safe" in text and "***" in text
+
+def test_json_output_handles_extreme_values_and_line_injection ( tmp_path: Path ) -> None:
+
+    local = Log()
+    target = tmp_path / "values.log"
+
+    local.setup("info", "json", target)
+    local.info("one\nforged", large=2**128, wild="\ud800", payload={ 1: "a", None: "b" })
+    local.close()
+
+    lines = target.read_text().splitlines()
+
+    assert len(lines) == 1
+
+    event = json.loads(lines[0])
+
+    assert event["event"] == "one\nforged" and event["large"] == 2**128 and event["wild"] == "\ud800"
+
+def test_sink_serializes_writes_and_counts_failures () -> None:
+
+    stream = StringIO()
+    sink = Sink(stream)
+
+    def write ( number: int ) -> None:
+
+        for _ in range(100): sink.msg(str(number))
+
+    with ThreadPoolExecutor(max_workers=2) as workers: list(workers.map(write, range(2)))
+
+    assert len(stream.getvalue().splitlines()) == 200 and sink.dropped == 0
+
+    sink.close()
+
+    with ThreadPoolExecutor(max_workers=2) as workers: list(workers.map(write, range(2)))
+
+    assert sink.dropped == 200
+
+def test_bound_facade_levels_and_shared_context ( tmp_path: Path ) -> None:
+
+    local = Log()
+
+    local.setup("debug", "json", tmp_path / "levels.log")
+
+    with context.scope(request_id="owned"), local.capture() as events:
+
+        local.share(locale="ar")
+        assert local.shared()["locale"] == "ar"
+        local.unshare("locale")
+        bound = local.bind(job="x").unbind("job", "missing")
+
+        for level in ("debug", "info", "warning", "error", "critical"):
+
+            getattr(local, level)("direct")
+            getattr(bound, level)("bound")
+            local.at(level.upper(), "at")
+            bound.at(level.upper(), "bound.at")
+
+        bound.at("unknown", "fallback")
+
+    assert len(events) == 21
+    assert all(event["request_id"] == "owned" and "job" not in event for event in events)
+    assert events[-1]["level"] == "info"
+    assert "locale" not in events[0]
+
+    local.close()
+
+def test_captures_do_not_cross_threads () -> None:
+
+    local = Log()
+    local.setup("info", "json", Path(os.devnull))
+
+    def work ( number: int ) -> list[EventDict]:
+
+        with local.capture() as events:
+
+            for _ in range(20): local.info("thread", worker=number)
+
+        return events
+
+    with ThreadPoolExecutor(max_workers=2) as workers: found = list(workers.map(work, range(2)))
+
+    assert len(found[0]) == len(found[1]) == 20
+    assert all(event["worker"] == index for index, events in enumerate(found) for event in events)
+
+    local.close()
+
+def test_redaction_bounds_cycles_and_never_mutates_input ( tmp_path: Path ) -> None:
+
+    local = Log()
+    local.setup("info", "json", tmp_path / "cycle.log")
+    original = { "password": "hunter2", "values": [1, 2] }
+    loop: list[object] = []
+    loop.append(loop)
+
+    with local.capture() as events: local.info("safe", original=original, loop=loop)
+
+    local.close()
+
+    assert original == { "password": "hunter2", "values": [1, 2] }
+    assert events[0]["original"] == { "password": "***", "values": [1, 2] }
+    assert "hunter2" not in (tmp_path / "cycle.log").read_text()
+    assert json.loads((tmp_path / "cycle.log").read_text())["loop"] == [[[[[[[["***"]]]]]]]]
+
+def test_secret_objects_are_hidden_without_invoking_them () -> None:
+
+    class Unknown:
+
+        @override
+        def __str__ ( self ) -> str: raise AssertionError("secret object was inspected")
+
+    assert Render.hide(Unknown()) == "***"
+    assert Render.clean({ "token": Unknown() }) == { "token": "***" }
+
+@pytest.mark.parametrize("scheme", ["BEARER", "bEaReR", "BeArEr", "bearer", "Bearer"])
+def test_free_text_bearer_redaction_is_case_insensitive ( scheme: str ) -> None:
+
+    secret = "example_credential_0123456789"
+    text = f"received {scheme} {secret}"
+
+    assert Render.scrub(text) == f"received {scheme} ***"
+    assert secret not in str(Render.clean({ "detail": [text] }))

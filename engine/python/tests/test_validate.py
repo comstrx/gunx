@@ -2,7 +2,7 @@ from engine.error import Code, Fault
 from engine.validate import Resource, Shape, field, rules, validator
 from typing import Any, override
 from typing import ClassVar
-import pytest
+import gc, pytest, weakref
 
 class Signup(Shape):
 
@@ -285,3 +285,67 @@ def test_laravel_validation_examples_behave_the_same () -> None:
     assert rules.check({ "ends": "2026-02-01", "starts": "2026-01-01" }, { "starts": "date", "ends": "date|after:starts" })["ends"]
     assert rules.check({ "shipping": True, "address": "x" }, { "shipping": "boolean", "address": "required_if_accepted:shipping" })["address"] == "x"
     assert rules.check({ "shipping": False }, { "shipping": "boolean", "address": "required_if_accepted:shipping" }) == { "shipping": False }
+
+def test_shape_metadata_is_owned_by_each_type_and_collectable () -> None:
+
+    class Child(Signup):
+
+        flag: bool = False
+
+    assert Child.fields() == ("email", "age", "tags", "flag")
+    assert Signup.fields() == ("email", "age", "tags") and Child.fields() is Child.fields()
+    assert Child.decoder() is not Signup.decoder() and Child.members() is Child.members()
+    assert Child.from_json(b'{"email":"a","flag":true}').flag
+
+    def temporary () -> weakref.ReferenceType[type[Shape]]:
+
+        class Temporary(Shape):
+
+            value: int
+
+        assert Temporary.from_json(b'{"value":1}').value == 1
+        assert Temporary.fields() == ("value",) and Temporary.members()[0].name == "value"
+
+        return weakref.ref(Temporary)
+
+    reference = temporary()
+
+    gc.collect()
+
+    assert reference() is None
+
+def test_shape_reads_buffers_without_mutating_them () -> None:
+
+    raw = bytearray(b'{"email":"a","age":"31"}')
+    before = bytes(raw)
+
+    for payload in (raw, memoryview(raw), before, before.decode()):
+
+        assert validator.shape(Signup, payload).age == 31 and bytes(raw) == before
+
+    assert validator.schema(int) == { "type": "integer" }
+
+
+def test_shape_accepts_strided_memory_without_mutating_input () -> None:
+
+    raw = b'{"email":"a","age":31}'
+    interleaved = bytearray(len(raw) * 2)
+
+    interleaved[::2] = raw
+
+    assert validator.shape(Signup, memoryview(interleaved)[::2]).age == 31
+    assert interleaved[::2] == raw
+
+@pytest.mark.parametrize(("rule", "value"), [("alpha", "abc\n"), ("alpha_num", "abc1\n"), ("alpha_dash", "a_b\n"), ("key", "abc\n"), ("numeric", "42\n")])
+def test_whole_value_rules_refuse_trailing_newlines ( rule: str, value: str ) -> None:
+
+    with pytest.raises(Fault): rules.check({ "value": value }, { "value": rule })
+
+def test_rule_sequences_preserve_regex_alternation () -> None:
+
+    spec = { "value": ["required", "regex:(?:left|right)"] }
+
+    assert rules.check({ "value": "left" }, spec) == { "value": "left" }
+    assert rules.check({ "value": "right" }, spec) == { "value": "right" }
+
+    with pytest.raises(Fault): rules.check({ "value": "other" }, spec)

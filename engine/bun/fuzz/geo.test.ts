@@ -288,3 +288,16 @@ describe("fuzz geo", () => {
     });
 
 });
+
+it("near agrees with its distance threshold for almost coincident coordinates", () => {
+
+    fc.assert(fc.property(fc.integer({ min: -80, max: 80 }), fc.integer({ min: -170, max: 170 }), fc.integer({ min: -1000, max: 1000 }), fc.integer({ min: -1000, max: 1000 }), ( lat, lng, dy, dx ) => {
+
+        const from = { lat, lng };
+        const point = { lat: lat + dy * 1e-12, lng: lng + dx * 1e-12 };
+        const radius = geo.distance(from, point);
+        expect(geo.near(from, [point], radius)).toHaveLength(1);
+
+    }), { numRuns: 5000 });
+
+});

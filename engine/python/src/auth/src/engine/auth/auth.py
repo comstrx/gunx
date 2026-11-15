@@ -3,17 +3,19 @@ from typing import Any
 
 from engine.cache import Cache, cache as shared
 from engine.crypto import crypto
+from engine.context import context
 from engine.error import Code, Fault
 from engine.http import Guard, Request
 from engine.log import log
 from engine.rand import rand
-from engine.token import Pair, token
+from engine.token import Issuer, Pair, token
 from .actor import Actor
 from .arch import (
     Ability, CODE, digest, grant, LONGEST, named, Otp, OTP_ATTEMPTS, OTP_COOLDOWN, OTP_LONGEST, OTP_TTL, REVOKED_TTL,
     SUBJECT, timed,
 )
 from .relay import Relay
+from .sessions import Sessions
 
 class Auth:
 
@@ -23,11 +25,14 @@ class Auth:
         self._abilities: dict[str, Ability] = {}
         self._roles: dict[str, tuple[str, ...]] = {}
         self._fixed: str | None = None
+        self._access: Issuer | None = None
         self.relay    = Relay()
+        self.sessions = Sessions(self._cache)
 
     def setup (
         self, cache: Cache | None = None, roles: Mapping[str, Iterable[str]] | None = None,
-        fixed_code: str | None = None,
+        fixed_code: str | None = None, *, testing: bool = False,
+        access: Issuer | None = None, refresh: Issuer | None = None,
     ) -> None:
 
         held: object = cache
@@ -39,9 +44,15 @@ class Auth:
 
             raise self._unset_("fixed_code")
 
+        if fixed_code is not None and not testing: raise self._unset_("fixed_code")
+
+        sessions = Sessions(cache or shared, access=access, refresh=refresh)
+
         self._cache = cache or shared
         self._roles = { str(name): self._scopes_(name, scopes) for name, scopes in (roles or {}).items() }
         self._fixed = fixed_code
+        self._access = access
+        self.sessions = sessions
 
     def define ( self, ability: str, check: Ability ) -> None:
 
@@ -66,6 +77,7 @@ class Auth:
     def issue ( self, actor: Actor, fingerprint: str | None = None ) -> Pair:
 
         if not isinstance(actor, Actor): raise self._unset_("actor")
+        if self._access is not None: raise Fault(Code.INTERNAL, reason="auth.session.required")
 
         scopes = actor.scopes or self.scopes_of(actor.roles)
         facts  = { **actor.facts, "roles": list(actor.roles), "scopes": list(scopes), "tenant": actor.tenant }
@@ -73,6 +85,11 @@ class Auth:
         return token.pair(actor.id, fingerprint, **facts)
 
     def actor ( self, request: Request ) -> Actor:
+
+        principal = getattr(request.ctx, "principal", None)
+
+        if isinstance(principal, Actor): return principal
+        if self._access is not None: raise Fault(Code.UNAUTHORIZED, reason="auth.principal")
 
         return Actor.from_claims(request.claims())
 
@@ -120,9 +137,18 @@ class Auth:
 
     async def alive ( self, request: Request ) -> Actor:
 
-        claims = request.claims()
+        carried = request.bearer()
+
+        if carried is None: raise Fault(Code.UNAUTHORIZED, reason="auth.missing")
+
+        claims = (
+            await request.authenticate(self._access) if self._access is not None
+            else request.claims()
+        )
 
         if await self.revoked(claims.id): raise Fault(Code.UNAUTHORIZED, reason="auth.revoked")
+
+        await self.sessions.verify(claims)
 
         return Actor.from_claims(claims)
 
@@ -145,6 +171,8 @@ class Auth:
                 if not actor.can(scope): raise Fault(Code.FORBIDDEN, reason="auth.scope", errors={ "scope": [scope] })
 
             request.ctx.principal = actor
+            request.ctx.actor = actor.id
+            context.put(actor=actor.id)
 
         return check
 

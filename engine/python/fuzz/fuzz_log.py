@@ -1,8 +1,8 @@
 from engine.log import log, Render
 from engine.log.arch import OPAQUE, SECRETS, STEMS
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import given, settings, strategies as st
 from pathlib import Path
-import time
+import time, os
 
 EXAMPLES  = 900
 MARK      = "Zq9"
@@ -28,7 +28,7 @@ WILDTREE  = st.recursive(
     max_leaves=16,
 )
 
-log.setup("info", "json", Path("/dev/null"))
+log.setup("info", "json", Path(os.devnull))
 
 def nest ( path: list[str | int], leaf: object ) -> object:
 
@@ -38,7 +38,7 @@ def nest ( path: list[str | int], leaf: object ) -> object:
 
     return held
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.one_of(WILD, NOISE, st.lists(st.one_of(WILD, NOISE), max_size=6).map("".join)))
 def scrub_never_crashes_and_settles ( text: str ) -> None:
 
@@ -48,7 +48,7 @@ def scrub_never_crashes_and_settles ( text: str ) -> None:
     assert Render.grade(text) in (0, 1, 2)
     assert Render.mask(text).count("***") >= 1
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.one_of(st.sampled_from(NAMES), NOISE, st.text(LETTERS, max_size=24), WILD), st.text(LETTERS, max_size=6), st.text(LETTERS, max_size=6))
 def stems_cover_every_graded_name ( name: str, before: str, after: str ) -> None:
 
@@ -59,7 +59,7 @@ def stems_cover_every_graded_name ( name: str, before: str, after: str ) -> None
     assert Render.grade(whole) == slow
     assert not (whole.isascii() and slow) or STEMS.search(whole.lower()) is not None
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.sampled_from(NAMES), st.sampled_from(GAPS), SOLID, NOISE, NOISE, st.booleans())
 def named_secrets_never_survive ( name: str, gap: str, secret: str, before: str, after: str, upper: bool ) -> None:
 
@@ -69,7 +69,7 @@ def named_secrets_never_survive ( name: str, gap: str, secret: str, before: str,
     assert secret not in Render.scrub(f"{before} https://host/path?a=1&{shown}={secret}&z=2 {after}")
     assert secret not in Render.scrub(f"{before}\n--{shown}={secret} {after}")
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.sampled_from(NAMES), SPACED, NOISE, NOISE, st.sampled_from(['"', "'"]))
 def quoted_secrets_never_survive ( name: str, secret: str, before: str, after: str, quote: str ) -> None:
 
@@ -79,7 +79,7 @@ def quoted_secrets_never_survive ( name: str, secret: str, before: str, after: s
     assert secret not in Render.scrub(f"{before} Form({name}=b{quote}{secret}{quote}){after}")
     assert secret not in Render.scrub(f"{before} {quote}{name}{quote} => {quote}{secret}{quote},{after}")
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.sampled_from(SCHEMES), SIGNED, SOLID, NOISE, NOISE, st.sampled_from(["user", "", "x-access-token", "a.b"]))
 def carried_secrets_never_survive ( scheme: str, signed: str, solid: str, before: str, after: str, user: str ) -> None:
 
@@ -99,7 +99,7 @@ def carried_secrets_never_survive ( scheme: str, signed: str, solid: str, before
     assert solid not in Render.scrub(f"{before} {pem} {after}")
     assert signed not in Render.scrub(f"{before} {pem[:-20]}")
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.sampled_from(NAMES), SOLID, st.lists(st.one_of(st.text(SAFE, min_size=1, max_size=6), st.integers(0, 5)), max_size=6), WILDTREE)
 def nested_secrets_never_survive ( name: str, secret: str, path: list[str | int], other: object ) -> None:
 
@@ -114,7 +114,7 @@ def nested_secrets_never_survive ( name: str, secret: str, path: list[str | int]
 
     assert secret not in repr(events)
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(PLAIN, WILDTREE)
 def plain_trees_pass_and_wild_trees_never_crash ( plain: object, wild: object ) -> None:
 
@@ -126,7 +126,7 @@ def plain_trees_pass_and_wild_trees_never_crash ( plain: object, wild: object ) 
 
     assert events[0]["plain"] == plain
 
-@settings(max_examples=EXAMPLES // 5, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES // 5, deadline=None, database=None)
 @given(st.lists(st.sampled_from(FRAGMENTS), min_size=1, max_size=24), st.integers(1, 4000))
 def soup_stays_linear ( pieces: list[str], times: int ) -> None:
 
@@ -137,6 +137,47 @@ def soup_stays_linear ( pieces: list[str], times: int ) -> None:
 
     assert time.perf_counter() - started < 2
 
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.sampled_from(NAMES), SOLID, st.integers(257, 4096), st.booleans())
+def long_keys_never_hide_the_secret_name ( name: str, secret: str, count: int, at_start: bool ) -> None:
+
+    key = name + "_" + "x" * count if at_start else "x" * count + "_" + name
+
+    assert secret not in repr(Render.clean({ key: secret }))
+    assert secret not in Render.scrub(f"{key}={secret}")
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.integers(0, 5), st.integers(0, 5), st.integers(), st.integers())
+def captures_and_spans_preserve_events ( before: int, inside: int, initial: int, changed: int ) -> None:
+
+    with log.capture() as outer:
+
+        for _ in range(before): log.info("before")
+
+        with log.capture() as inner:
+
+            for _ in range(inside): log.info("inside")
+
+        with log.span("span", count=initial, ms=-1) as facts:
+
+            facts.update(count=changed, event="wrong", level="critical", ms=-2)
+
+    assert len(outer) == before + inside + 1 and len(inner) == inside
+    assert outer[-1]["event"] == "span" and outer[-1]["count"] == changed and outer[-1]["ms"] >= 0
+
+
+@settings(max_examples=1000, deadline=None, database=None)
+@given(st.lists(st.booleans(), min_size=6, max_size=6), st.text(alphabet="abcXYZ0123456789_-", min_size=16, max_size=80))
+def bearer_case_never_exposes_credentials ( upper: list[bool], secret: str ) -> None:
+
+    scheme = "".join(letter.upper() if chosen else letter for letter, chosen in zip("bearer", upper, strict=True))
+
+    assert Render.scrub(f"{scheme} {secret}") == f"{scheme} ***"
+
+bearer_case_never_exposes_credentials()
+
+long_keys_never_hide_the_secret_name()
+captures_and_spans_preserve_events()
 scrub_never_crashes_and_settles()
 stems_cover_every_graded_name()
 named_secrets_never_survive()
@@ -147,4 +188,4 @@ plain_trees_pass_and_wild_trees_never_crash()
 soup_stays_linear()
 log.close()
 
-print(f"fuzz log  examples={EXAMPLES * 7 + EXAMPLES // 5}  ok")
+print("fuzz log  properties=11  max_examples=per-property settings  ok")

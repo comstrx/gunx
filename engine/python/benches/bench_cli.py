@@ -5,7 +5,7 @@ from engine.parse import parse
 from engine.test import Bench
 from pathlib import Path
 from typing import Literal
-import contextlib
+import contextlib, os
 
 bench = Bench()
 plain = ["demo"]
@@ -14,7 +14,7 @@ wrong = ["demo", "--wai", "3"]
 line  = ["serve", "--port=9000", "-dn4"]
 rows  = [[f"order-{index}", "ready" if index % 2 else "طلبات", index * 37, None] for index in range(50)]
 
-log.setup("info", "json", Path("/dev/null"))
+log.setup("info", "json", Path(os.devnull))
 
 def seed ( name: str, *files: str, mode: Literal["fast", "full"] = "fast", tag: list[str] | None = None, wait: float = 1.0 ) -> int:
 

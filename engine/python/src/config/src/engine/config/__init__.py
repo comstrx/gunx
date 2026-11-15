@@ -1,6 +1,6 @@
 from .config import Config
 from .env import Env
-from .settings import Settings
+lazy from .settings import Settings
 
 config = Config()
 env    = Env()

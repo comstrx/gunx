@@ -8,6 +8,7 @@ import re
 FIELDS  = "id,name,size,mimeType,parents"
 FOLDER  = "application/vnd.google-apps.folder"
 CHUNK   = 1024 * 1024
+PART    = 5 * CHUNK
 
 GOOGLE = "https://www.googleapis.com"
 
@@ -95,6 +96,6 @@ def keyed ( key: object ) -> str:
 
     return key
 
-def unkeyed ( key: object ) -> Fault:
+def unkeyed ( _: object ) -> Fault:
 
-    return Fault(Code.VALIDATION, reason="storage.key", errors={ "key": [str(key)[:64]] })
+    return Fault(Code.VALIDATION, reason="storage.key", errors={ "key": ["is invalid"] })

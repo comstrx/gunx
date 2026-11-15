@@ -1,22 +1,7 @@
 import * as error from "engine-error";
 import * as event from "engine-event";
-import { createStore, type StoreApi } from "./zustand.ts";
-
-export type Page<T> = { items: readonly T[]; next: string | null };
-export type FeedStatus = "idle" | "loading" | "refreshing" | "done" | "failed";
-export type FeedState<T> = { items: readonly T[]; next: string | null; ended: boolean; status: FeedStatus; failure: error.Fault | undefined };
-export type FeedOptions<T> = { load: ( cursor: string | null, signal: AbortSignal ) => Promise<Page<T>>; key: ( item: T ) => string };
-export type Feed<T> = StoreApi<FeedState<T>> & {
-    more: () => Promise<void>;
-    refresh: () => Promise<void>;
-    put: ( item: T, at?: "start" | "end" ) => void;
-    drop: ( key: string ) => void;
-    abort: () => void;
-    reset: () => void;
-};
-
-type Settled = { status: FeedStatus; failure: error.Fault | undefined };
-type Flight = { controller: AbortController; promise: Promise<void>; settle: () => void; before: Settled };
+import type { Feed, FeedOptions, FeedState, FeedFlight as Flight, Page, Settled } from "./arch.ts";
+import { createStore } from "./zustand.ts";
 
 function flight ( before: Settled ): Flight {
 
@@ -27,12 +12,11 @@ function flight ( before: Settled ): Flight {
 }
 function page<T> ( found: unknown ): Page<T> {
 
-    const shaped = typeof found === "object" && found !== null && Array.isArray((found as { items?: unknown }).items);
-    const next = (found as { next?: unknown } | null)?.next;
+    const { items, next } = (typeof found === "object" && found !== null ? found : {}) as { items?: unknown; next?: unknown };
 
-    if ( !shaped || (next !== null && typeof next !== "string") ) throw error.fault("internal", "feed.page", { message: "not a page" });
+    if ( !Array.isArray(items) || (next !== null && typeof next !== "string") ) throw error.fault("internal", "feed.page", { message: "not a page" });
 
-    return found as Page<T>;
+    return { items: items as T[], next };
 
 }
 
@@ -79,7 +63,17 @@ export function feed<T> ( options: FeedOptions<T> ): Feed<T> {
 
         try {
 
-            found = page<T>(await event.race(load(fresh ? null : store.getState().next, mine.controller.signal), mine.controller.signal));
+            const loaded = await event.race(load(fresh ? null : store.getState().next, mine.controller.signal), mine.controller.signal);
+
+            if ( current !== mine ) {
+
+                mine.settle();
+
+                return;
+
+            }
+
+            found = page<T>(loaded);
             known = fresh ? new Set<string>() : new Set(seen);
             added = unseen(found.items, known);
 
@@ -91,6 +85,14 @@ export function feed<T> ( options: FeedOptions<T> ): Feed<T> {
                 store.setState({ status: "failed", failure: error.of(thrown) });
 
             }
+
+            mine.settle();
+
+            return;
+
+        }
+
+        if ( current !== mine ) {
 
             mine.settle();
 

@@ -5,98 +5,7 @@ import * as list from "engine-list";
 import * as rand from "engine-rand";
 import * as state from "engine-state";
 import * as validate from "engine-validate";
-
-export type Status = "idle" | "pending" | "done" | "failed";
-export type Errors = Readonly<Record<string, string>>;
-export type Mode = "change" | "blur" | "submit";
-export type Paths = readonly string[] | string;
-export type Seat = ( index: number ) => number | undefined;
-export type Ask<V> = ( value: unknown, values: V, signal: AbortSignal ) => Promise<string | undefined> | string | undefined;
-export type State<V, R> = {
-    values: V;
-    initial: V;
-    touched: readonly string[];
-    errors: Errors;
-    served: Errors;
-    checking: readonly string[];
-    status: Status;
-    result: R | undefined;
-    fault: error.Fault | undefined;
-    submits: number;
-    attempts: number;
-};
-export type Moves<V> = {
-    put: ( path: string, value: unknown ) => void;
-    patch: ( values: Partial<V> ) => void;
-    seat: ( path: string, items: readonly unknown[], seat: Seat ) => void;
-    touch: ( path: string ) => void;
-    fail: ( errors: Errors ) => void;
-    forgive: ( path?: string ) => void;
-    reset: ( values?: V ) => void;
-    rebase: ( values?: V ) => void;
-};
-export type Field = {
-    readonly path: string;
-    get: <T = unknown>() => T;
-    set: ( value: unknown ) => void;
-    touch: () => void;
-    reset: () => void;
-    error: () => string | undefined;
-    touched: () => boolean;
-    dirty: () => boolean;
-    checking: () => boolean;
-};
-export type Rows = {
-    items: <T = unknown>() => T[];
-    length: () => number;
-    push: ( ...values: readonly unknown[] ) => void;
-    insert: ( index: number, ...values: readonly unknown[] ) => void;
-    replace: ( index: number, value: unknown ) => void;
-    remove: ( index: number ) => void;
-    move: ( from: number, to: number ) => void;
-    swap: ( a: number, b: number ) => void;
-    clear: () => void;
-};
-export type Watcher<V> = ( values: V, changed: string ) => void;
-export type Options<V extends object, O, R> = {
-    schema: validate.Schema<O>;
-    initial: V;
-    submit: ( value: O, key: string, signal: AbortSignal ) => Promise<R>;
-    fallback?: string | undefined;
-    mode?: Mode | undefined;
-    recheck?: Mode | undefined;
-    rebase?: boolean | undefined;
-    verify?: Readonly<Record<string, Ask<V>>> | undefined;
-    watch?: Readonly<Record<string, Watcher<V>>> | undefined;
-};
-export type Form<V extends object, O, R> = {
-    state: state.Instance<State<V, R>, Moves<V>>;
-    field: ( path: string ) => Field;
-    rows: ( path: string ) => Rows;
-    watch: ( paths: Paths, watcher: Watcher<V> ) => () => void;
-    set: ( path: string, value: unknown ) => void;
-    patch: ( values: Partial<V> ) => void;
-    touch: ( path: string ) => void;
-    fail: ( errors: Errors ) => void;
-    forgive: ( path?: string ) => void;
-    check: ( paths?: Paths ) => O | undefined;
-    verify: ( path: string, ask?: Ask<V> ) => Promise<boolean>;
-    submit: () => Promise<R | undefined>;
-    abort: () => void;
-    reset: ( values?: V ) => void;
-    rebase: ( values?: V ) => void;
-    status: () => Status;
-    fault: () => error.Fault | undefined;
-    dirty: ( path?: string ) => boolean;
-    changes: () => Partial<V>;
-    valid: ( paths?: Paths ) => boolean;
-    values: () => V;
-    errors: () => Errors;
-};
-
-type Found<O> = { ok: boolean; value: O | undefined; issues: Errors };
-type Flight<V> = { controller: AbortController; ask: Ask<V>; value: unknown; done: Promise<boolean> };
-type Clean<V> = { ask: Ask<V>; value: unknown };
+import type { Ask, Clean, Errors, Field, Flight, Form, Found, Mode, Moves, Options, Paths, Rows, Seat, State, Watcher } from "./arch.ts";
 
 export const root = "_form";
 
@@ -177,6 +86,7 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
     const watchers = new Map<string, Set<Watcher<V>>>();
     const flights = new Map<string, Flight<V>>();
     const clean = new Map<string, Clean<V>>();
+    const verified = new Set<string>();
     const fields = new Map<string, Field>();
     const tables = new Map<string, Rows>();
     let key: string | undefined;
@@ -275,9 +185,16 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
     const edit = ( changed: readonly string[], next: ( current: State<V, R> ) => Partial<State<V, R>> ): void => {
 
         const current = held.getState();
-        const halted = halt(( path ) => changed.some(( edited ) => related(path, edited)));
+        const halted = halt(() => true);
 
-        held.setState({ status: current.status === "pending" ? "pending" : "idle", ...(halted ? { checking: [...flights.keys()] } : {}), ...next(current) });
+        clean.clear();
+
+        const changedState = next(current);
+        const errors = sift(changedState.errors ?? current.errors, ( path ) => !verified.has(path));
+        const served = sift(changedState.served ?? current.served, ( path ) => !verified.has(path));
+
+        verified.clear();
+        held.setState({ status: current.status === "pending" ? "pending" : "idle", ...(halted ? { checking: [...flights.keys()] } : {}), ...changedState, errors, served });
 
         if ( after() === "change" ) probe("touched");
 
@@ -351,12 +268,18 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
         if ( !ask ) return Promise.resolve(true);
         if ( own(served, path) !== undefined || Object.keys(shown(read().issues, [path])).length ) return Promise.resolve(false);
-        if ( known && known.ask === ask && Object.is(known.value, value) ) return Promise.resolve(true);
-        if ( running && running.ask === ask && Object.is(running.value, value) ) return running.done;
+        if ( known && known.ask === ask && Object.is(known.values, values) ) return Promise.resolve(true);
+        if ( running && running.ask === ask && Object.is(running.values, values) ) return running.done;
 
         const controller = new AbortController();
         const mine = (): boolean => flights.get(path)?.controller === controller;
-        const done = event.race(Promise.resolve().then(() => ask(value, values, controller.signal)), controller.signal).then(( message ) => {
+        const done = event.race(Promise.resolve().then(() => {
+
+            controller.signal.throwIfAborted();
+
+            return ask(value, values, controller.signal);
+
+        }), controller.signal).then(( message ) => {
 
             if ( !mine() ) return false;
 
@@ -364,10 +287,25 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
             const current = held.getState();
 
+            if ( current.values !== values ) {
+
+                held.setState({ checking: [...flights.keys()] });
+
+                return false;
+
+            }
+
+            if ( message ) verified.add(path);
+            else {
+
+                if ( clean.size >= most ) clean.clear();
+
+                clean.set(path, { ask, values });
+
+            }
+
             if ( message ) held.setState({ checking: [...flights.keys()], errors: { ...current.errors, [path]: message }, served: { ...current.served, [path]: message } });
             else held.setState({ checking: [...flights.keys()] });
-
-            if ( !message ) clean.set(path, { ask, value });
 
             return !message;
 
@@ -382,9 +320,10 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
         });
 
+        flights.set(path, { controller, ask, values, done });
         running?.controller.abort();
-        flights.set(path, { controller, ask, value, done });
-        held.setState({ checking: [...flights.keys()] });
+
+        if ( mine() ) held.setState({ checking: [...flights.keys()] });
 
         return done;
 
@@ -399,6 +338,8 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
     };
     const fail = ( errors: Errors ): void => {
+
+        for ( const path of Object.keys(errors) ) verified.delete(path);
 
         const current = held.getState();
 
@@ -436,6 +377,7 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
         flight = undefined;
         halt(() => true);
         clean.clear();
+        verified.clear();
         held.setState({ values: initial, initial, touched: [], errors: {}, served: {}, checking: [], status: "idle", result: undefined, fault: undefined, attempts: 0 });
         fire(["*"]);
 
@@ -450,7 +392,11 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
     };
     const send = async (): Promise<R | undefined> => {
 
+        const before = run;
         const value = probe("all");
+
+        if ( before !== run ) return undefined;
+
         const attempts = held.getState().attempts + 1;
 
         if ( value === undefined ) {
@@ -471,11 +417,21 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
         run = turn;
         sending = controller;
         halt(() => true);
+
+        if ( turn !== run || controller.signal.aborted ) return undefined;
+
+        verified.clear();
         held.setState({ status: "pending", errors: {}, served: {}, checking: [], fault: undefined, attempts, submits: held.getState().submits + 1 });
 
         try {
 
-            const result = await event.race(Promise.resolve().then(() => submit(value, using, controller.signal)), controller.signal);
+            const result = await event.race(Promise.resolve().then(() => {
+
+                controller.signal.throwIfAborted();
+
+                return submit(value, using, controller.signal);
+
+            }), controller.signal);
 
             if ( turn !== run ) return undefined;
 
@@ -660,15 +616,27 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
             if ( flight ) return flight;
 
-            const mine: Promise<R | undefined> = send().finally(() => {
+            const { promise, resolve, reject } = Promise.withResolvers<R | undefined>();
+            const release = (): void => {
 
-                if ( flight === mine ) flight = undefined;
+                if ( flight === promise ) flight = undefined;
+
+            };
+
+            flight = promise;
+            void send().then(( value ) => {
+
+                release();
+                resolve(value);
+
+            }, ( cause: unknown ) => {
+
+                release();
+                reject(cause);
 
             });
 
-            flight = mine;
-
-            return mine;
+            return promise;
 
         },
     };

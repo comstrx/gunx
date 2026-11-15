@@ -1,6 +1,6 @@
 core:validate:url () {
 
-    [[ "${1:-}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~%/+=-]*)?(\?[A-Za-z0-9._~%&=+-]*)?$ ]]
+    [[ "${1:-}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~%/+=:@-]*)?(\?[A-Za-z0-9._~%&=+/:@-]*)?$ ]]
 
 }
 core:validate:identifier () {
@@ -41,5 +41,10 @@ core:validate:tag () {
 core:validate:name () {
 
     [[ "${1:-}" =~ ^[a-z][a-z0-9-]*$ ]]
+
+}
+core:validate:email () {
+
+    [[ "${1:-}" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]
 
 }

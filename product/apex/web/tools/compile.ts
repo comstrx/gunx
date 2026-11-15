@@ -15,17 +15,17 @@ const fonts = resolve(assets, "font");
 const published = platform === "web" ? resolve(root, "public/fonts") : resolve(cache, "fonts");
 let failed = false;
 
-export function themeOf ( brand: string ): string {
+export function themeOf ( themes: (typeof roles)[RoleName]["config"]["themes"] ): string {
 
-    const tones = palettes(brand);
+    const tones = palettes(themes.brand);
     const colors = ( palette: typeof tones.light ): Record<string, string> => Object.fromEntries(Object.entries(palette).filter(([key]) => key !== "shadow").map(([key, value]) => [`color-${key}`, value]));
     const base = {
         ...colors(tones.light),
         "shadow-raised": tones.light.shadow,
         "radius-md": `${radius.md / 16}rem`,
         "radius-lg": `${radius.lg / 16}rem`,
-        "font-sans": '"Readex Pro", "Figtree", ui-sans-serif, system-ui, sans-serif',
-        "ease-standard": "cubic-bezier(0.2, 0, 0, 1)",
+        "font-sans": `${themes.fonts.map(( font ) => JSON.stringify(font)).join(", ")}, ui-sans-serif, system-ui, sans-serif`,
+        "ease-standard": themes.ease,
     };
 
     return [
@@ -66,7 +66,14 @@ if ( platform !== "mobile" ) {
 
     mkdirSync(dirname(resolve(styles, "fonts.css")), { recursive: true });
     writeFileSync(resolve(styles, "fonts.css"), `${world.fontFaces("/fonts")}\n`);
-    writeFileSync(resolve(styles, "theme.css"), themeOf(roles[current].config.themes.brand));
+    writeFileSync(resolve(styles, "theme.css"), themeOf(roles[current].config.themes));
+
+    const boot = await Bun.build({ entrypoints: [resolve(root, "src/native/appearance.ts")], target: "browser", format: "iife", minify: true });
+    const script = boot.outputs[0];
+
+    if ( !boot.success || !script ) throw new AggregateError(boot.logs, "appearance script did not compile");
+
+    writeFileSync(resolve(platform === "web" ? resolve(root, "public") : cache, "appearance.js"), await script.text());
 
 }
 

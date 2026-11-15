@@ -1,50 +1,9 @@
 import * as list from "engine-list";
 import * as string from "engine-string";
+import * as translate from "engine-translate";
 import regionRows from "../data/regions.json" with { type: "json" };
+import type { Countries, Country, Dialed, Grouped, Key, Keys, Named, Numbered, Order, Phone, Ranked, Region, Row, Seat } from "./arch.ts";
 import { baseOf, live, once, over, slot, word } from "./lazy.ts";
-
-export type Named = { en: string; ar: string; native: string };
-export type Region = { code: string; name: { en: string; ar: string } };
-export type Country = {
-    code: string;
-    alpha3: string;
-    numeric: string;
-    key: string | null;
-    areas: readonly string[];
-    primary: boolean;
-    trunk: string | null;
-    lengths: readonly [number, number] | null;
-    region: Region | null;
-    subregion: Region | null;
-    currencies: readonly string[];
-    languages: readonly string[];
-    name: Named;
-};
-export type Grouped = { region: Region; subregions: { region: Region; countries: Country[] }[] };
-export type Phone = { country: Country | undefined; key: string | undefined; national: string; e164: string | undefined; valid: boolean };
-export type Key = { code: string; key: string; areas: readonly string[]; primary: boolean; name: Named };
-export type Keys = { readonly all: readonly Key[]; of: ( country: string ) => string | undefined; search: ( query: string, limit?: number ) => Key[] };
-export type Countries = list.Catalog<Country> & {
-    byAlpha3: ( code: string ) => Country | undefined;
-    byNumeric: ( code: string ) => Country | undefined;
-    byPhone: ( phone: string ) => Country | undefined;
-    inRegion: ( region: string ) => Country[];
-    spending: ( currency: string ) => Country[];
-    speaking: ( language: string ) => Country[];
-    nameOf: ( code: string, locale?: string ) => string;
-    dialingOf: ( code: string ) => string | undefined;
-    localOf: ( phone: string ) => string;
-    phone: ( text: string, fallback?: string ) => Phone;
-    sorted: ( locale?: string ) => Country[];
-    grouped: ( locale?: string ) => Grouped[];
-};
-
-type Row = Omit<Country, "region" | "subregion" | "areas" | "lengths"> & { region: string | null; subregion: string | null; areas: readonly string[] | null; lengths: readonly number[] | null };
-type Seat = { country: Country; exact: boolean; size: number };
-type Dialed = { country: Country; size: number; area: boolean };
-type Order = { collator: Intl.Collator; sorted: readonly Country[] };
-type Ranked = { entry: Key; at: number; rank: number };
-type Numbered = { entry: Key; at: number; codes: readonly string[] };
 
 const regionByCode = new Map((regionRows as Region[]).map(( region ) => [region.code, region]));
 const letters = /\p{L}/u;
@@ -187,7 +146,12 @@ export function nameIn ( named: Named | Region["name"] | undefined, locale: stri
 
     if ( !named ) return fallback;
 
-    return (isArabic(locale) ? named.ar : named.en) || named.en || fallback;
+    if ( isArabic(locale) ) return named.ar || named.en || fallback;
+    if ( baseOf(locale) === "en" ) return named.en || fallback;
+
+    const localized = translate.regionName(fallback, locale);
+
+    return localized !== fallback ? localized : named.en || fallback;
 
 }
 export function regionOf ( code: string ): Region | undefined {
@@ -405,7 +369,7 @@ export function defineKeys ( from: readonly Country[] = everyCountry() ): Keys {
 
     const byCode = new Map(all.map(( entry ) => [entry.code, entry.key]));
     const byName = list.catalog(all, ( entry ) => entry.code, ( entry ) => [entry.code, entry.name.en, entry.name.ar, entry.name.native], ( entry ) => Number(entry.primary));
-    const numbers = once(() => all.map(( entry, at ): Numbered => ({ entry, at, codes: dialings(entry.key, entry.areas).map(string.digits) })));
+    const numbers = once(() => all.map(( entry, at ): Numbered => ({ entry, at, codes: dialings(entry.key, entry.areas).map(digitsOf) })));
     const longest = once(() => numbers().reduce(( most, found ) => found.codes.reduce(( size, code ) => Math.max(size, code.length), most), 0));
 
     return {

@@ -1,5 +1,3 @@
-export { guard, type Patch, patchQuery } from "./extra.ts";
-export {
-    type Action, type Adapter, type Block, create, type Entry, format, type History, type Href, isCurrent, type Listener, local, type Memory, memoryAdapter,
-    parse, port, type Saved, type Snapshot, type Target, webAdapter,
-} from "./history.ts";
+export type { Action, Adapter, Block, Entry, History, Href, Listener, Memory, Patch, Saved, Snapshot, Target } from "./arch.ts";
+export { guard, patchQuery } from "./extra.ts";
+export { create, format, isCurrent, local, memoryAdapter, parse, port, webAdapter } from "./history.ts";

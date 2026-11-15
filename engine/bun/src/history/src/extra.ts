@@ -1,8 +1,6 @@
 import * as json from "engine-json";
 import type * as parse from "engine-parse";
-import type { Block, Entry, History } from "./history.ts";
-
-export type Patch = Record<string, string | number | boolean | readonly (string | number | boolean)[] | null | undefined>;
+import type { Block, Entry, History, Patch } from "./arch.ts";
 
 export function guard ( nav: History, blocked: Block ): () => void {
 

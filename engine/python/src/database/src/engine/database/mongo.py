@@ -52,6 +52,12 @@ class Mongo:
 
             raise self.translate(error) from error
 
+        except BaseException:
+
+            await client.close()
+
+            raise
+
         self._client = client
 
         log.info("database.connected", driver=self.name)

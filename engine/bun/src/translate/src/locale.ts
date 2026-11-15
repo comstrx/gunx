@@ -1,12 +1,6 @@
 import * as date from "engine-date";
 import * as string from "engine-string";
-
-export type Direction = "rtl" | "ltr";
-export type Tag = { language: string; script: string | undefined; region: string | undefined; text: string };
-
-type Wish = { tag: string; language: string; script: string | undefined; region: string | undefined };
-type Offer = Wish & { item: string };
-type Naming = "language" | "region";
+import type { Direction, Naming, Offer, Tag, Wish } from "./arch.ts";
 
 const longest = 64;
 const widest = 1024;
@@ -231,6 +225,13 @@ export function regionName ( code: string, inLocale = "en" ): string {
     const place = typeof code === "string" && regionPattern.test(code) ? code.toUpperCase() : undefined;
 
     return place === undefined ? String(code) : named(inLocale, "region", place) ?? place;
+
+}
+export function currencyName ( code: string, inLocale = "en" ): string {
+
+    const currency = typeof code === "string" && /^[a-z]{3}$/i.test(code) ? code.toUpperCase() : undefined;
+
+    return currency === undefined ? String(code) : named(inLocale, "currency", currency) ?? currency;
 
 }
 export function isTimeZone ( zone: string ): boolean {

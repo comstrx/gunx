@@ -3,7 +3,8 @@ from engine.error import Code, Fault
 from engine.event import Event, Events
 from hypothesis import HealthCheck, given, settings, strategies as st
 from typing import Any
-import asyncio, fnmatch
+import asyncio, fnmatch, importlib
+from unittest.mock import patch
 
 EXAMPLES = 1000
 LEAVES   = st.one_of(st.none(), st.booleans(), st.integers(-(1 << 62), 1 << 62), st.floats(allow_nan=False, allow_infinity=False), st.text(max_size=8))
@@ -77,3 +78,39 @@ dispatched()
 loop.close()
 
 print(f"fuzz event  examples={EXAMPLES * 2}  ok")
+
+@settings(max_examples=100, deadline=None, database=None)
+@given(st.lists(st.booleans(), min_size=1, max_size=20))
+def terminal_waiters_are_removed ( cancellations: list[bool] ) -> None:
+
+    async def check () -> None:
+
+        bus = Broker()
+        local = Events()
+
+        bus.setup(Memory())
+        local.setup("waiting", bus)
+
+        for cancelled in [*cancellations, False]:
+
+            task = asyncio.create_task(local.wait("check.done"))
+
+            await asyncio.sleep(0)
+
+            if cancelled:
+
+                task.cancel()
+
+                try: await task
+                except asyncio.CancelledError: pass
+                else: raise AssertionError("cancellation was swallowed")
+
+            else:
+
+                sent = await local.dispatch("check.done")
+
+                assert await task == sent
+
+    with patch.object(importlib.import_module("engine.event.events"), "MOST", 1): asyncio.run(check())
+
+terminal_waiters_are_removed()

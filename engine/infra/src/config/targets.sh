@@ -15,10 +15,20 @@ config:targets:load () {
         [[ "${key}" != deps.* ]] || TARGETS["${key#deps.}"]="${table[${key}]}"
     done
 
-    (( ${#TARGETS[@]} == 0 )) || return 0
+    if (( ${#TARGETS[@]} == 0 )); then
 
-    for key in "${!MANIFEST[@]}"; do
-        [[ "${key}" != deps.* ]] || TARGETS["${key#deps.}"]="${MANIFEST[${key}]}"
+        for key in "${!MANIFEST[@]}"; do
+            [[ "${key}" != deps.* ]] || TARGETS["${key#deps.}"]="${MANIFEST[${key}]}"
+        done
+
+    fi
+
+    for key in "${!TARGETS[@]}"; do
+
+        [[ "${key}" != *.*.* && "${key}" == *.path ]] || continue
+
+        core:fs:path:relative "${TARGETS[${key}]}" || { core:error:fail "[deps] ${key%.path} must name a path inside the root: ${TARGETS[${key}]}"; return; }
+
     done
 
 }
@@ -62,6 +72,7 @@ config:targets:deps () {
     local name="${1}" count=0 index=0
 
     count="${TARGETS[${name}.deps]:-0}"
+    core:num:natural "${count}" || return 0
 
     while (( index < count )); do
 

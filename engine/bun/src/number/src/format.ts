@@ -1,28 +1,14 @@
+import * as string from "engine-string";
+import type { Amount, CurrencyParts, FormatOptions, Numerals, Style, Told } from "./arch.ts";
 import { clamp, finite, precision } from "./math.ts";
 import { languageOf } from "./plural.ts";
-
-export type Numerals = "latn" | "arab";
-export type FormatOptions = {
-    locale?: string | undefined;
-    digits?: number | undefined;
-    minDigits?: number | undefined;
-    numerals?: Numerals | undefined;
-    grouping?: boolean | undefined;
-    sign?: "auto" | "always" | "never" | undefined;
-    compact?: boolean | undefined;
-};
-export type CurrencyParts = { amount: string; symbol: string; code: string; negative: boolean; text: string };
-export type Amount = number | bigint | string;
-
-type Style = "decimal" | "percent" | "currency";
-type Told = number | bigint | `${number}`;
 
 const arabicDigits = "٠١٢٣٤٥٦٧٨٩";
 const romanTable: readonly (readonly [number, string])[] = [
     [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"],
     [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"],
 ];
-const units = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
+const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] as const;
 const formatters = new Map<string, Intl.NumberFormat>();
 const plain = /^-?\d+(?:\.\d+)?$/;
 const coded = /^[A-Za-z]{3}$/;
@@ -90,16 +76,18 @@ function shaped ( style: Style, options: FormatOptions, code = "" ): Intl.Number
 }
 function told ( value: Amount ): Told {
 
-    if ( typeof value === "string" ) return value.length <= 64 && plain.test(value) ? (value as `${number}`) : 0;
+    if ( typeof value === "bigint" ) return value;
+    if ( typeof value === "string" && value.length <= 64 && plain.test(value) ) return value as Told;
+    if ( typeof value === "number" && Number.isFinite(value) ) return value;
 
-    return typeof value === "bigint" ? value : finite(value);
+    throw new RangeError("not an amount");
 
 }
 export function numerals ( text: string, system: Numerals ): string {
 
     if ( system === "arab" ) return text.replace(/[0-9]/g, ( digit ) => arabicDigits[Number(digit)] ?? digit);
 
-    return text.replace(/[٠-٩۰-۹]/g, ( digit ) => String(digit.charCodeAt(0) - (digit >= "۰" ? 0x06f0 : 0x0660)));
+    return string.asciiDigits(text);
 
 }
 export function format ( value: Amount, options: FormatOptions = {} ): string {
@@ -109,12 +97,16 @@ export function format ( value: Amount, options: FormatOptions = {} ): string {
 }
 export function formatPercent ( value: number, options: FormatOptions = {} ): string {
 
-    return shaped("percent", { ...options, digits: options.digits ?? 0, minDigits: options.minDigits ?? 0 }).format(finite(value) / 100);
+    if ( !Number.isFinite(value) ) throw new RangeError("not an amount");
+
+    return shaped("percent", { ...options, digits: options.digits ?? 0, minDigits: options.minDigits ?? 0 }).format(value / 100);
 
 }
 export function abbreviate ( value: number, digits = 1, locale = "en" ): string {
 
-    return kept(`compact|${locale}|${digits}`, tagOf(locale, undefined), () => ({ notation: "compact", maximumFractionDigits: count(digits) })).format(finite(value));
+    if ( !Number.isFinite(value) ) throw new RangeError("not an amount");
+
+    return kept(`compact|${locale}|${digits}`, tagOf(locale, undefined), () => ({ notation: "compact", maximumFractionDigits: count(digits) })).format(value);
 
 }
 export function bytes ( value: number, digits = 1 ): string {
@@ -136,7 +128,7 @@ export function ordinal ( value: number, locale = "en" ): string {
 
     const whole = Math.trunc(finite(value));
 
-    if ( languageOf(locale) === "ar" ) return `${whole}`;
+    if ( languageOf(locale) !== "en" ) return `${whole}`;
 
     const mod100 = Math.abs(whole) % 100;
     const mod10 = Math.abs(whole) % 10;

@@ -1,9 +1,5 @@
+import type { Change, Growth, Sizes, Surface } from "./arch.ts";
 import { byText } from "./core.ts";
-
-export type Surface = Readonly<Record<string, readonly string[]>>;
-export type Sizes = Readonly<Record<string, number | null>>;
-export type Change = { kind: "none" | "minor" | "major"; added: string[]; removed: string[] };
-export type Growth = { member: string; before: number; after: number; delta: number };
 
 function names ( surface: Surface ): Set<string> {
 

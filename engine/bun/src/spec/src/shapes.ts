@@ -1,92 +1,11 @@
 import * as json from "engine-json";
 import * as validate from "engine-validate";
 import type * as world from "engine-world";
+import type { Block, Effect, Feature, Screen, When } from "./arch.ts";
+import { namePattern, pathPattern } from "./arch.ts";
 
-export type Scalar = string | number | boolean | null;
-export type Reference = { param: string } | { query: string } | { signal: string } | { form: string } | { user: string } | { setting: string } | { path: string } | { text: string };
-export type Value = Scalar | Reference | readonly Scalar[];
-export type Test = { is: string; eq?: Scalar | undefined; ne?: Scalar | undefined; in?: readonly Scalar[] | undefined; gt?: number | undefined; gte?: number | undefined; lt?: number | undefined; lte?: number | undefined; has?: Scalar | undefined; like?: string | undefined; empty?: boolean | undefined; can?: string | undefined };
-export type When = boolean | Test | { all: When[] } | { any: When[] } | { not: When };
-export type Effect =
-    | { set: string; to: Value }
-    | { clear: string }
-    | { show: string }
-    | { hide: string }
-    | { enable: string }
-    | { disable: string }
-    | { emit: string; with?: Record<string, Value> | undefined }
-    | { call: string; with?: Record<string, Value> | undefined; queue?: boolean | undefined }
-    | { step: string }
-    | { confirm: string; do: Effect[]; else?: Effect[] | undefined }
-    | { check: string; do: Effect[]; else?: Effect[] | undefined; fields?: string[] | undefined }
-    | { refresh: string }
-    | { navigate: string; with?: Record<string, Value> | undefined }
-    | { when: When; do: Effect[]; else?: Effect[] | undefined };
-export type Hooks = { load?: Effect[] | undefined; leave?: Effect[] | undefined; submit?: Effect[] | undefined; success?: Effect[] | undefined; failure?: Effect[] | undefined; change?: Effect[] | undefined };
-export type Trigger = { on: string; do: Effect[]; when?: When | undefined };
-export type Listing = { sort?: string | undefined; filter?: Record<string, Value> | undefined; page?: Value | undefined; limit?: number | undefined; search?: Value | undefined };
-export type Binding = { read: string; input?: Record<string, Value> | undefined; list?: Listing | undefined; live?: boolean | string | undefined } | { write: string; input?: Record<string, Value> | undefined; fields?: string[] | undefined } | { data: unknown } | { signal: string };
-export type Feature = {
-    name: string;
-    id: string | undefined;
-    settings: Record<string, unknown>;
-    ports: Record<string, Binding>;
-    when: When | undefined;
-    watch: Record<string, Effect[]>;
-    on: Hooks;
-    triggers: Trigger[];
-    access: string[];
-    form: Record<string, string>;
-};
-export type Block = { kind: string; id: string | undefined; props: Record<string, unknown>; when: When | undefined; children: Block[] };
-export type Screen = {
-    name: string;
-    path: string;
-    title: Record<string, string>;
-    role: string;
-    menu: boolean;
-    icon: string | undefined;
-    auth: boolean;
-    access: string[];
-    query: string[];
-    signals: string[];
-    features: Feature[];
-    blocks: Block[];
-    on: Hooks;
-    triggers: Trigger[];
-    flow: string[];
-};
-export type Platform = "web" | "mobile" | "desktop";
-export type Surface = {
-    name: string;
-    role: string;
-    platform: Platform;
-    world: world.Catalog[];
-    locales: string[];
-    locale: string;
-    screens: Screen[];
-    signals: string[];
-};
-export type PortKind = "list" | "one" | "write";
-export type Port = { kind: PortKind; required?: boolean | undefined; fields?: readonly string[] | undefined };
-export type Manifest = {
-    name: string;
-    settings?: validate.Schema | undefined;
-    ports?: Readonly<Record<string, Port>> | undefined;
-    fields?: readonly string[] | undefined;
-    actions?: readonly string[] | undefined;
-    emits?: readonly string[] | undefined;
-    signals?: readonly string[] | undefined;
-    access?: readonly string[] | undefined;
-};
-export type Operation = { many: boolean; write: boolean; input: readonly string[]; output?: readonly string[] | undefined };
-export type Catalogue = Readonly<Record<string, Operation>>;
-
-export const namePattern = /^[a-z][a-z0-9_.-]*$/;
-export const pathPattern = /^\/(?:[a-z0-9-]+|\{[a-z][a-z0-9_]*\}|\*)?(?:\/(?:[a-z0-9-]+|\{[a-z][a-z0-9_]*\}|\*))*$/;
 export const topicPattern = /^[a-z0-9_*-]+(?:\.[a-z0-9_*-]+)*$/;
 export const fieldPattern = /^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z0-9_]+)*$/;
-export const namespaces = ["params", "query", "signals", "form", "user", "device", "settings", "locale", "event", "flow"] as const;
 
 function filled ( most?: number ) {
 

@@ -2,14 +2,14 @@ from engine.log import log
 from engine.sms import Log, Sms, Text
 from engine.test import Bench
 from pathlib import Path
-import asyncio
+import asyncio, os
 
 bench   = Bench()
 loop    = asyncio.new_event_loop()
 service = Sms()
 logger  = Log()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 service.setup(logger, sender="ENGINE")
 
 def building () -> None: Text("+201099000000", "Your code is 123456", "sms", "ENGINE")

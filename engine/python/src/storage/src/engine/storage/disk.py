@@ -1,12 +1,12 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator
 from datetime import timedelta
 from typing import Any
 
 from obstore.store import S3Store
 from engine.error import Code, Fault
 from engine.json import json
-from .arch import KEY, keyed, NAME, Stored, unkeyed, WEEK
-import obstore
+from .arch import KEY, keyed, NAME, PART, Stored, unkeyed, WEEK
+import asyncio, obstore
 
 class Disk:
 
@@ -33,15 +33,74 @@ class Disk:
 
         return Stored(self.name, key, len(data), self.url(key))
 
+    async def upload (
+        self, key: str, source: AsyncIterable[bytes], chunk: int = PART, concurrency: int = 2,
+    ) -> Stored:
+
+        keyed(key)
+
+        if type(chunk) is not int or chunk < 1: raise self._unset_("chunk")
+        if type(concurrency) is not int or concurrency < 1: raise self._unset_("concurrency")
+
+        size = 0
+        reader: asyncio.Task[Any] | None = None
+        incoming = source.__aiter__()
+
+        async def pieces () -> AsyncGenerator[bytes]:
+
+            nonlocal size, reader
+
+            while True:
+
+                reader = asyncio.current_task()
+
+                try: piece = await anext(incoming)
+                except StopAsyncIteration: return
+
+                if not isinstance(piece, bytes): raise Fault(Code.VALIDATION, reason="storage.data")
+
+                size += len(piece)
+
+                yield piece
+
+        stream = pieces()
+
+        try: await obstore.put_async(self._store, key, stream, chunk_size=chunk, max_concurrency=concurrency)
+        except Fault: raise
+        except Exception as error: raise Fault(Code.UNAVAILABLE, reason="storage.put", unknown=True) from error
+        finally: await self._close_upload_(reader, stream, incoming)
+
+        return Stored(self.name, key, size, self.url(key))
+
+    @staticmethod
+    async def _close_upload_ (
+        reader: asyncio.Task[Any] | None, stream: AsyncGenerator[bytes], incoming: AsyncIterator[bytes],
+    ) -> None:
+
+        if reader is not None and reader is not asyncio.current_task() and not reader.done():
+
+            reader.cancel()
+
+            await asyncio.gather(reader, return_exceptions=True)
+
+        await stream.aclose()
+
+        close = getattr(incoming, "aclose", None)
+
+        if close is not None: await close()
+
     async def get ( self, key: str ) -> bytes:
 
         keyed(key)
 
-        try: result = await obstore.get_async(self._store, key)
+        try:
+
+            result = await obstore.get_async(self._store, key)
+
+            return bytes(await result.bytes_async())
+
         except FileNotFoundError as error: raise self._missing_(key) from error
         except Exception as error: raise Fault(Code.UNAVAILABLE, reason="storage.get", unknown=True) from error
-
-        return bytes(await result.bytes_async())
 
     async def stream ( self, key: str, chunk: int = 1024 * 1024 ) -> AsyncIterator[bytes]:
 
@@ -53,7 +112,11 @@ class Disk:
         except FileNotFoundError as error: raise self._missing_(key) from error
         except Exception as error: raise Fault(Code.UNAVAILABLE, reason="storage.get", unknown=True) from error
 
-        async for piece in result.stream(min_chunk_size=chunk): yield bytes(piece)
+        try:
+
+            async for piece in result.stream(min_chunk_size=chunk): yield bytes(piece)
+
+        except Exception as error: raise Fault(Code.UNAVAILABLE, reason="storage.get", unknown=True) from error
 
     async def exists ( self, key: str ) -> bool:
 
@@ -118,19 +181,25 @@ class Disk:
 
     async def list ( self, prefix: str = "" ) -> list[str]:
 
-        if type(prefix) is not str or len(prefix) > KEY or not prefix.isprintable(): raise unkeyed(prefix)
+        return sorted([key async for key in self.scan(prefix)])
 
-        found: list[str] = []
+    async def scan ( self, prefix: str = "" ) -> AsyncIterator[str]:
+
+        if type(prefix) is not str or len(prefix) > KEY or (prefix and not prefix.isprintable()): raise unkeyed(prefix)
+
+        folder = prefix if prefix.endswith("/") else prefix.rpartition("/")[0]
 
         try:
 
-            async for batch in obstore.list(self._store, prefix or None):
+            async for batch in obstore.list(self._store, folder or None):
 
-                found.extend(str(item["path"]) for item in batch)
+                for item in batch:
+
+                    key = str(item["path"])
+
+                    if key.startswith(prefix): yield key
 
         except Exception as error: raise Fault(Code.UNAVAILABLE, reason="storage.list", unknown=True) from error
-
-        return sorted(found)
 
     async def copy ( self, source: str, target: str ) -> None:
 

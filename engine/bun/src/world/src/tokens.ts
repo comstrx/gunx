@@ -1,12 +1,4 @@
-export type Tokens = Readonly<Record<string, string | number>>;
-export type Sheet = {
-    base: Tokens;
-    dark?: Tokens | undefined;
-    selector?: string | undefined;
-    darkSelector?: string | undefined;
-    lightSelector?: string | undefined;
-    prefix?: string | undefined;
-};
+import type { Sheet, Tokens } from "./arch.ts";
 
 const unsafe = /[^a-zA-Z0-9-]/g;
 const hump = /([a-z0-9])([A-Z])/g;

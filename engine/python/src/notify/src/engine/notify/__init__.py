@@ -1,8 +1,8 @@
-from .arch import Notice
-from .http import Http
-from .log import Log
+lazy from .arch import Notice
+lazy from .http import Http
+lazy from .log import Log
 from .notify import Notify
-from .pusher import Pusher
+lazy from .pusher import Pusher
 
 notify = Notify()
 

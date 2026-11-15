@@ -1,8 +1,9 @@
 from aiohttp import BodyPartReader, ClientConnectorError, web
 from collections.abc import AsyncIterator
+from engine.context import context
 from engine.error import Code, Fault
 from engine.func import func
-from engine.net import Egress, Remote, net
+from engine.net import Egress, Net, Remote, net
 from engine.net.resolver import Resolver
 from pathlib import Path
 from typing import Any, cast, override, Self
@@ -815,3 +816,84 @@ async def test_settings_and_request_options_are_validated ( private: Egress ) ->
         assert upstream.heard == [] and net.stats()["sent"] >= 1
 
     net.setup(limit=8 * 1024 * 1024, timeout=10.0)
+
+
+async def test_stream_deadline_includes_waiting_for_a_pooled_connection (
+    private: Egress, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+
+    local = Net()
+    release = asyncio.Event()
+    saturated = asyncio.Event()
+    entered = 0
+
+    async def held ( self: Upstream, request: web.Request ) -> web.Response:
+
+        nonlocal entered
+
+        entered += 1
+
+        if entered == 16: saturated.set()
+
+        await release.wait()
+
+        return web.Response(text="done")
+
+    monkeypatch.setattr(Upstream, "slow", held)
+
+    async with Upstream() as upstream:
+
+        tasks = [
+            asyncio.create_task(local.get(upstream.url("/slow"), egress=private, timeout=2))
+            for _ in range(16)
+        ]
+
+        try:
+
+            await asyncio.wait_for(saturated.wait(), 1)
+
+            with pytest.raises(Fault) as expired:
+
+                async with asyncio.timeout(1):
+
+                    async for _ in local.stream("GET", upstream.url("/ok"), egress=private, timeout=0.03): pass
+
+            assert expired.value.reason == "net.timeout"
+
+        finally:
+
+            release.set()
+
+            await asyncio.gather(*tasks)
+            await local.close()
+
+async def test_correlation_is_opt_in_explicit_and_does_not_cross_redirect_origins ( private: Egress ) -> None:
+
+    parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+
+    async with Upstream() as home, Upstream() as other:
+
+        with context.scope(request_id="request-1", traceparent=parent, actor="secret"):
+
+            await net.get(home.url("/seen"), egress=private)
+
+            assert "x-request-id" not in home.heard[-1]["headers"]
+
+            await net.get(home.url("/seen"), propagate=True, egress=private)
+
+            assert home.heard[-1]["headers"]["traceparent"] == parent
+            assert home.heard[-1]["headers"]["x-request-id"] == "request-1"
+            assert "actor" not in home.heard[-1]["headers"]
+
+            await net.get(home.url("/seen"), propagate=True, headers={ "x-request-id": "explicit" }, egress=private)
+
+            assert home.heard[-1]["headers"]["x-request-id"] == "explicit"
+
+            await net.get(home.url("/away"), query={ "to": other.url("/seen") }, propagate=True, egress=private)
+
+            assert "traceparent" not in other.heard[-1]["headers"]
+            assert "x-request-id" not in other.heard[-1]["headers"]
+
+            async for _ in net.stream("GET", home.url("/seen"), propagate=True, egress=private): pass
+
+            assert home.heard[-1]["headers"]["traceparent"] == parent

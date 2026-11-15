@@ -56,3 +56,9 @@ class Spent(Exception):
         super().__init__(what)
 
         self.what = what
+
+CHECKS: dict[str, str] = {
+    "center": "padded", "indent": "indented", "replace": "replaced", "join": "joined",
+    "format": "formatted", "wordwrap": "wrapped", "slice": "sliced", "batch": "batched",
+    "tojson": "dumped", "mask": "masked",
+}

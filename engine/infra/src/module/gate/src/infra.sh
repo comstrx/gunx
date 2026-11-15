@@ -30,7 +30,7 @@ module:gate:infra:bench () {
 }
 module:gate:infra:fuzz () {
 
-    bash src/main.sh fuzz "$(( GATE_SECONDS * 9 / 10 / 10 ))"
+    bash src/main.sh fuzz "$(module:gate:share 10)"
 
 }
 module:gate:runtime () {

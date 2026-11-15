@@ -3,10 +3,12 @@ from typing import Any, cast
 
 from engine.error import Code, Fault
 from engine.log import log
-from .arch import DRAIN, GRACE, WORD
+from .arch import DRAIN, GRACE, WORD, seconds
 import asyncio, inspect, math
 
 class Tasks:
+
+    __slots__ = ("_tasks", "name")
 
     def __init__ ( self, name: str = "tasks" ) -> None:
 
@@ -26,10 +28,18 @@ class Tasks:
 
             raise
 
-        task = loop.create_task(coroutine, name=name)
+        try: task = loop.create_task(coroutine, name=name)
+        except BaseException:
 
-        self._tasks.add(task)
-        task.add_done_callback(self._done_)
+            coroutine.close()
+
+            raise
+
+        if task.done(): self._done_(task)
+        else:
+
+            self._tasks.add(task)
+            task.add_done_callback(self._done_)
 
         return task
 
@@ -39,7 +49,7 @@ class Tasks:
 
     async def close ( self, grace: float = GRACE ) -> int:
 
-        wait    = self._seconds_(grace)
+        wait    = seconds(grace)
         loop    = asyncio.get_running_loop()
         current = asyncio.current_task()
         own     = { task for task in self._tasks if task.get_loop() is loop and task is not current }
@@ -59,7 +69,7 @@ class Tasks:
 
     async def drain ( self, grace: float = DRAIN ) -> int:
 
-        wait    = self._seconds_(grace)
+        wait    = seconds(grace)
         loop    = asyncio.get_running_loop()
         current = asyncio.current_task()
         until   = loop.time() + wait
@@ -90,14 +100,6 @@ class Tasks:
 
         try: return asyncio.get_running_loop()
         except RuntimeError as error: raise Fault(Code.INTERNAL, reason="thread.loop") from error
-
-    def _seconds_ ( self, grace: float ) -> float:
-
-        if (type(grace) is not float and type(grace) is not int) or not grace >= 0:
-
-            raise Fault(Code.INTERNAL, reason="thread.seconds")
-
-        return float(grace)
 
     def _done_ ( self, task: asyncio.Task[Any] ) -> None:
 

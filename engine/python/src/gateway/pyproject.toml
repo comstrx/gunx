@@ -1,7 +1,7 @@
 [project]
 name = "engine-gateway"
 description = "Payments: one normalized charge, refund and webhook over provider adapters"
-dynamic = ["version"]
+dynamic = ["version", "requires-python", "license"]
 dependencies = [
     "engine-adapter",
     "engine-crypto",
@@ -15,13 +15,14 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "tomli-w"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-source = "regex"
-path = "../../pyproject.toml"
-pattern = '^version = "(?P<version>[^"]+)"$'
+[tool.hatch.metadata.hooks.custom]
+path = "../../metadata.py"
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "../../distribution.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engine"]

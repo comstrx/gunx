@@ -1,25 +1,6 @@
-import { awaited, linked, type Wait } from "./abort.ts";
-import { entered, type Fail, raise, tried } from "./emitter.ts";
-
-export type Message<T = unknown> = { topic: string; payload: T; at: number; id: number };
-export type Subscriber<T = unknown> = ( payload: T, message: Message<T> ) => void;
-export type Pattern = string;
-export type Subscribe = { replay?: boolean | number | undefined; signal?: AbortSignal | undefined };
-export type BusOptions = { replay?: number | undefined; topics?: number | undefined; now?: (() => number) | undefined; fail?: Fail | undefined };
-export type Bus = {
-    publish: <T>( topic: string, payload: T ) => number;
-    subscribe: <T = unknown>( pattern: Pattern, subscriber: Subscriber<T>, options?: Subscribe ) => () => void;
-    once: <T = unknown>( pattern: Pattern, options?: number | Wait ) => Promise<Message<T>>;
-    last: <T = unknown>( topic: string ) => Message<T> | undefined;
-    history: ( pattern?: Pattern ) => Message[];
-    topics: () => string[];
-    count: ( pattern?: Pattern ) => number;
-    forget: ( pattern?: Pattern ) => number;
-    clear: () => void;
-};
-
-type Row = { id: number; pattern: Pattern; subscriber: Subscriber; live: boolean };
-type Wild = { parts: readonly string[]; rows: readonly Row[] };
+import { awaited, linked } from "./abort.ts";
+import type { Bus, BusOptions, Message, Pattern, BusRow as Row, Subscriber, Wait, Wild } from "./arch.ts";
+import { entered, raise, tried } from "./emitter.ts";
 
 const none: readonly Row[] = [];
 

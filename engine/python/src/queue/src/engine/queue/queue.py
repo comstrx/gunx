@@ -35,7 +35,7 @@ class Queue:
         self._processed = 0
         self._failed    = 0
         self._dead      = 0
-        self._timers: list[Any] = []
+        self._timers: set[asyncio.Task[None]] = set()
         self._layers: list[Layer] = []
         self._letters: deque[tuple[Job, str]] = deque(maxlen=DEAD)
         self._deferred = 0
@@ -133,7 +133,25 @@ class Queue:
 
         return [{ **job.dump(), "failure": reason } for job, reason in self._letters]
 
+    async def failed ( self ) -> list[dict[str, Any]]:
+
+        if self._outbox is None: return self.dead_letters()
+
+        return [{ **row["payload"], "failure": row["failure"] } for row in await self._outbox.dead(KIND)]
+
     async def retry_dead ( self, id_: str ) -> bool:
+
+        if self._outbox is not None:
+
+            for row in await self._outbox.dead(KIND):
+
+                if row["payload"].get("id") == id_:
+
+                    payload = { **row["payload"], "attempt": 0, "available": "" }
+
+                    return await self._outbox.retry(str(row["id"]), payload)
+
+            return False
 
         for job, reason in list(self._letters):
 
@@ -178,13 +196,20 @@ class Queue:
 
             return job
 
-        durable = self._outbox is not None and (delay > 0 or self._outbox.running())
+        try: await self._enqueue_(job, delay)
+        except Fault as fault:
 
-        if durable and self._outbox is not None: await self._outbox.put(KIND, job.dump(), delay)
-        elif delay > 0: self._timers.append(thread.spawn(self._later_(job, delay), f"queue:{job.id}"))
-        else: await self._send_(job)
+            if unique and not fault.unknown: await self._cache.drop(f"queue:unique:{unique}", job.id)
+
+            raise
 
         return job
+
+    async def _enqueue_ ( self, job: Job, delay: float ) -> None:
+
+        if self._outbox is not None: await self._outbox.put(KIND, job.dump(), delay)
+        elif delay > 0 and self._broker.driver().name == "memory": self._delay_(job, delay)
+        else: await self._send_(job)
 
     async def perform ( self, job: Job ) -> bool:
 
@@ -264,11 +289,9 @@ class Queue:
 
         task = self._tasks.get(job.name)
 
-        if not job.due():
+        while not job.due():
 
-            await self._later_(job, 0.0)
-
-            return
+            await thread.sleep(max(0.0, date.between(date.now(), date.parse(job.available))))
 
         if task is not None and task.rate is not None:
 
@@ -278,7 +301,7 @@ class Queue:
 
                 self._deferred += 1
 
-                self._timers.append(thread.spawn(self._later_(job, hit.retry_after()), f"queue:{job.id}"))
+                await self._defer_(job, hit.retry_after())
 
                 return
 
@@ -293,7 +316,11 @@ class Queue:
 
                 log.error("queue.dead", job=job.name, id=job.id, attempts=job.attempt + 1, reason=fault.reason)
 
-                self._letters.append((job, fault.reason or fault.code.value))
+                reason = fault.reason or fault.code.value
+
+                if self._outbox is not None: await self._outbox.park(KIND, job.dump(), reason)
+
+                self._letters.append((job, reason))
 
                 for failure in self._failures: await failure(job, fault)
 
@@ -303,16 +330,18 @@ class Queue:
 
             await self._send_(job.again())
 
-    async def work ( self, queue: str = DEFAULT, limit: int = 16, wait: float = 1.0 ) -> int:
+    async def work (
+        self, queue: str = DEFAULT, limit: int = 16, wait: float = 1.0, concurrency: int = 1,
+    ) -> int:
 
-        return await self._broker.consume(f"{TOPIC}.{queue}", self.handle, limit, wait, tries=1)
+        return await self._broker.consume(f"{TOPIC}.{queue}", self.handle, limit, wait, concurrency=concurrency)
 
-    def start ( self, queues: Sequence[str] | None = None ) -> None:
+    def start ( self, queues: Sequence[str] | None = None, concurrency: int = 1 ) -> None:
 
         for name in queues or self._queues:
 
             self._running[name] = True
-            self._broker.subscribe(f"{TOPIC}.{name}", self.handle, tries=1)
+            self._broker.subscribe(f"{TOPIC}.{name}", self.handle, concurrency=concurrency)
 
     async def stop ( self ) -> None:
 
@@ -332,11 +361,18 @@ class Queue:
 
         await self.stop()
 
+        timers = tuple(self._timers)
+
+        for timer in timers: timer.cancel()
+
+        if timers: await asyncio.gather(*timers, return_exceptions=True)
+
     def stats ( self ) -> dict[str, int]:
 
         return {
             "processed": self._processed, "failed": self._failed, "dead": self._dead, "skipped": self._skipped,
             "deferred": self._deferred, "registered": len(self._tasks), "letters": len(self._letters),
+            "delayed": len(self._timers),
         }
 
     def describe ( self ) -> dict[str, Any]:
@@ -374,15 +410,28 @@ class Queue:
 
     async def _send_ ( self, job: Job ) -> None:
 
-        if not job.due():
+        if not job.due() and self._outbox is not None:
 
             wait = max(0.0, date.between(date.now(), date.parse(job.available)))
 
-            self._timers.append(thread.spawn(self._later_(job, wait), f"queue:{job.id}"))
+            await self._outbox.put(KIND, job.dump(), wait)
 
             return
 
         await self._broker.publish(f"{TOPIC}.{job.queue}", job.dump())
+
+    async def _defer_ ( self, job: Job, wait: float ) -> None:
+
+        if self._outbox is not None: await self._outbox.put(KIND, job.dump(), wait)
+        elif self._broker.driver().name == "memory": self._delay_(job, wait)
+        else: await self._later_(job, wait)
+
+    def _delay_ ( self, job: Job, wait: float ) -> None:
+
+        task = thread.spawn(self._later_(job, wait), f"queue:{job.id}")
+
+        self._timers.add(task)
+        task.add_done_callback(self._timers.discard)
 
     async def _later_ ( self, job: Job, wait: float ) -> None:
 

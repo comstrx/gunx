@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 
-
 class Vector:
 
     __slots__ = ("values",)

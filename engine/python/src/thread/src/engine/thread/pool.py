@@ -5,14 +5,17 @@ from contextvars import copy_context
 from typing import Any
 
 from engine.error import Code, Fault
-from .arch import RECYCLE
-import asyncio, inspect, multiprocessing, os, threading
+from .arch import BUFFER, DRAIN, RECYCLE, bounds, seconds
+from .capacity import Capacity
+import asyncio, inspect, math, multiprocessing, os, threading
 
 class Pool:
 
-    __slots__ = ("_executor", "_flights", "_lock", "_pid", "mode", "workers")
+    __slots__ = ("_capacity", "_executor", "_flights", "_lock", "_pid", "mode", "workers")
 
     def __init__ ( self, mode: str, workers: int ) -> None:
+
+        bounds(mode, workers)
 
         self.mode     = mode
         self.workers  = workers
@@ -20,6 +23,7 @@ class Pool:
         self._pid     = os.getpid()
         self._executor: Executor | None = None
         self._flights: set[Future[Any]] = set()
+        self._capacity = Capacity(workers * BUFFER)
 
     def executor ( self ) -> Executor:
 
@@ -32,9 +36,26 @@ class Pool:
     async def submit ( self, handler: Callable[..., Any], item: Any ) -> Any:
 
         executor = self.executor()
+        capacity = self._capacity
 
-        try: future = self._sent_(executor, handler, item)
-        except (BrokenExecutor, RuntimeError) as error: raise self._broken_(executor) from error
+        await capacity.acquire()
+
+        try:
+
+            with self._lock:
+
+                future = self._sent_(executor, handler, item, capacity)
+        except (BrokenExecutor, RuntimeError) as error:
+
+            capacity.release()
+
+            raise self._broken_(executor) from error
+
+        except BaseException:
+
+            capacity.release()
+
+            raise
 
         try: made = await future
         except BrokenExecutor as error: raise self._broken_(executor) from error
@@ -66,17 +87,48 @@ class Pool:
 
     def resize ( self, workers: int ) -> None:
 
+        bounds(self.mode, workers)
+
         if workers == self.workers: return
 
         self.workers = workers
 
         self.close()
 
+    async def join ( self, grace: float = DRAIN ) -> None:
+
+        wait = seconds(grace)
+        flights = self._flights.copy()
+
+        if not flights: return
+
+        pending = [asyncio.wrap_future(flight) for flight in flights]
+
+        for future in pending: future.add_done_callback(Pool._heard_)
+
+        _, left = await asyncio.wait(pending, timeout=None if wait == math.inf else wait)
+
+        if left: raise Fault(Code.TIMEOUT, reason="thread.join", unknown=True)
+
     def close ( self, kill: bool = False ) -> None:
 
-        executor, self._executor, self._flights = self._executor, None, set()
+        self._closed_(kill)
+
+    def _closed_ ( self, kill: bool, expected: Executor | None = None ) -> None:
+
+        if self._pid != os.getpid(): self._lock = threading.Lock()
+
+        with self._lock:
+
+            executor, capacity = self._executor, self._capacity
+
+            if expected is not None and executor is not expected: return
+
+            self._executor, self._flights = None, set()
 
         if executor is None or self._pid != os.getpid(): return
+
+        capacity.close()
 
         if kill and isinstance(executor, ProcessPoolExecutor): executor.kill_workers()
         else: executor.shutdown(wait=False, cancel_futures=kill)
@@ -85,7 +137,11 @@ class Pool:
 
         return { "mode": self.mode, "workers": self.workers, "live": self.live() }
 
-    def _sent_ ( self, executor: Executor, handler: Callable[..., Any], item: Any ) -> asyncio.Future[Any]:
+    def _sent_ (
+        self, executor: Executor, handler: Callable[..., Any], item: Any, capacity: Capacity,
+    ) -> asyncio.Future[Any]:
+
+        if self._executor is not executor: raise Fault(Code.UNAVAILABLE, reason="thread.broken")
 
         loop = asyncio.get_running_loop()
 
@@ -97,6 +153,7 @@ class Pool:
 
         flights.add(flight)
         flight.add_done_callback(flights.discard)
+        flight.add_done_callback(lambda _: capacity.release())
 
         return asyncio.wrap_future(flight, loop=loop)
 
@@ -110,7 +167,10 @@ class Pool:
 
             made = self._executor
 
-            if made is None: made = self._executor = self._built_()
+            if made is None:
+
+                made = self._executor = self._built_()
+                self._capacity = Capacity(self.workers * BUFFER)
 
             return made
 
@@ -128,9 +188,14 @@ class Pool:
 
     def _broken_ ( self, executor: Executor ) -> Fault:
 
-        if self._executor is executor: self.close(kill=True)
+        self._closed_(kill=True, expected=executor)
 
         return Fault(Code.UNAVAILABLE, reason="thread.broken", unknown=True)
+
+    @staticmethod
+    def _heard_ ( future: asyncio.Future[Any] ) -> None:
+
+        if not future.cancelled(): future.exception()
 
     @staticmethod
     def _guarded_ ( handler: Callable[..., Any], item: Any ) -> Any:

@@ -736,8 +736,8 @@ describe("func", () => {
             const stopped = watch(func.retry(down, { signal: gone.signal, delay: 1 }));
 
             await settle();
-            expect([attempts, stopped.done]).toEqual([[1], true]);
-            expect(stopped.failure).toMatchObject({ reason: "try.1" });
+            expect([attempts, stopped.done]).toEqual([[], true]);
+            expect(stopped.failure).toMatchObject({ reason: "retry.aborted" });
             attempts.length = 0;
 
             const waiting = watch(func.retry(down, { signal: leaving.signal, delay: 60_000, jitter: false }));

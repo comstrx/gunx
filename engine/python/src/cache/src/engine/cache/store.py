@@ -1,7 +1,6 @@
 from collections.abc import Iterable, Mapping
 from typing import Any, Protocol
 
-
 class Store(Protocol):
 
     name: str

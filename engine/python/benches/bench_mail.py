@@ -2,7 +2,7 @@ from engine.log import log
 from engine.mail import Log, Mail, Message
 from engine.test import Bench
 from pathlib import Path
-import asyncio
+import asyncio, os
 
 bench  = Bench()
 loop   = asyncio.new_event_loop()
@@ -11,7 +11,7 @@ logger = Log()
 body   = "<p>Hello</p>" * 200
 file   = bytes(64 * 1024)
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 box.setup("hello@engine.test", "Engine", logger)
 
 def building () -> None: Message(("a@x.io",), "Subject", "plain", body, "Engine <hello@engine.test>", None, ("c@x.io",), (), { "X-Tag": "v" })

@@ -1,24 +1,10 @@
 import * as date from "engine-date";
 import * as error from "engine-error";
 import * as value from "engine-value";
+import type { Book, Built, Check, Cross, Loose, Order, Pending, Presence, Raw, Row, RulesRule as Rule, Rules, Schema, Test } from "./arch.ts";
 import { format, stamp } from "./check.ts";
 import { currency, email, flag, hexColor, integer, ip, key, locale, numeric, otp, phone, slug, timezone, url } from "./field.ts";
-import type { Check, Schema } from "./schema.ts";
 import * as zod from "./zod.ts";
-
-type Rule = { name: string; args: string[]; text: string };
-type Loose = Schema & { check: ( ...checks: Check[] ) => Schema };
-type Row = Record<string, unknown>;
-type Test = ( given: unknown ) => boolean;
-type Raw = { name: string; test: ( text: string ) => boolean };
-type Presence = { must: string | undefined; prohibited: boolean; filled: boolean; nullable: boolean; raws: Raw[] };
-type Built = { schema: Schema; plain: Schema; cross: Rule[]; found: Rule[] };
-type Cross = { test: ( row: Row ) => boolean; message: string };
-type Pending = { name: string; rule: Rule };
-type Order = ( own: number, other: number ) => boolean;
-
-export type Rules = string | readonly string[];
-export type Book = Record<string, Rules>;
 
 const many = 64;
 const numberShape = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;

@@ -5,6 +5,8 @@ from .arch import FAMILY, NAME, WORD
 
 class Manager[A: Adapter]:
 
+    __slots__ = ("_adapters", "_closing", "_default", "_retired", "family")
+
     def __init__ ( self, family: str ) -> None:
 
         named = type(family) is str and FAMILY.fullmatch(family) is not None
@@ -14,8 +16,12 @@ class Manager[A: Adapter]:
         self.family = family
         self._adapters: dict[str, A] = {}
         self._default: str | None = None
+        self._retired: dict[int, A] | None = None
+        self._closing = False
 
     def use ( self, adapter: A, default: bool = False ) -> A:
+
+        self._mutable_()
 
         held   = isinstance(adapter, Adapter)
         family = adapter.family if held else None
@@ -39,11 +45,14 @@ class Manager[A: Adapter]:
         before   = self._adapters.get(name)
         replaced = before is not None and before is not adapter
 
+        if replaced and before is not None: self._retire_(before)
+        if self._retired is not None: self._retired.pop(id(adapter), None)
+
         self._adapters[name] = adapter
 
         if default or self._default is None: self._default = name
 
-        log.debug("adapter.registered", family=self.family, name=name, replaced=replaced)
+        if log.debugging: log.debug("adapter.registered", family=self.family, name=name, replaced=replaced)
 
         return adapter
 
@@ -76,6 +85,10 @@ class Manager[A: Adapter]:
 
         return bool(self._adapters)
 
+    def pending ( self ) -> int:
+
+        return len(self._retired) if self._retired is not None else 0
+
     def matrix ( self ) -> dict[str, list[str]]:
 
         return { name: sorted(adapter.capabilities) for name, adapter in sorted(self._adapters.items()) }
@@ -86,9 +99,11 @@ class Manager[A: Adapter]:
 
     def forget ( self, name: str ) -> bool:
 
+        self._mutable_()
+
         if not self.has(name): return False
 
-        del self._adapters[name]
+        self._retire_(self._adapters.pop(name))
 
         if self._default == name: self._default = next(iter(self._adapters), None)
 
@@ -96,23 +111,61 @@ class Manager[A: Adapter]:
 
     async def close ( self ) -> int:
 
+        self.clear()
+
+        return await self.drain()
+
+    async def drain ( self ) -> int:
+
+        self._mutable_()
+        pending = self._retired
+
+        if not pending: return 0
+
+        self._closing = True
         closed = 0
 
-        for name, adapter in tuple(self._adapters.items()):
+        try:
 
-            try: await adapter.close()
-            except Exception as failed:
+            for adapter in tuple(pending.values()):
 
-                log.warning("adapter.close", family=self.family, name=name, kind=type(failed).__name__)
+                try: await adapter.close()
+                except Exception as failed:
 
-            else: closed += 1
+                    log.warning("adapter.close", family=self.family, name=adapter.name, kind=type(failed).__name__)
+
+                else:
+
+                    del pending[id(adapter)]
+
+                    closed += 1
+
+        finally:
+
+            self._closing = False
+
+            if not pending: self._retired = None
 
         return closed
 
     def clear ( self ) -> None:
 
-        self._adapters = {}
-        self._default  = None
+        self._mutable_()
+
+        for adapter in self._adapters.values(): self._retire_(adapter)
+
+        self._adapters.clear()
+        self._default = None
+
+    def _retire_ ( self, adapter: A ) -> None:
+
+        if self._retired is None: self._retired = {}
+
+        self._retired[id(adapter)] = adapter
+
+    def _mutable_ ( self ) -> None:
+
+        if self._closing: raise Fault(Code.CONFLICT, reason=f"{self.family}.closing")
 
     def describe ( self ) -> dict[str, object]:
 

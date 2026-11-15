@@ -10,6 +10,9 @@ if TYPE_CHECKING:
 
 type Ability = Callable[["Actor", Any], Awaitable[bool] | bool]
 
+RELAY_FIELDS = 4
+RELAY_TTL    = 30
+RELAY_SKEW   = 5
 OTP_TTL      = 300.0
 OTP_LONGEST  = 86_400.0
 REVOKED_TTL  = 30 * 86_400.0
@@ -34,6 +37,7 @@ HEADERS = {
     "tenant"    : "X-Tenant",
     "signature" : "X-Relay-Signature",
     "request"   : "X-Request-Id",
+    "context"   : "X-Relay-Context",
 }
 LOWER = { name: value.lower() for name, value in HEADERS.items() }
 

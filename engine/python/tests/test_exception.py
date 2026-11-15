@@ -5,7 +5,14 @@ from typing import Any, cast, override
 from engine.error import Code, Fault
 from engine.exception import Exceptions
 from engine.log import log
-import asyncio, gc, math, pytest, time
+import asyncio, gc, math, pytest, time, warnings
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
+@pytest.fixture(autouse=True)
+def exception_log () -> None:
+
+    log.setup("debug", "json")
 
 class Declined(Exception): ...
 
@@ -429,3 +436,386 @@ def test_a_quiet_level_reports_nothing_and_counts_everything () -> None:
         assert events[-1]["level"] == "critical" and "exception" in events[-1] and told == ["gone", "internal"]
 
     log.setup("debug", "json")
+
+def test_mapping_accepts_string_enum_reasons_and_stores_plain_text () -> None:
+
+    exceptions = Exceptions()
+
+    exceptions.map(Declined, Code.GONE, Code.CONFLICT)
+
+    fault = exceptions.fault(Declined())
+
+    assert fault.code is Code.GONE and fault.reason == "conflict" and type(fault.reason) is str
+
+def test_reporting_a_transferred_fault_keeps_its_identity_and_metadata () -> None:
+
+    exceptions = Exceptions()
+    seen: list[Fault] = []
+    original = Fault(Code.UNAVAILABLE, "diagnostic", "peer", retry_after=2, unknown=True)
+    moved = Fault.load(original.dump()).copy()
+
+    exceptions.report(lambda fault, _: seen.append(fault))
+
+    with log.capture() as events:
+
+        assert exceptions.handle(moved) is moved
+
+    assert seen == [moved] and moved.unknown and not moved.safe()
+    assert events[-1]["code"] == "unavailable" and events[-1]["reason"] == "peer"
+    assert events[-1]["status"] == 503 and moved.retry_after == 2
+
+def test_quiet_ignored_and_throttled_objects_can_be_reported_later ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    tool = Exceptions()
+    quiet = Fault(Code.NOT_FOUND)
+    ignored = Declined()
+    muted = RuntimeError()
+    now = 10.0
+
+    monkeypatch.setattr(time, "monotonic", lambda: now)
+    log.setup("critical", "json")
+
+    with log.capture() as events:
+
+        tool.handle(quiet)
+
+        assert events == []
+
+        log.setup("debug", "json")
+        tool.handle(quiet)
+
+        assert len(events) == 1 and events[-1]["code"] == "not_found"
+
+        tool.ignore(Declined)
+        tool.handle(ignored)
+
+        assert len(events) == 1
+
+        tool.clear()
+        tool.handle(ignored)
+        tool.throttle(1, 10)
+        tool.handle(RuntimeError())
+        tool.handle(muted)
+
+        assert len(events) == 3 and tool.stats()["muted"] == 1
+
+        now = 20.0
+
+        tool.handle(muted)
+
+        assert len(events) == 4 and tool.stats()["reported"] == 3
+
+def test_reporter_only_dispatch_skips_log_context_and_marks_after_eligibility () -> None:
+
+    tool = Exceptions()
+    error = Fault(Code.NOT_FOUND)
+    seen: list[Fault] = []
+
+    log.setup("error", "json")
+
+    def unused () -> dict[str, Any]: pytest.fail("disabled log must not evaluate log-only context")
+
+    tool.context(unused)
+    tool.handle(error)
+    tool.report(lambda fault, _: seen.append(fault))
+
+    with log.capture() as events:
+
+        tool.handle(error)
+        tool.handle(error)
+
+    assert events == [] and seen == [error] and tool.stats()["reported"] == 1
+
+@pytest.mark.parametrize("stage", ["factory", "context", "reporter"])
+def test_reentrant_callbacks_are_bounded_without_marking_the_nested_error ( stage: str ) -> None:
+
+    tool = Exceptions()
+    nested = ValueError("nested")
+    entered: list[str] = []
+    nested_faults: list[Fault] = []
+
+    log.setup("debug", "json")
+
+    def reenter () -> None:
+
+        entered.append(stage)
+        nested_faults.append(tool.handle(nested))
+
+    def factory ( _: BaseException ) -> Fault:
+
+        reenter()
+
+        return Fault(Code.GONE, reason="mapped")
+
+    def context () -> dict[str, Any]:
+
+        reenter()
+
+        return { "scope": "outer" }
+
+    def reporter ( _: Fault, __: BaseException ) -> None: reenter()
+
+    if stage == "factory": tool.map(ValueError, factory)
+    if stage == "context": tool.context(context)
+    if stage == "reporter": tool.report(reporter)
+
+    with log.capture() as events:
+
+        outer = tool.handle(ValueError("outer"))
+
+        assert entered == [stage] and len(events) == 1
+        assert nested_faults[0].code is Code.INTERNAL and nested_faults[0].__cause__ is nested
+        assert outer.code is (Code.GONE if stage == "factory" else Code.INTERNAL)
+        assert tool.stats()["seen"] == 2 and tool.stats()["reported"] == 1
+
+        tool.clear()
+        tool.handle(nested)
+
+        assert len(events) == 2 and tool.stats()["reported"] == 1
+
+def test_factory_can_delegate_to_fault_without_recursing () -> None:
+
+    tool = Exceptions()
+
+    tool.map(ValueError, tool.fault)
+
+    error = ValueError("loop")
+    fault = tool.fault(error)
+
+    assert fault.code is Code.INTERNAL and fault.__cause__ is error
+
+@pytest.mark.parametrize("stage", ["factory", "context", "reporter"])
+def test_callback_cancellation_propagates_and_releases_the_reentrancy_guard ( stage: str ) -> None:
+
+    tool = Exceptions()
+    cancelled = asyncio.CancelledError("stop")
+
+    def stop ( *_: object ) -> Any: raise cancelled
+
+    if stage == "factory": tool.map(ValueError, stop)
+    if stage == "context": tool.context(stop)
+    if stage == "reporter": tool.report(stop)
+
+    log.setup("debug", "json")
+
+    with log.capture(), pytest.raises(asyncio.CancelledError) as caught: tool.handle(ValueError())
+
+    assert caught.value is cancelled
+
+    tool.clear()
+
+    with log.capture() as events: tool.handle(ValueError("after"))
+
+    assert len(events) == 1 and tool.stats()["reported"] == 1
+
+@pytest.mark.parametrize("kind", [asyncio.CancelledError, KeyboardInterrupt, SystemExit])
+def test_safe_does_not_swallow_control_flow_exceptions ( kind: type[BaseException] ) -> None:
+
+    tool = Exceptions()
+
+    def stop () -> int: raise kind()
+
+    with pytest.raises(kind): tool.safe(0, stop)
+
+    assert tool.stats()["seen"] == 0
+
+def test_async_callable_instances_and_partial_wrappers_are_rejected_at_registration () -> None:
+
+    tool = Exceptions()
+
+    class Later:
+
+        async def __call__ ( self, *_: object ) -> object: return {}
+
+    class Stream:
+
+        async def __call__ ( self, *_: object ) -> Any: yield {}
+
+    for callback in (Later(), Stream()):
+
+        for work in (callback, partial(callback), partial(partial(callback))):
+
+            assert reason(partial(tool.map, ValueError, cast("Any", work))) == "exception.map"
+            assert reason(partial(tool.context, cast("Any", work))) == "exception.context"
+            assert reason(partial(tool.report, work)) == "exception.report"
+
+    assert tool.describe()["reporters"] == tool.describe()["contexts"] == 0
+
+def test_unexpected_coroutine_reporter_results_are_closed_and_diagnosed () -> None:
+
+    tool = Exceptions()
+    ran: list[str] = []
+
+    async def late () -> None: ran.append("late")
+
+    tool.report(lambda *_: late())
+    tool.report(lambda *_: ran.append("sync"))
+
+    with warnings.catch_warnings(record=True) as leaked, log.capture() as events:
+
+        warnings.simplefilter("always")
+        tool.handle(RuntimeError())
+        gc.collect()
+
+    assert not leaked and ran == ["sync"]
+    assert events[-1]["event"] == "exception.reporter" and events[-1]["kind"] == "coroutine"
+
+async def test_returned_tasks_are_diagnosed_without_cancelling_anothers_work () -> None:
+
+    tool = Exceptions()
+    ready = asyncio.Event()
+    task = asyncio.create_task(ready.wait())
+
+    tool.report(lambda *_: task)
+
+    with log.capture() as events: tool.handle(RuntimeError())
+
+    assert not task.done() and events[-1]["event"] == "exception.reporter"
+    assert events[-1]["kind"] == "Task"
+
+    ready.set()
+
+    assert await task
+
+def test_context_iteration_is_bounded_before_copying_and_failed_snapshots_are_discarded () -> None:
+
+    tool = Exceptions()
+    reads: list[str] = []
+
+    class Endless(Mapping[str, int]):
+
+        @override
+        def __getitem__ ( self, name: str ) -> int:
+
+            reads.append(name)
+
+            if len(reads) > 64: pytest.fail("context copied beyond its inspection budget")
+
+            return len(reads)
+
+        @override
+        def __iter__ ( self ) -> Iterator[str]:
+
+            index = 0
+
+            while True:
+
+                yield f"field{index}"
+
+                index += 1
+
+        @override
+        def __len__ ( self ) -> int: return 10 ** 9
+
+    class Broken(Mapping[str, int]):
+
+        @override
+        def __getitem__ ( self, name: str ) -> int:
+
+            if name == "broken": raise LookupError
+
+            return 99
+
+        @override
+        def __iter__ ( self ) -> Iterator[str]: return iter(("partial", "broken"))
+
+        @override
+        def __len__ ( self ) -> int: return 2
+
+    tool.context(Broken)
+    tool.context(Endless)
+    tool.context(lambda: { "field0": 900, "extra": 1, "code": "wrong" })
+
+    with log.capture() as events: tool.handle(RuntimeError())
+
+    report = events[-1]
+
+    assert len(reads) == 64 and report["field0"] == 900 and report["code"] == "internal"
+    assert "partial" not in report and "extra" not in report and "field60" not in report
+    assert events[0]["event"] == "exception.context" and events[0]["kind"] == "LookupError"
+
+def test_throttle_retains_active_keys_under_high_cardinality ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    tool = Exceptions()
+
+    log.setup("debug", "json")
+    monkeypatch.setattr(time, "monotonic", lambda: 10.0)
+    tool.throttle(1, 60)
+
+    with log.capture() as events:
+
+        tool.handle(Fault(Code.GONE, reason="hot"))
+
+        for index in range(2500):
+
+            tool.handle(Fault(Code.GONE, reason=f"cold{index}"))
+            tool.handle(Fault(Code.GONE, reason="hot"))
+
+    assert len(events) == 2501 and tool.stats()["muted"] == 2500
+    assert sum(event["reason"] == "hot" for event in events) == 1
+
+def test_independent_threads_do_not_mute_each_others_callbacks () -> None:
+
+    tool = Exceptions()
+    together = Barrier(2)
+    seen: list[str] = []
+
+    log.setup("critical", "json")
+
+    def reporter ( _: Fault, error: BaseException ) -> None:
+
+        together.wait(timeout=5)
+        seen.append(str(error))
+
+    tool.report(reporter)
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+
+        outcomes = list(workers.map(tool.handle, (ValueError("one"), ValueError("two"))))
+
+    assert sorted(seen) == ["one", "two"] and all(fault.code is Code.INTERNAL for fault in outcomes)
+
+async def test_callback_created_task_can_report_after_the_callback_returns () -> None:
+
+    tool = Exceptions()
+    tasks: list[asyncio.Task[Fault]] = []
+    seen: list[str] = []
+
+    log.setup("critical", "json")
+
+    async def later () -> Fault: return tool.handle(ValueError("child"))
+
+    def reporter ( _: Fault, error: BaseException ) -> None:
+
+        seen.append(str(error))
+
+        if str(error) == "parent": tasks.append(asyncio.create_task(later()))
+
+    tool.report(reporter)
+    tool.handle(ValueError("parent"))
+
+    assert (await tasks[0]).code is Code.INTERNAL
+    assert seen == ["parent", "child"] and tool.stats()["reported"] == 2
+
+def test_generator_callbacks_cannot_silently_skip_their_body () -> None:
+
+    tool = Exceptions()
+    seen: list[str] = []
+
+    def stream ( *_: object ) -> Iterator[str]:
+
+        seen.append("body")
+
+        yield "unused"
+
+    for register in (tool.context, tool.report):
+
+        assert reason(partial(register, cast("Any", stream))) in {"exception.context", "exception.report"}
+
+    def wrapped ( *_: object ) -> object: return stream()
+
+    tool.report(wrapped)
+
+    with log.capture() as events: tool.handle(RuntimeError())
+
+    assert not seen and events[-1]["event"] == "exception.reporter" and events[-1]["kind"] == "generator"

@@ -1,4 +1,4 @@
-export type Held<T> = Map<string, { value: T }>;
+import type { Held } from "./arch.ts";
 
 const tongues: Held<string> = new Map();
 

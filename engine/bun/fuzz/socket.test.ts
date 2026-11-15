@@ -1,6 +1,7 @@
 import { describe, expect, test as it } from "bun:test";
+import * as api from "engine/api";
 import * as error from "engine/error";
-import * as socket from "engine/socket";
+import type * as socket from "engine/socket";
 import * as fc from "fast-check";
 
 type Side = socket.Socket & { fire: ( frame: socket.Frame ) => void; sent: socket.Frame[]; openNow: () => void; dropNow: ( code?: number ) => void };
@@ -34,7 +35,7 @@ function fakeSocket (): Side {
         onmessage: null,
         send: ( text ) => {
 
-            const frame = socket.decode(text);
+            const frame = api.decodeFrame(text);
 
             if ( frame ) made.sent.push(frame);
 
@@ -44,7 +45,7 @@ function fakeSocket (): Side {
             made.readyState = 3;
 
         },
-        fire: ( frame ) => made.onmessage?.({ data: socket.encode(frame) }),
+        fire: ( frame ) => made.onmessage?.({ data: api.encodeFrame(frame) }),
         openNow: () => {
 
             made.readyState = 1;
@@ -72,13 +73,13 @@ describe("fuzz socket", () => {
 
     it("decode never throws, frames round trip, and the frame bound follows the utf-8 byte length", () => {
 
-        fc.assert(fc.property(fc.string({ maxLength: 64 }), ( text ) => { socket.decode(text); }), { numRuns: 10_000 });
+        fc.assert(fc.property(fc.string({ maxLength: 64 }), ( text ) => { api.decodeFrame(text); }), { numRuns: 10_000 });
         fc.assert(
             fc.property(fc.stringMatching(/^[a-z.]{1,12}$/), fc.jsonValue({ maxDepth: 2 }), fc.option(fc.stringMatching(/^[a-z0-9.]{1,12}$/), { nil: undefined }), ( event, data, channel ) => {
 
                 fc.pre(!JSON.stringify(data).includes("__proto__"));
 
-                const decoded = socket.decode(socket.encode({ event, data, channel }));
+                const decoded = api.decodeFrame(api.encodeFrame({ event, data, channel }));
 
                 expect(decoded?.event).toBe(event);
                 expect(decoded?.channel).toBe(channel);
@@ -90,12 +91,12 @@ describe("fuzz socket", () => {
         fc.assert(fc.property(fc.string({ maxLength: 40, unit: "grapheme" }), fc.integer({ min: 10, max: 120 }), ( payload, most ) => {
 
             const side = fakeSocket();
-            const live = socket.open({ url: "wss://x", heartbeat: 0, reconnect: false, factory: () => side, maxFrame: most });
+            const live = api.connect({ url: "wss://x", heartbeat: 0, reconnect: false, factory: () => side, maxFrame: most });
 
             void live.connect();
             side.openNow();
 
-            const text = socket.encode({ event: "p", data: payload });
+            const text = api.encodeFrame({ event: "p", data: payload });
             const bytes = encoder.encode(text).byteLength;
             let answer: boolean | string;
 
@@ -110,7 +111,7 @@ describe("fuzz socket", () => {
             }
 
             expect(answer).toBe(bytes <= most ? true : "socket.frame");
-            expect(socket.decode(text, most) === undefined).toBe(text.length > most);
+            expect(api.decodeFrame(text, most) === undefined).toBe(bytes > most);
             live.close();
 
         }), { numRuns: 3000 });
@@ -122,7 +123,7 @@ describe("fuzz socket", () => {
 
             const sides: Side[] = [];
             const statuses: string[] = [];
-            const live = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 0, max: 0, limit }, timeout: 1000, factory: () => { const made = fakeSocket(); sides.push(made); return made; }, onStatus: ( status, attempt ) => { statuses.push(`${status}:${attempt}`); } });
+            const live = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 0, max: 0, limit }, timeout: 1000, factory: () => { const made = fakeSocket(); sides.push(made); return made; }, onStatus: ( status, attempt ) => { statuses.push(`${status}:${attempt}`); } });
             const model: Model = { status: "idle", wanted: false, rooms: new Map(), pending: new Set(), dials: 0 };
             const outstanding: Promise<unknown>[] = [];
             const heard: string[] = [];
@@ -190,7 +191,7 @@ describe("fuzz socket", () => {
 
                         side.dropNow(step.code);
 
-                        const final = step.code === 1008 || step.code === 4001;
+                        const final = step.code === 1000 || step.code === 1008 || step.code === 4001;
 
                         for ( const room of model.rooms.keys() ) model.rooms.set(room, false);
 

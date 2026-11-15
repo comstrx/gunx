@@ -4,12 +4,14 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from yarl import URL
+from engine.context import context
 from engine.error import Code, Fault
 from engine.fs import file
 from engine.func import func
 from engine.json import json
 from engine.log import log
 from .arch import BODILY, CARRIED, EVENT, IDEMPOTENT, LINE, MAX_BODY, MOVED, OK_HIGH, OK_LOW, PRIVATE, REDIRECTS, Reply
+from .arch import CHUNK, DNS_TTL, HEADER, HOST_POOL, POOL
 from .arch import LONGEST, REWRITTEN, SEE_OTHER, SERVER, THROTTLED, TIMEOUT, VERB
 from .egress import Egress
 from .resolver import Resolver
@@ -50,7 +52,7 @@ class Net:
             guard     = None if loose else Resolver()
             factory   = guard.make if guard else None
             connector = aiohttp.TCPConnector(
-                limit=64, limit_per_host=16, ttl_dns_cache=60, resolver=guard, socket_factory=factory,
+                limit=POOL, limit_per_host=HOST_POOL, ttl_dns_cache=DNS_TTL, resolver=guard, socket_factory=factory,
             )
             found     = aiohttp.ClientSession(connector=connector, auto_decompress=True, raise_for_status=False)
 
@@ -68,13 +70,14 @@ class Net:
         self, method: str, url: str, *, headers: Mapping[str, str] | None = None, body: Any = None,
         data: Mapping[str, Any] | None = None, query: Mapping[str, Any] | None = None, timeout: float | None = None,
         limit: int | None = None, tries: int = 1, egress: Egress | None = None, redirects: int = REDIRECTS,
+        propagate: bool = False,
     ) -> Reply:
 
         guard  = egress or self._egress
         target = self._target_(url, guard)
         verb   = self._verb_(method)
 
-        sent: dict[str, str] = dict(headers or {})
+        sent = self._headers_(headers, propagate)
         payload = body
 
         if data is not None:
@@ -212,7 +215,7 @@ class Net:
     async def stream (
         self, method: str, url: str, *, headers: Mapping[str, str] | None = None, body: bytes | str | None = None,
         data: Mapping[str, Any] | None = None, query: Mapping[str, Any] | None = None, timeout: float | None = None,
-        egress: Egress | None = None, chunk: int = 65536,
+        egress: Egress | None = None, chunk: int = CHUNK, propagate: bool = False,
     ) -> AsyncGenerator[bytes]:
 
         guard  = egress or self._egress
@@ -220,7 +223,7 @@ class Net:
         verb   = self._verb_(method)
         pieces = self._whole_(chunk, "chunk")
 
-        sent: dict[str, str] = dict(headers or {})
+        sent = self._headers_(headers, propagate)
         payload = body
 
         if data is not None:
@@ -230,7 +233,7 @@ class Net:
 
         session = await self.session(guard)
         seconds = self._timeout if timeout is None else self._timed_(timeout, "timeout")
-        waits   = aiohttp.ClientTimeout(total=None, sock_connect=seconds, sock_read=seconds)
+        waits   = aiohttp.ClientTimeout(total=None, connect=seconds, sock_connect=seconds, sock_read=seconds)
 
         try:
 
@@ -280,7 +283,7 @@ class Net:
 
                 if scan > limit: raise self._long_("net.line")
 
-            if held: yield bytes(held)
+            if held: yield held.take_bytes()
 
         finally: await self._shut_(source)
 
@@ -368,7 +371,7 @@ class Net:
 
                     async with session.request(
                         method, target, headers=headers, data=payload, params=params, allow_redirects=False,
-                        max_line_size=16384, max_field_size=16384,
+                        max_line_size=HEADER, max_field_size=HEADER,
                     ) as response:
 
                         if response.status not in MOVED or not response.headers.get("Location") or not budget[2]:
@@ -443,6 +446,19 @@ class Net:
 
         return Fault(Code.TOO_LARGE, reason=reason, unknown=True)
 
+    @staticmethod
+    def _headers_ ( headers: Mapping[str, str] | None, propagate: bool ) -> dict[str, str]:
+
+        sent = dict(headers or {})
+
+        if propagate:
+
+            explicit = { key.lower() for key in sent }
+
+            sent.update({ key: value for key, value in context.headers().items() if key.lower() not in explicit })
+
+        return sent
+
     def _verb_ ( self, method: object ) -> str:
 
         if type(method) is not str or not method.isalpha() or not 0 < len(method) <= VERB: raise self._unset_("method")
@@ -505,13 +521,13 @@ class Net:
 
         body = bytearray()
 
-        async for chunk in response.content.iter_chunked(65536):
+        async for chunk in response.content.iter_chunked(CHUNK):
 
             body.extend(chunk)
 
             if len(body) > limit: raise Fault(Code.TOO_LARGE, reason="net.body")
 
-        return bytes(body)
+        return body.take_bytes()
 
     def _query_ ( self, query: Mapping[str, Any] | None ) -> list[tuple[str, str]] | None:
 

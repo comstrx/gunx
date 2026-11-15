@@ -72,8 +72,12 @@ describe("host", () => {
     it("the page document carries a strict policy and the role's identity", () => {
 
         expect(csp("http://localhost:8100/api")).toBe(
-            "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' http://localhost:8100; object-src 'none'; base-uri 'none'; form-action 'none'",
+            "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' http://localhost:8100 ws://localhost:8100; object-src 'none'; base-uri 'none'; form-action 'none'",
         );
+
+        expect(csp("https://api.example.test/v1")).toContain("connect-src 'self' https://api.example.test wss://api.example.test;");
+        expect(csp("https://api.example.test:8443/v1")).toContain("wss://api.example.test:8443;");
+        expect(() => csp("file:///private")).toThrow("the API uses http or https");
 
         const html = page({ lang: "ar", dir: "rtl", csp: csp("http://localhost:8100") });
 

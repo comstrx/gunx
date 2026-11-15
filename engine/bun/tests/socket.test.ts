@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as api from "engine/api";
 import * as error from "engine/error";
 import * as socket from "engine/socket";
 
@@ -15,7 +16,7 @@ function fakeSocket ( acking = true, ponging = false ): Side {
         onmessage: null,
         send: ( text ) => {
 
-            const frame = socket.decode(text);
+            const frame = api.decodeFrame(text);
 
             if ( !frame ) return;
 
@@ -31,7 +32,7 @@ function fakeSocket ( acking = true, ponging = false ): Side {
             made.onclose?.({ code: 1000, reason: "" });
 
         },
-        fire: ( frame ) => made.onmessage?.({ data: socket.encode(frame) }),
+        fire: ( frame ) => made.onmessage?.({ data: api.encodeFrame(frame) }),
         openNow: () => {
 
             made.readyState = 1;
@@ -66,13 +67,13 @@ describe("socket", () => {
 
     it("frames encode compactly and decode defensively", () => {
 
-        expect(socket.encode({ event: "hi", data: { a: 1 }, channel: undefined })).toBe('{"event":"hi","data":{"a":1}}');
-        expect(socket.decode('{"event":"x","channel":"c","id":"1","data":null}')).toEqual({ event: "x", data: null, channel: "c", id: "1" });
-        expect(socket.decode("nope")).toBeUndefined();
-        expect(socket.decode('{"no":"event"}')).toBeUndefined();
-        expect(socket.decode(5)).toBeUndefined();
+        expect(api.encodeFrame({ event: "hi", data: { a: 1 }, channel: undefined })).toBe('{"event":"hi","data":{"a":1}}');
+        expect(api.decodeFrame('{"event":"x","channel":"c","id":"1","data":null}')).toEqual({ event: "x", data: null, channel: "c", id: "1" });
+        expect(api.decodeFrame("nope")).toBeUndefined();
+        expect(api.decodeFrame('{"no":"event"}')).toBeUndefined();
+        expect(api.decodeFrame(5)).toBeUndefined();
         expect(socket.factory.has() && !socket.factory.bound()).toBe(true);
-        expect([socket.decode('{"event":""}'), socket.decode('{"event":"x","channel":"","id":""}'), socket.decode(new TextEncoder().encode('{"event":"b"}')), socket.decode(new TextEncoder().encode('{"event":"b"}').buffer), socket.decode('{"event":"x"}', 5), socket.decode(new Uint8Array(10), 5), socket.decode('{"event":"x","__proto__":{"polluted":1}}')]).toEqual([undefined, { event: "x", data: undefined, channel: undefined, id: undefined }, { event: "b", data: undefined, channel: undefined, id: undefined }, { event: "b", data: undefined, channel: undefined, id: undefined }, undefined, undefined, { event: "x", data: undefined, channel: undefined, id: undefined }]);
+        expect([api.decodeFrame('{"event":""}'), api.decodeFrame('{"event":"x","channel":"","id":""}'), api.decodeFrame(new TextEncoder().encode('{"event":"b"}')), api.decodeFrame(new TextEncoder().encode('{"event":"b"}').buffer), api.decodeFrame('{"event":"x"}', 5), api.decodeFrame(new Uint8Array(10), 5), api.decodeFrame('{"event":"x","__proto__":{"polluted":1}}')]).toEqual([undefined, { event: "x", data: undefined, channel: undefined, id: undefined }, { event: "b", data: undefined, channel: undefined, id: undefined }, { event: "b", data: undefined, channel: undefined, id: undefined }, undefined, undefined, { event: "x", data: undefined, channel: undefined, id: undefined }]);
         expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
 
     });
@@ -80,7 +81,7 @@ describe("socket", () => {
 
         const sockets: Side[] = [];
         const statuses: string[] = [];
-        const live = socket.open({ url: "wss://x", auth: () => "tok", heartbeat: 0, reconnect: { min: 1, max: 2 }, factory: () => { const made = fakeSocket(); sockets.push(made); return made; }, onStatus: ( status, attempt ) => { statuses.push(`${status}:${attempt}`); } });
+        const live = api.connect({ url: "wss://x", auth: () => "tok", heartbeat: 0, reconnect: { min: 1, max: 2 }, factory: () => { const made = fakeSocket(); sockets.push(made); return made; }, onStatus: ( status, attempt ) => { statuses.push(`${status}:${attempt}`); } });
         const seen: string[] = [];
 
         live.on("message", ( data ) => { seen.push(`m:${String(data)}`); });
@@ -160,7 +161,7 @@ describe("socket", () => {
     it("a connection gives up after the reconnect limit", async () => {
 
         const made: Side[] = [];
-        const live = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1, limit: 2 }, factory: () => { const next = fakeSocket(); made.push(next); return next; } });
+        const live = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1, limit: 2 }, factory: () => { const next = fakeSocket(); made.push(next); return next; } });
         const connecting = live.connect();
 
         await tick(1);
@@ -171,7 +172,7 @@ describe("socket", () => {
         expect(live.status()).toBe("failed");
         expect(live.attempts()).toBe(2);
 
-        const none = socket.open({ url: "wss://x", reconnect: false, factory: () => { throw new Error("no socket"); } });
+        const none = api.connect({ url: "wss://x", reconnect: false, factory: () => { throw new Error("no socket"); } });
 
         await expect(none.connect()).rejects.toMatchObject({ reason: "socket.open" });
 
@@ -179,9 +180,9 @@ describe("socket", () => {
     it("a channel scopes a connection and presence follows joins, leaves and syncs", async () => {
 
         const side = fakeSocket();
-        const made = socket.open({ url: "wss://x", factory: () => side, reconnect: false, heartbeat: 0 });
+        const made = api.connect({ url: "wss://x", factory: () => side, reconnect: false, heartbeat: 0 });
         const room = socket.channel(made, "room-1");
-        const who = socket.presence(made, "room-1");
+        const who = api.presence(made, "room-1");
         const counts: number[] = [];
         const stop = who.watch(( state ) => { counts.push(state.count); });
         const opened = made.connect();
@@ -216,7 +217,7 @@ describe("socket", () => {
     it("joins wait for an ack, time out on silence, are forgotten when refused, and a leave settles a pending join", async () => {
 
         const side = fakeSocket(false);
-        const live = socket.open({ url: "wss://x", heartbeat: 0, reconnect: false, timeout: 20, factory: () => side });
+        const live = api.connect({ url: "wss://x", heartbeat: 0, reconnect: false, timeout: 20, factory: () => side });
 
         void live.connect();
         await tick(1);
@@ -253,12 +254,12 @@ describe("socket", () => {
 
         const sides: Side[] = [];
         const statuses: string[] = [];
-        const live = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 2, limit: 5, steady: 5 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; }, onStatus: ( status, attempt ) => { statuses.push(`${status}:${attempt}`); } });
+        const live = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 2, limit: 5, steady: 5 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; }, onStatus: ( status, attempt ) => { statuses.push(`${status}:${attempt}`); } });
 
         void live.connect();
         await tick(1);
         sides[0]?.openNow();
-        sides[0]?.dropNow(1000, "bye");
+        sides[0]?.dropNow(1012, "restart");
         await tick(10);
         sides[1]?.openNow();
         await tick(10);
@@ -268,7 +269,7 @@ describe("socket", () => {
         expect([statuses, sides.length, live.status(), told(live.cause()), live.attempts()]).toEqual([["connecting:1", "open:1", "connecting:1", "connecting:2", "open:2", "failed:0"], 2, "failed", "forbidden/socket.refused", 0]);
 
         const sides2: Side[] = [];
-        const refusing = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); sides2.push(made); return made; } });
+        const refusing = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); sides2.push(made); return made; } });
 
         void refusing.connect().catch(() => undefined);
         await tick(1);
@@ -278,7 +279,7 @@ describe("socket", () => {
         expect([sides2.length, refusing.status(), told(refusing.cause())]).toEqual([1, "failed", "unauthorized/socket.refused"]);
 
         const sides3: Side[] = [];
-        const custom = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1, when: ( code ) => code !== 4999 }, factory: () => { const made = fakeSocket(); sides3.push(made); return made; } });
+        const custom = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1, when: ( code ) => code !== 4999 }, factory: () => { const made = fakeSocket(); sides3.push(made); return made; } });
 
         void custom.connect().catch(() => undefined);
         await tick(1);
@@ -297,7 +298,7 @@ describe("socket", () => {
     it("requests made while connecting are held and answered after the link opens, sent ones die with the link, and backlog bounds hold", async () => {
 
         const sides: Side[] = [];
-        const live = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1, limit: 3 }, buffer: 1, factory: () => { const made = fakeSocket(); sides.push(made); return made; } });
+        const live = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1, limit: 3 }, buffer: 1, factory: () => { const made = fakeSocket(); sides.push(made); return made; } });
 
         void live.connect().catch(() => undefined);
 
@@ -328,7 +329,7 @@ describe("socket", () => {
         await tick(1);
         expect(sides[1]?.sent).toEqual([]);
 
-        const flooded = socket.open({ url: "wss://x", heartbeat: 0, reconnect: false, backlog: 10, factory: () => { const made = fakeSocket(); made.bufferedAmount = 11; sides.push(made); return made; } });
+        const flooded = api.connect({ url: "wss://x", heartbeat: 0, reconnect: false, backlog: 10, factory: () => { const made = fakeSocket(); made.bufferedAmount = 11; sides.push(made); return made; } });
 
         void flooded.connect();
         await tick(1);
@@ -341,7 +342,7 @@ describe("socket", () => {
     it("frames are bounded and named, heard frames are counted, pings answer with their id, the greeting carries the id, and the heartbeat drops a silent peer", async () => {
 
         const side = fakeSocket();
-        const live = socket.open({ url: "https://x/path", heartbeat: 0, reconnect: false, factory: ( url ) => { side.sent.push({ event: `dial ${url}` }); return side; }, maxFrame: 64 });
+        const live = api.connect({ url: "https://x/path", heartbeat: 0, reconnect: false, factory: ( url ) => { side.sent.push({ event: `dial ${url}` }); return side; }, maxFrame: 64 });
 
         void live.connect();
         await tick(1);
@@ -353,14 +354,14 @@ describe("socket", () => {
         side.fire({ event: "connected", data: { id: "conn-9" } });
         side.fire({ event: "junk" });
         side.onmessage?.({ data: "not json" });
-        side.onmessage?.({ data: new TextEncoder().encode(socket.encode({ event: "bytes", data: 1 })) });
-        side.onmessage?.({ data: socket.encode({ event: "big", data: "x".repeat(100) }) });
+        side.onmessage?.({ data: new TextEncoder().encode(api.encodeFrame({ event: "bytes", data: 1 })) });
+        side.onmessage?.({ data: api.encodeFrame({ event: "big", data: "x".repeat(100) }) });
         expect([side.sent.at(-1), live.id(), live.stats()]).toEqual([{ event: "pong", id: "p1" }, "conn-9", { sent: 2, received: 4, refused: 2, opens: 1 }]);
         live.close();
 
         const beating = fakeSocket();
         const faults: string[] = [];
-        const pulse = socket.open({ url: "wss://x", heartbeat: 10, timeout: 50, reconnect: false, factory: () => beating, fail: ( cause ) => { faults.push(told(cause)); } });
+        const pulse = api.connect({ url: "wss://x", heartbeat: 10, timeout: 50, reconnect: false, factory: () => beating, fail: ( cause ) => { faults.push(told(cause)); } });
 
         void pulse.connect().catch(( cause: unknown ) => { faults.push(`connect ${told(cause)}`); });
         await tick(1);
@@ -369,7 +370,7 @@ describe("socket", () => {
         expect([beating.sent.map(( frame ) => frame.event), pulse.status(), faults, beating.readyState, told(pulse.cause())]).toEqual([["ping"], "failed", [], 3, "timeout/socket.heartbeat"]);
 
         const answered = fakeSocket(true, true);
-        const alive = socket.open({ url: "wss://x", heartbeat: 10, reconnect: false, factory: () => answered });
+        const alive = api.connect({ url: "wss://x", heartbeat: 10, reconnect: false, factory: () => answered });
 
         void alive.connect();
         await tick(1);
@@ -383,7 +384,7 @@ describe("socket", () => {
 
         const sides: Side[] = [];
         let tokens = 0;
-        const live = socket.open({ url: async () => { await tick(1); return "wss://x"; }, auth: async () => { tokens += 1; return tokens === 1 ? "t1" : "t2"; }, heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; } });
+        const live = api.connect({ url: async () => { await tick(1); return "wss://x"; }, auth: async () => { tokens += 1; return tokens === 1 ? "t1" : "t2"; }, heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; } });
 
         void live.connect().catch(() => undefined);
         await tick(5);
@@ -395,13 +396,13 @@ describe("socket", () => {
         expect(sides.map(( side ) => side.sent[0]?.data)).toEqual([{ token: "t1" }, { token: "t2" }]);
         live.close();
 
-        const failing = socket.open({ url: "wss://x", auth: () => { throw error.fault("unauthorized", "no token"); }, reconnect: { min: 1 }, factory: () => fakeSocket() });
+        const failing = api.connect({ url: "wss://x", auth: () => { throw error.fault("unauthorized", "no token"); }, reconnect: { min: 1 }, factory: () => fakeSocket() });
 
         expect([await failing.connect().then(() => "connected", told), failing.status()]).toEqual(["unauthorized/no token", "failed"]);
 
         let asked = 0;
         const flaky: Side[] = [];
-        const retrying = socket.open({ url: "wss://x", auth: () => { asked += 1; if ( asked < 3 ) throw new Error("network"); return "t"; }, heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); flaky.push(made); return made; } });
+        const retrying = api.connect({ url: "wss://x", auth: () => { asked += 1; if ( asked < 3 ) throw new Error("network"); return "t"; }, heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); flaky.push(made); return made; } });
         const connecting = retrying.connect();
 
         await tick(15);
@@ -412,20 +413,20 @@ describe("socket", () => {
 
         for ( const [options, expected] of [[{ url: "javascript:alert(1)" }, "internal/socket.url"], [{ url: "ws:/x" }, "internal/socket.url"], [{ url: "" }, "internal/socket.url"], [{ url: "//x" }, "internal/socket.url"], [{ url: "wss://x y" }, "internal/socket.url"], [{ url: async () => "ftp://x" }, "internal/socket.url"], [{ url: `wss://${"x".repeat(3000)}` }, "internal/socket.url"]] as const ) {
 
-            const bad = socket.open({ ...options, reconnect: false, factory: () => fakeSocket() });
+            const bad = api.connect({ ...options, reconnect: false, factory: () => fakeSocket() });
 
             expect(await bad.connect().then(() => "connected", told)).toBe(expected);
 
         }
 
-        for ( const [options, expected] of [[{ heartbeat: Number.NaN }, "RangeError: not a duration"], [{ timeout: -1 }, "RangeError: not a duration"], [{ maxFrame: Number.NaN }, "RangeError: not a size"], [{ buffer: -1 }, "RangeError: not a size"], [{ backlog: Number.NaN }, "RangeError: not a size"], [{ reconnect: { factor: 0.5 } }, "RangeError: not a factor"], [{ reconnect: { limit: -1 } }, "RangeError: not a count"], [{ reconnect: { min: Number.NaN } }, "RangeError: not a duration"], [{ reconnect: { steady: -1 } }, "RangeError: not a duration"]] as const ) expect(told(( () => { try { socket.open({ url: "wss://x", factory: () => fakeSocket(), ...options }); return "accepted"; } catch ( cause ) { return cause; } } )())).toBe(expected);
+        for ( const [options, expected] of [[{ heartbeat: Number.NaN }, "RangeError: not a duration"], [{ timeout: -1 }, "RangeError: not a duration"], [{ maxFrame: Number.NaN }, "RangeError: not a size"], [{ buffer: -1 }, "RangeError: not a size"], [{ backlog: Number.NaN }, "RangeError: not a size"], [{ reconnect: { factor: 0.5 } }, "RangeError: not a factor"], [{ reconnect: { limit: -1 } }, "RangeError: not a count"], [{ reconnect: { min: Number.NaN } }, "RangeError: not a duration"], [{ reconnect: { steady: -1 } }, "RangeError: not a duration"]] as const ) expect(told(( () => { try { api.connect({ url: "wss://x", factory: () => fakeSocket(), ...options }); return "accepted"; } catch ( cause ) { return cause; } } )())).toBe(expected);
 
     });
     it("listeners run to the end past a throwing peer, the failure reaches fail, once waits with a bound, and stale sockets are ignored", async () => {
 
         const sides: Side[] = [];
         const faults: string[] = [];
-        const live = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; }, fail: ( cause ) => { faults.push(told(cause)); } });
+        const live = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; }, fail: ( cause ) => { faults.push(told(cause)); } });
         const heard: string[] = [];
 
         live.on("x", () => { throw new Error("boom"); });
@@ -467,7 +468,7 @@ describe("socket", () => {
         expect(twice).toEqual(["d", "d", "e"]);
         live.close();
 
-        const loud = socket.open({ url: "wss://x", heartbeat: 0, reconnect: false, factory: () => fakeSocket() });
+        const loud = api.connect({ url: "wss://x", heartbeat: 0, reconnect: false, factory: () => fakeSocket() });
 
         const quiet = loud.watch(() => { throw new Error("unhandled"); });
 
@@ -479,10 +480,10 @@ describe("socket", () => {
     });
     it("survivors: binary frames are bounded in bytes, backoff caps at max, a closing socket takes nothing, held asks move on, stale acks and stale sockets are ignored", async () => {
 
-        expect([socket.decode(new TextEncoder().encode('{"event":"é"}'), 13), socket.decode('{"event":"é"}', 13)?.event]).toEqual([undefined, "é"]);
+        expect([api.decodeFrame(new TextEncoder().encode('{"event":"é"}'), 13), api.decodeFrame('{"event":"é"}', 13)?.event]).toEqual([undefined, undefined]);
 
         const sides: Side[] = [];
-        const quick = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1000, max: 1, factor: 10, limit: 5 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; } });
+        const quick = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1000, max: 1, factor: 10, limit: 5 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; } });
 
         void quick.connect().catch(() => undefined);
         await tick(1);
@@ -496,7 +497,7 @@ describe("socket", () => {
         quick.close();
 
         const closing = fakeSocket();
-        const half = socket.open({ url: "wss://x", heartbeat: 0, reconnect: false, factory: () => closing });
+        const half = api.connect({ url: "wss://x", heartbeat: 0, reconnect: false, factory: () => closing });
 
         void half.connect();
         await tick(1);
@@ -507,7 +508,7 @@ describe("socket", () => {
         half.close();
 
         const holding: Side[] = [];
-        const held = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); holding.push(made); return made; } });
+        const held = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); holding.push(made); return made; } });
 
         void held.connect().catch(() => undefined);
 
@@ -532,7 +533,7 @@ describe("socket", () => {
         held.close();
 
         const rooms = fakeSocket(false);
-        const roomy = socket.open({ url: "wss://x", heartbeat: 0, reconnect: false, timeout: 500, factory: () => rooms });
+        const roomy = api.connect({ url: "wss://x", heartbeat: 0, reconnect: false, timeout: 500, factory: () => rooms });
 
         void roomy.connect();
         await tick(1);
@@ -569,7 +570,7 @@ describe("socket", () => {
         roomy.close();
 
         const twice: Side[] = [];
-        const reopened = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); twice.push(made); return made; } });
+        const reopened = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1 }, factory: () => { const made = fakeSocket(); twice.push(made); return made; } });
 
         void reopened.connect().catch(() => undefined);
         await tick(1);
@@ -584,12 +585,12 @@ describe("socket", () => {
     });
     it("survivors: open deadlines, late dials, presence ids, actor lists, limits, quiet re-syncs, unknown leaves and sync on open", async () => {
 
-        const never = socket.open({ url: "wss://x", heartbeat: 0, reconnect: false, timeout: 20, factory: () => fakeSocket() });
+        const never = api.connect({ url: "wss://x", heartbeat: 0, reconnect: false, timeout: 20, factory: () => fakeSocket() });
 
         expect([await never.connect().then(() => "connected", told), never.status()]).toEqual(["timeout/socket.open", "failed"]);
 
         const dials: Side[] = [];
-        const late = socket.open({ url: async () => { await tick(10); return "wss://x"; }, heartbeat: 0, reconnect: false, factory: () => { const made = fakeSocket(); dials.push(made); return made; } });
+        const late = api.connect({ url: async () => { await tick(10); return "wss://x"; }, heartbeat: 0, reconnect: false, factory: () => { const made = fakeSocket(); dials.push(made); return made; } });
         const connecting = late.connect().then(() => "connected", told);
 
         late.close();
@@ -597,13 +598,13 @@ describe("socket", () => {
         expect([dials.length, await connecting, late.status()]).toEqual([0, "unavailable/socket.closed", "closed"]);
 
         const side = fakeSocket();
-        const made = socket.open({ url: "wss://x", factory: () => side, reconnect: false, heartbeat: 0 });
-        const who = socket.presence(made, "room", { limit: 2 });
+        const made = api.connect({ url: "wss://x", factory: () => side, reconnect: false, heartbeat: 0 });
+        const who = api.presence(made, "room", { limit: 2 });
         const counts: number[] = [];
 
         who.watch(( state ) => { counts.push(state.count); });
-        expect(() => socket.presence(made, "room", { limit: Number.NaN })).toThrow(new RangeError("not a count"));
-        expect(() => socket.presence(made, "room", { limit: -1 })).toThrow(new RangeError("not a count"));
+        expect(() => api.presence(made, "room", { limit: Number.NaN })).toThrow(new RangeError("not a count"));
+        expect(() => api.presence(made, "room", { limit: -1 })).toThrow(new RangeError("not a count"));
         void made.connect();
         await tick(1);
         side.openNow();
@@ -623,8 +624,8 @@ describe("socket", () => {
         made.close();
 
         const syncing = fakeSocket();
-        const live = socket.open({ url: "wss://x", factory: () => syncing, reconnect: false, heartbeat: 0 });
-        const synced = socket.presence(live, "lobby", { sync: true });
+        const live = api.connect({ url: "wss://x", factory: () => syncing, reconnect: false, heartbeat: 0 });
+        const synced = api.presence(live, "lobby", { sync: true });
 
         void live.connect();
         await tick(1);
@@ -647,7 +648,7 @@ describe("socket", () => {
     it("survivors: a request made while connecting survives a failed dial and is sent on the next link", async () => {
 
         const sides: Side[] = [];
-        const live = socket.open({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1, limit: 3 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; } });
+        const live = api.connect({ url: "wss://x", heartbeat: 0, reconnect: { min: 1, max: 1, limit: 3 }, factory: () => { const made = fakeSocket(); sides.push(made); return made; } });
 
         void live.connect().catch(() => undefined);
 

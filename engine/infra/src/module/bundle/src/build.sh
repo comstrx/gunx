@@ -92,7 +92,7 @@ module:bundle:install () {
     target="${into}/${alias}"
 
     core:fs:dir:new "${into}" 755 || return
-    core:fs:file:read "${output}" | core:fs:file:write "${target}" 755 || return
+    core:fs:file:write "${target}" 755 core:fs:file:read "${output}" || return
 
     if [[ -n "${GITHUB_PATH:-}" ]]; then
         printf '%s\n' "${into}" >> "${GITHUB_PATH}" || { core:error:fail "Cannot extend GITHUB_PATH"; return; }

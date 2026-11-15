@@ -1,33 +1,7 @@
 import * as adapter from "engine-adapter";
 import * as error from "engine-error";
 import * as json from "engine-json";
-import type { CookieOptions, Jar } from "./cookie.ts";
-
-type StorageEvent = { key: string | null; newValue: string | null; storageArea?: unknown };
-type Listeners = { add: ( key: string, onChange: Change ) => () => void; fire: ( key: string, value: string | null ) => void };
-
-export type Kind = "local" | "session" | "memory" | "cookie";
-export type Change = ( value: string | null ) => void;
-export type Lock = <T>( key: string, work: () => Promise<T> ) => Promise<T>;
-export type Storage = {
-    get: ( key: string ) => Promise<string | null>;
-    set: ( key: string, value: string ) => Promise<void>;
-    delete: ( key: string ) => Promise<void>;
-    keys: () => Promise<string[]>;
-    watch: ( key: string, onChange: Change ) => () => void;
-    lock: Lock | undefined;
-};
-export type Driver = {
-    get: ( key: string ) => Promise<string | null> | string | null;
-    set: ( key: string, value: string ) => Promise<void> | void;
-    delete: ( key: string ) => Promise<void> | void;
-    keys: () => Promise<string[]> | string[];
-    watch?: (( key: string, onChange: Change ) => () => void) | undefined;
-    lock?: Lock | undefined;
-};
-export type WebStorage = adapter.WebStorage;
-export type Codec<T> = { encode: ( value: T ) => string; decode: ( text: string ) => T | undefined };
-export type Typed<T> = { read: ( key: string ) => Promise<T | undefined>; write: ( key: string, value: T ) => Promise<void>; remove: ( key: string ) => Promise<void> };
+import type { Change, Codec, CookieOptions, Driver, Jar, Kind, Listeners, Lock, Storage, StorageEvent, Typed, WebStorage } from "./arch.ts";
 
 export const storages: adapter.Family<Storage> = adapter.family<Storage>("cache.storage");
 
@@ -36,8 +10,48 @@ const made = new WeakSet<object>();
 function listeners (): Listeners {
 
     const byKey = new Map<string, Set<Change>>();
+    let failed: { cause: unknown } | undefined;
+    let pending = 0;
+    let idle: Promise<void> | undefined;
+    let complete: (() => void) | undefined;
+
+    const caught = ( cause: unknown ): void => { failed ??= { cause }; };
+    const finished = (): void => {
+
+        pending -= 1;
+
+        if ( pending !== 0 ) return;
+
+        const done = complete;
+
+        idle = undefined;
+        complete = undefined;
+        done?.();
+
+    };
+    const notify = ( onChange: Change, value: string | null ): void => {
+
+        try {
+
+            const result: unknown = onChange(value);
+
+            if ( result === null || (typeof result !== "object" && typeof result !== "function") || !("then" in result) ) return;
+
+            if ( pending === 0 ) idle = new Promise<void>(( resolve ) => { complete = resolve; });
+
+            pending += 1;
+            void Promise.resolve(result).then(() => undefined, caught).then(finished);
+
+        } catch ( cause ) {
+
+            caught(cause);
+
+        }
+
+    };
 
     return {
+        notify,
         add: ( key, onChange ) => {
 
             const set = byKey.get(key) ?? new Set<Change>();
@@ -57,25 +71,19 @@ function listeners (): Listeners {
         fire: ( key, value ) => {
 
             const set = byKey.get(key);
-            let failed: { failure: unknown } | undefined;
 
-            if ( set === undefined ) return;
+            if ( set !== undefined ) for ( const onChange of [...set] ) notify(onChange, value);
 
-            for ( const onChange of [...set] ) {
+        },
+        flush: async () => {
 
-                try {
+            while ( idle !== undefined ) await idle;
 
-                    onChange(value);
+            const found = failed;
 
-                } catch ( failure ) {
+            failed = undefined;
 
-                    failed ??= { failure };
-
-                }
-
-            }
-
-            if ( failed ) throw failed.failure;
+            if ( found !== undefined ) throw found.cause;
 
         },
     };
@@ -175,17 +183,42 @@ export function driver ( given: Driver ): Storage {
         watch: ( key, onChange ) => {
 
             const stopLocal = local.add(key, onChange);
-            const stopGiven = given.watch?.(key, onChange);
+            let stopGiven: (() => void) | undefined;
+
+            try {
+
+                stopGiven = given.watch?.(key, ( value ) => local.notify(onChange, value));
+
+            } catch ( cause ) {
+
+                stopLocal();
+
+                throw cause;
+
+            }
+
+            let live = true;
 
             return () => {
 
+                if ( !live ) return;
+
+                live = false;
                 stopLocal();
                 stopGiven?.();
 
             };
 
         },
-        lock: given.lock,
+        lock: given.lock?.bind(given),
+        flush: async () => {
+
+            const results = await Promise.allSettled([local.flush(), given.flush?.()]);
+            const failed = results.find(( result ) => result.status === "rejected");
+
+            if ( failed?.status === "rejected" ) throw failed.reason;
+
+        },
     });
 
 }
@@ -276,13 +309,14 @@ export function lazy ( make: () => Storage ): Storage {
         delete: async ( key ) => resolved().delete(key),
         keys: async () => resolved().keys(),
         watch: ( key, onChange ) => resolved().watch(key, onChange),
+        flush: () => resolved().flush(),
         lock: async ( key, work ) => {
 
-            const { lock } = resolved();
+            const target = resolved();
 
-            if ( lock === undefined ) throw unguarded();
+            if ( target.lock === undefined ) throw unguarded();
 
-            return lock(key, work);
+            return target.lock(key, work);
 
         },
     });
@@ -300,6 +334,7 @@ export function namespaced ( target: Storage, prefix: string ): Storage {
         delete: ( key ) => target.delete(`${head}${key}`),
         keys: async () => (await target.keys()).filter(( key ) => key.startsWith(head)).map(( key ) => key.slice(head.length)),
         watch: ( key, onChange ) => target.watch(`${head}${key}`, onChange),
+        flush: () => target.flush(),
         lock: target.lock === undefined ? undefined : ( key, work ) => (target.lock as Lock)(`${head}${key}`, work),
     });
 
@@ -324,11 +359,17 @@ export function typed<T> ( target: Storage, codec: Codec<T> = jsonCodec<T>() ): 
     };
 
 }
-export function use ( kind: Kind | string, given?: Driver ): void {
+export function use ( kind: Kind | string, given?: Driver ): () => void {
 
-    if ( given ) storages.add(kind, driver(given));
+    const remove = given === undefined ? undefined : storages.add(kind, driver(given));
+    const restore = storages.use(kind);
 
-    storages.prefer(kind);
+    return () => {
+
+        restore();
+        remove?.();
+
+    };
 
 }
 export function storage ( kind?: Kind | string ): Storage {

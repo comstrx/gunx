@@ -38,3 +38,14 @@ bench.measure("parse.semver", semver)
 bench.measure("parse.template", template)
 bench.measure("parse.csv", csv)
 bench.measure("parse.accept", accept)
+
+list_items = [" a ", " ", 42, None, " end "] * 100
+bench.measure("parse.list.mixed", lambda: parse.list(list_items), rounds=2000)
+
+config = {"name": "{name}", "enabled": True, "port": 8080}
+yaml_text = parse.dumps(config, "yaml")
+bench.measure("parse.yaml.safe", lambda: parse.yaml(yaml_text), rounds=500)
+bench.measure("parse.document.render", lambda: parse.of(config).render({"name": "api"}).text(), rounds=500)
+
+render_tree = {f"k{index}": {"name": "{name}"} for index in range(200)}
+bench.measure("parse.document.render.keys", lambda: parse.of(render_tree).render({"name": "worker"}, keys=True).value(), rounds=300)

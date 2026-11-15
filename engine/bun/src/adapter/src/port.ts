@@ -1,43 +1,5 @@
 import * as error from "engine-error";
-
-export type Options<T> = { fallback?: (() => T) | undefined; check?: (( value: T ) => boolean) | undefined };
-export type Listener = () => void;
-export type Port<T> = {
-    readonly name: string;
-    use: ( value: T ) => () => void;
-    lazy: ( make: () => T ) => () => void;
-    get: () => T;
-    peek: () => T | undefined;
-    has: () => boolean;
-    bound: () => boolean;
-    reset: () => void;
-    with: <R>( value: T, work: () => R ) => R;
-    watch: ( listener: Listener ) => () => void;
-};
-export type AnyPort = {
-    readonly name: string;
-    use: ( value: never ) => () => void;
-    get: () => unknown;
-    peek: () => unknown;
-    has: () => boolean;
-    bound: () => boolean;
-    reset: () => void;
-    watch: ( listener: Listener ) => () => void;
-};
-export type Family<T> = {
-    readonly name: string;
-    add: ( kind: string, value: T ) => () => void;
-    lazy: ( kind: string, make: () => T ) => () => void;
-    pick: ( kind?: string ) => T;
-    peek: ( kind?: string ) => T | undefined;
-    has: ( kind: string ) => boolean;
-    prefer: ( kind: string ) => void;
-    preferred: () => string | undefined;
-    kinds: () => string[];
-    reset: () => void;
-};
-
-type Slot<T> = { make: () => T; value?: T | undefined; made: boolean; making: boolean };
+import type { Family, Listener, Options, Port, Slot } from "./arch.ts";
 
 function deferred<T> ( make: () => T ): Slot<T> {
 
@@ -91,7 +53,7 @@ function passes<T> ( check: (( value: T ) => boolean) | undefined, value: T ): b
 }
 function thenable ( value: unknown ): value is PromiseLike<unknown> {
 
-    return typeof value === "object" && value !== null && typeof (value as { then?: unknown }).then === "function";
+    return ((typeof value === "object" && value !== null) || typeof value === "function") && typeof (value as { then?: unknown }).then === "function";
 
 }
 export function drain ( works: readonly (() => void)[] ): void {
@@ -123,6 +85,8 @@ export function scoped<R> ( restore: () => void, work: () => R ): R {
 
         result = work();
 
+        if ( thenable(result) ) return Promise.resolve(result).finally(restore) as R;
+
     } catch ( caught ) {
 
         restore();
@@ -130,8 +94,6 @@ export function scoped<R> ( restore: () => void, work: () => R ): R {
         throw caught;
 
     }
-
-    if ( thenable(result) ) return Promise.resolve(result).finally(restore) as R;
 
     restore();
 
@@ -142,7 +104,14 @@ export function port<T> ( name: string, options: Options<T> = {} ): Port<T> {
 
     const listeners = new Set<Listener>();
     const stack: Slot<T>[] = [];
-    let fallback = options.fallback ? deferred(options.fallback) : undefined;
+    const spare = (): Slot<T> | undefined => {
+
+        const make = options.fallback;
+
+        return make ? deferred(() => checked(make())) : undefined;
+
+    };
+    let fallback = spare();
     const current = (): Slot<T> | undefined => live(stack) ?? (fallback && !fallback.making ? fallback : undefined);
     const notify = (): void => drain([...listeners]);
     const checked = ( value: T ): T => {
@@ -209,7 +178,7 @@ export function port<T> ( name: string, options: Options<T> = {} ): Port<T> {
         reset: () => {
 
             stack.length = 0;
-            fallback = options.fallback ? deferred(options.fallback) : undefined;
+            fallback = spare();
             notify();
 
         },
@@ -233,8 +202,9 @@ export function port<T> ( name: string, options: Options<T> = {} ): Port<T> {
 export function family<T> ( name: string ): Family<T> {
 
     const stacks = new Map<string, Slot<T>[]>();
+    const preferred = port<string>(name);
     let chosen: string | undefined;
-    const resolve = ( kind: string | undefined ): string | undefined => kind ?? chosen ?? stacks.keys().next().value;
+    const resolve = ( kind: string | undefined ): string | undefined => kind ?? preferred.peek() ?? chosen ?? stacks.keys().next().value;
     const find = ( kind: string | undefined ): Slot<T> | undefined => live(stacks.get(resolve(kind) ?? "") ?? []);
     const bind = ( kind: string, slot: Slot<T> ): (() => void) => {
 
@@ -283,13 +253,16 @@ export function family<T> ( name: string ): Family<T> {
         prefer: ( kind ) => {
 
             chosen = kind;
+            preferred.reset();
 
         },
+        use: ( kind ) => preferred.use(kind),
         preferred: () => resolve(undefined),
         kinds: () => [...stacks.keys()].sort(),
         reset: () => {
 
             stacks.clear();
+            preferred.reset();
             chosen = undefined;
 
         },

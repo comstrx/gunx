@@ -1,20 +1,8 @@
 import * as date from "engine-date";
+import * as error from "engine-error";
 import * as json from "engine-json";
-import type { Entry, Facts, Level, Logger, Sink } from "./logger.ts";
+import type { Batch, BatchOptions, Counter, Entry, Facts, Held, Level, Logger, Seen, Sink, Timer } from "./arch.ts";
 import { levels, tried } from "./logger.ts";
-
-type Timer = ReturnType<typeof setTimeout>;
-type Seen = { at: number; missed: number };
-type Held<K> = { size: number; keys: () => Iterator<K>; delete: ( key: K ) => boolean };
-
-export type Counter = { count: Record<Entry["level"], number>; reset: () => void };
-export type BatchOptions = {
-    size?: number | undefined;
-    wait?: number | undefined;
-    keep?: number | undefined;
-    onFail?: (( failure: unknown, entries: readonly Entry[] ) => void) | undefined;
-};
-export type Batch = Sink & { flush: () => Promise<void>; size: () => number };
 
 const reserved = new Set(["time", "level", "name", "message", "facts"]);
 const escapes: Record<number, string> = { 9: "\\t", 10: "\\n", 13: "\\r" };
@@ -223,6 +211,7 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
     const wait = Math.min(whole(options.wait, 2000, 0), slowest);
     const keep = Math.max(size, whole(options.keep, 1000, 1));
     let held: Entry[] = [];
+    let closed = false;
     let failures = 0;
     let timer: Timer | undefined;
     let flight: Promise<void> | undefined;
@@ -234,7 +223,7 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
     };
     const arm = (): void => {
 
-        if ( timer !== undefined ) return;
+        if ( closed || timer !== undefined ) return;
 
         timer = setTimeout(() => {
 
@@ -246,6 +235,8 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
     };
     const ship = async (): Promise<void> => {
 
+        if ( closed ) return;
+
         const batch = held;
 
         held = [];
@@ -256,6 +247,8 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
             failures = 0;
 
         } catch ( caught ) {
+
+            if ( closed ) return;
 
             failures += 1;
             held = batch.concat(held).slice(-keep);
@@ -270,6 +263,8 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
 
         flight = undefined;
 
+        if ( closed ) return;
+
         if ( failures === 0 && held.length >= size ) void flush();
         else if ( held.length > 0 ) arm();
 
@@ -280,12 +275,23 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
 
         if ( flight ) await flight;
 
-        if ( flight === undefined && held.length > 0 ) flight = ship().then(landed);
+        if ( closed ) return;
+
+        if ( flight === undefined && held.length > 0 ) {
+
+            const { promise, resolve } = Promise.withResolvers<void>();
+
+            flight = promise.then(landed);
+            resolve(ship());
+
+        }
 
         if ( flight ) await flight;
 
     };
     const sink = (( entry: Entry ) => {
+
+        if ( closed ) throw error.fault("unavailable", "log.closed");
 
         held.push(entry);
 
@@ -298,6 +304,15 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
 
     sink.flush = flush;
     sink.size = () => held.length;
+    sink.destroy = () => {
+
+        if ( closed ) return;
+
+        closed = true;
+        disarm();
+        held = [];
+
+    };
 
     return sink;
 

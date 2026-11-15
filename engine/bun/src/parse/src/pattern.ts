@@ -1,10 +1,6 @@
 import * as json from "engine-json";
 import * as string from "engine-string";
-
-export type Params = Record<string, string>;
-export type Fallback = string | (( key: string ) => string);
-
-type Route = { names: string[]; matcher: RegExp };
+import type { Fallback, Params, Route } from "./arch.ts";
 
 const keyPattern = /\{([a-zA-Z_][a-zA-Z0-9_.]*)(\*)?\}/g;
 const slotPattern = /\{([a-zA-Z_][a-zA-Z0-9_]*)(\*)?\}/g;

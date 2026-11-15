@@ -1,8 +1,5 @@
-import { deepest, divided, type Exact, factor, longest, power, type Rounding, read, rescaled, safe, scaled, write } from "./exact.ts";
-import type { Typed } from "./typed.ts";
-
-export type Decimal = Typed<string, "decimal">;
-export type Input = Decimal | string | number | bigint;
+import type { Decimal, Exact, Input, Rounding } from "./arch.ts";
+import { deepest, divided, factor, longest, power, read, rescaled, safe, scaled, write } from "./exact.ts";
 
 function exact ( value: Input ): Exact {
 

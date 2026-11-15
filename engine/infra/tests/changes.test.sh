@@ -7,26 +7,7 @@ test:module:gate:parts-map-paths () {
             | module:gate:parts | tr '\n' ' '
     )"
 
-    @eq "${mapped}" 'engine=go engine=rust global=root product=demo/web tutor=tutor '
-
-}
-test:module:gate:emits-the-matrix () {
-
-    local output="${TMPDIR}/github.out"
-    local -a rows=()
-
-    module:gate:row rows rust ""
-    module:gate:row rows api demo
-    module:gate:row rows global ""
-
-    @eq "${#rows[@]}" 4
-    @eq "${rows[1]}" '{"part":"api","product":"demo","os":"ubuntu-latest"}'
-    @eq "${rows[3]}" '{"part":"global","product":"","os":"macos-latest"}'
-    @eq "$(module:gate:emit)" 'matrix=[]'
-    @eq "$(module:gate:emit "${rows[0]}" "${rows[1]}")" 'matrix=[{"part":"rust","product":"","os":"ubuntu-latest"},{"part":"api","product":"demo","os":"ubuntu-latest"}]'
-    GITHUB_OUTPUT="${output}" module:gate:emit "${rows[0]}" >/dev/null
-    @eq "$(cat "${output}")" 'matrix=[{"part":"rust","product":"","os":"ubuntu-latest"}]'
-    @eq "$(module:gate:runners infra | tr '\n' ' ')" 'ubuntu-latest macos-latest '
+    @eq "${mapped}" 'engine=go engine=rust product=demo/web root=root tutor=tutor '
 
 }
 test:module:gate:names-a-tool-root () {
@@ -34,22 +15,22 @@ test:module:gate:names-a-tool-root () {
     local root="${TMPDIR}/tool"
 
     mkdir -p "${root}/src"
-    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'global '
+    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'root '
 
     printf '' > "${root}/pyproject.toml"
-    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'python global '
+    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'python root '
 
     rm -f -- "${root}/pyproject.toml"
     printf '{"scripts":{"gate":"x"}}' > "${root}/package.json"
-    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'web global '
+    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'web root '
 
     printf '{}' > "${root}/package.json"
-    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'bun global '
+    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'bun root '
 
     rm -f -- "${root}/package.json"
     printf '' > "${root}/infra.toml"
     printf '' > "${root}/src/main.sh"
-    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'infra global '
+    @eq "$(module:gate:self "${root}" | tr '\n' ' ')" 'infra root '
 
 }
 test:module:gate:serves-a-tool-root () {
@@ -63,7 +44,7 @@ test:module:gate:serves-a-tool-root () {
     @eq "$(module:gate:fragment "${root}" api '' '' 1)" .
     @eq "$(module:gate:fragment "${root}" api '' '' 0)" ''
     @eq "$(module:gate:home "${root}" api .)" "${root}"
-    @eq "$(module:gate:present "${root}" | tr '\n' ' ')" 'python global '
+    @eq "$(module:gate:present "${root}" | tr '\n' ' ')" 'python root '
 
     rm -f -- "${root}/pyproject.toml"
     @eq "$(module:gate:projects "${root}" api)" ''

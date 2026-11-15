@@ -1,5 +1,6 @@
 import * as number from "engine-number";
-import { type Dictionary, isRecord, pathGet } from "./object.ts";
+import type { Dictionary } from "./arch.ts";
+import { isRecord, pathGet } from "./object.ts";
 
 export function getAt<T = unknown> ( value: unknown, path: string, fallback: T ): T {
 

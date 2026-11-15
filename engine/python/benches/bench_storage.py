@@ -2,7 +2,7 @@ from engine.log import log
 from engine.storage import Policy, Storage
 from engine.test import Bench
 from pathlib import Path
-import asyncio, tempfile
+import asyncio, tempfile, os
 
 bench   = Bench()
 loop    = asyncio.new_event_loop()
@@ -12,7 +12,7 @@ folder  = Path(tempfile.mkdtemp(prefix="engine-bench-"))
 png     = b"\x89PNG\r\n\x1a\n" + bytes(64 * 1024)
 disk    = storage.local("public", folder, "https://cdn.test", public=True)
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 storage.setup({ "public": disk }, "public")
 
 def checking () -> None: policy.check("Photo of Me.PNG", len(png), png[:8])

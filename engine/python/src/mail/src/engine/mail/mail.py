@@ -6,12 +6,9 @@ from engine.error import Code, Fault
 from engine.log import log
 from engine.validate import rules
 from engine.view import view
+from .arch import RECIPIENT_RULES
 from .arch import Message, NAME
 from .mailer import Mailer
-
-RECIPIENTS = {
-    "to": "required|list", "to.*": "required|email", "cc": "list", "cc.*": "email", "bcc": "list", "bcc.*": "email",
-}
 
 class Mail:
 
@@ -70,7 +67,7 @@ class Mail:
 
         copies = self._listed_(extra.get("cc", ())), self._listed_(extra.get("bcc", ()))
 
-        rules.check({ "to": list(targets), "cc": list(copies[0]), "bcc": list(copies[1]) }, RECIPIENTS, "mail.to")
+        rules.check({ "to": list(targets), "cc": list(copies[0]), "bcc": list(copies[1]) }, RECIPIENT_RULES, "mail.to")
 
         return Message(
             targets, subject, text, html, extra.get("sender") or self.sender(), extra.get("reply_to"), copies[0],

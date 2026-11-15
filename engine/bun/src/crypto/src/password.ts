@@ -1,8 +1,7 @@
 import * as rand from "engine-rand";
 import * as string from "engine-string";
-import { type Bytes, engine, equal, view } from "./digest.ts";
-
-type Read = { rounds: number; salt: Bytes; digest: string };
+import type { Bytes, Read } from "./arch.ts";
+import { engine, equal, view } from "./digest.ts";
 
 const scheme = "pbkdf2-sha256";
 const iterations = 600_000;

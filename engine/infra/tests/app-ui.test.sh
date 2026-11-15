@@ -1,6 +1,6 @@
 test:app:router:commands-are-the-recorded-surface () {
 
-    local recorded="hello build install checksum fetch check test bench fuzz audit help version config meta system gate changes targets extract place push sync"
+    local recorded="hello build install checksum fetch check test bench fuzz audit help version config meta system gate ci changes targets extract place push sync notify"
 
     @eq "$(module:bundle:usage:names | tr '\n' ' ' | sed 's/ $//')" "${recorded}"
 
@@ -35,5 +35,11 @@ test:module:bundle:view:prints-config () {
     @eq "$(bash "${TOOL_BIN}" config LOG_LEVEL)" info
     @eq "$(bash "${TOOL_BIN}" -e LOG_LEVEL=warn config --changed | tr -s ' ')" ' LOG_LEVEL warn (cli)'
     @errors 'config [KEY]' bash "${TOOL_BIN}" config A B
+
+}
+test:module:bundle:usage:keeps-one-arity-per-flag () {
+
+    @errors 'takes a value in one command and none in another' module:bundle:usage:flag gate '--part' 'A plain switch with the name of a valued one'
+    module:bundle:usage:flag gate '--part P' 'The same arity twice is fine'
 
 }

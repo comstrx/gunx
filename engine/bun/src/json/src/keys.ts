@@ -1,5 +1,6 @@
 import * as string from "engine-string";
-import { type Dictionary, isPlain, isRecord, poison, safeKey } from "./object.ts";
+import type { Dictionary } from "./arch.ts";
+import { isPlain, isRecord, poison, safeKey } from "./object.ts";
 
 function recase ( value: unknown, convert: ( key: string ) => string ): unknown {
 

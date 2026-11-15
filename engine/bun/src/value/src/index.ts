@@ -1,10 +1,5 @@
-export { boolean, cast, date, integer, type Kind, type Kinds, kind, list, listOf, number, oneOf, record, type Scalar, scalar, text } from "./cast.ts";
-export type { Decimal } from "./decimal.ts";
+export type { CurrencyCode, Decimal, Email, Key, Kind, Kinds, LocaleTag, Money, Otp, Phone, PlainDate, Rounding, Scalar, Slug, Typed, Ulid, Url, Uuid, Wire } from "./arch.ts";
+export { boolean, cast, date, integer, kind, list, listOf, number, oneOf, record, scalar, text } from "./cast.ts";
 export * as decimal from "./decimal.ts";
-export type { Rounding } from "./exact.ts";
-export type { Money, Wire } from "./money.ts";
 export * as money from "./money.ts";
-export {
-    type CurrencyCode, currency, type Email, email, type Key, key, type LocaleTag, locale, type Otp, otp, type Phone, type PlainDate, patterns, phone, plainDate,
-    type Slug, slug, type Typed, type Ulid, type Url, type Uuid, ulid, url, uuid,
-} from "./typed.ts";
+export { currency, email, key, locale, otp, patterns, phone, plainDate, slug, ulid, url, uuid } from "./typed.ts";

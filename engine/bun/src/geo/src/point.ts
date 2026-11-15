@@ -1,8 +1,5 @@
 import * as number from "engine-number";
-
-export type Point = { lat: number; lng: number };
-export type MapApp = "google" | "apple" | "waze";
-export type Compass = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
+import type { Compass, MapApp, Point } from "./arch.ts";
 
 export const earthRadius = 6_371_008.8;
 export const rad = Math.PI / 180;

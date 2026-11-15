@@ -1,5 +1,5 @@
 from types import FunctionType
-from typing import Any, override
+from typing import Any, cast, override
 import functools
 
 from jinja2 import nodes, pass_context, pass_eval_context
@@ -8,7 +8,8 @@ from jinja2.runtime import Context, markup_join, str_join
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 from .arch import BAGS, BARRED, BITS, CONCAT, ELEMENT, Filter, FILTERS, GROWS, LEFT, LIGHT, METHODS, OUTPUT, SIZED
 from .arch import Spent, TEXT, TICK, UNIT, VERDICTS
-from .limits import CHECKS, Limits
+from .limits import Limits
+from .arch import CHECKS, Check
 
 class Sandbox(ImmutableSandboxedEnvironment):
 
@@ -35,7 +36,9 @@ class Sandbox(ImmutableSandboxedEnvironment):
 
     def weighed ( self, name: str, job: Filter ) -> Filter:
 
-        check, sized = CHECKS.get(name), self.sized
+        method = CHECKS.get(name)
+        check = cast("Check", getattr(Limits, method)) if method is not None else None
+        sized = self.sized
         skip = 0 if getattr(job, "jinja_pass_arg", None) is None else 1
 
         @functools.wraps(job)

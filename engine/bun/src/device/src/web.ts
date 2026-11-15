@@ -1,16 +1,6 @@
 import * as adapter from "engine-adapter";
-import type { Adapter, Battery, Follow, Grant, Haptic, Media, Notice, Permission, Pick, Picked, Position, Shared, Stream, Watched } from "./device.ts";
-import { type Agent, type Contrast, type Info, type Insets, orientationOf, type Pointer, parseAgent } from "./info.ts";
-import type { Key } from "./keys.ts";
-
-type Found = adapter.Found;
-type Wanted = adapter.Wanted;
-type MediaList = adapter.MediaList;
-type Connection = adapter.Connection;
-type Edited = { tagName?: string; type?: string; isContentEditable?: boolean };
-type KeyEvent = { key: string; code: string; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; altKey: boolean; repeat: boolean; isComposing?: boolean; target?: Edited | null };
-type Sentinel = { release: () => Promise<void> };
-export type Host = adapter.Host;
+import type { Adapter, Agent, Battery, Connection, Contrast, Edited, Follow, Found, Grant, Haptic, Host, Info, Insets, Key, KeyEvent, Media, MediaList, Notice, Permission, Pick, Picked, Pointer, Position, Sentinel, Shared, Stream, Wanted, Watched } from "./arch.ts";
+import { orientationOf, parseAgent } from "./info.ts";
 
 const grants = new Map<string, Grant>([["granted", "granted"], ["denied", "denied"], ["prompt", "prompt"], ["default", "prompt"]]);
 const queries = new Map<Permission, string>([["location", "geolocation"], ["camera", "camera"], ["microphone", "microphone"], ["clipboard", "clipboard-read"]]);

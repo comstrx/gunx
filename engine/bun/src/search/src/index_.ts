@@ -1,41 +1,7 @@
 import * as json from "engine-json";
+import * as list from "engine-list";
 import * as string from "engine-string";
-
-export type Field<T> = (keyof T & string) | (string & Record<never, never>);
-export type Options<T> = {
-    fields: readonly Field<T>[];
-    key: ( item: T ) => string;
-    weights?: Readonly<Record<string, number>> | undefined;
-    minLength?: number | undefined;
-    stop?: readonly string[] | undefined;
-    tokenize?: (( text: string ) => readonly string[]) | undefined;
-};
-export type Query<T = unknown> = {
-    limit?: number | undefined;
-    offset?: number | undefined;
-    prefix?: boolean | undefined;
-    fuzzy?: number | undefined;
-    all?: boolean | undefined;
-    expansions?: number | undefined;
-    filter?: (( item: T ) => boolean) | undefined;
-    boost?: (( item: T ) => number) | undefined;
-};
-export type Hit<T> = { key: string; item: T; score: number; terms: string[] };
-export type Index<T> = {
-    add: ( item: T ) => void;
-    addAll: ( items: Iterable<T> ) => void;
-    remove: ( key: string ) => boolean;
-    has: ( key: string ) => boolean;
-    get: ( key: string ) => T | undefined;
-    query: ( text: string, options?: Query<T> ) => Hit<T>[];
-    suggest: ( prefix: string, limit?: number ) => string[];
-    size: () => number;
-    terms: () => number;
-    clear: () => void;
-};
-
-type Posting = { rows: number[]; weights: number[] };
-type Doc<T> = { key: string; item: T; length: number; terms: string[] };
+import type { Doc, Index, Options, Posting } from "./arch.ts";
 
 const k1 = 1.2;
 const b = 0.75;
@@ -72,36 +38,11 @@ function editsFor ( term: string, fuzzy: number | undefined ): number {
     return term.length <= 2 ? 0 : term.length <= 5 ? Math.min(asked, 1) : asked;
 
 }
-function best<V> ( items: V[], size: number, compare: ( a: V, b: V ) => number ): V[] {
+function best<T> ( items: T[], compare: ( a: T, b: T ) => number, size: number ): T[] {
 
     if ( size <= 0 ) return [];
-    if ( size >= items.length || size > 64 ) return items.sort(compare).slice(0, size);
 
-    const out: V[] = [];
-
-    for ( const item of items ) {
-
-        if ( out.length === size && compare(item, out[size - 1] as V) >= 0 ) continue;
-
-        let low = 0;
-        let high = out.length;
-
-        while ( low < high ) {
-
-            const middle = (low + high) >> 1;
-
-            if ( compare(out[middle] as V, item) <= 0 ) low = middle + 1;
-            else high = middle;
-
-        }
-
-        out.splice(low, 0, item);
-
-        if ( out.length > size ) out.pop();
-
-    }
-
-    return out;
+    return size >= items.length || size > 64 ? items.sort(compare).slice(0, size) : list.best(items, compare, size);
 
 }
 
@@ -236,6 +177,9 @@ export function index<T> ( options: Options<T> ): Index<T> {
             places.clear();
             postings.clear();
             totalLength = 0;
+            score = new Float64Array(0);
+            stamp = new Int32Array(0);
+            matched = new Int32Array(0);
             stale();
 
         },
@@ -245,9 +189,9 @@ export function index<T> ( options: Options<T> ): Index<T> {
 
             if ( typeof id !== "string" || id === "" ) throw new TypeError("not a key");
 
-            made.remove(id);
-
             const counts = termsOf(item);
+
+            made.remove(id);
             const slot = free.pop() ?? slots.length;
             let length = 0;
 
@@ -327,7 +271,7 @@ export function index<T> ( options: Options<T> ): Index<T> {
             const [low, high] = span(last);
             const found = vocabulary().slice(low, high).map(( term ) => ({ term, rows: postings.get(term)?.rows.length ?? 0 }));
 
-            return best(found, count(limit, 10), ( x, y ) => y.rows - x.rows || ordered(x.term, y.term)).map(( one ) => one.term);
+            return best(found, ( x, y ) => y.rows - x.rows || ordered(x.term, y.term), count(limit, 10)).map(( one ) => one.term);
 
         },
         query: ( text, given = {} ) => {
@@ -429,7 +373,7 @@ export function index<T> ( options: Options<T> ): Index<T> {
 
             const keyOf = ( at: number ): string => slots[kept[at] ?? -1]?.key ?? "";
 
-            return best(order, offset + limit, ( x, y ) => (totals[y] ?? 0) - (totals[x] ?? 0) || ordered(keyOf(x), keyOf(y)))
+            return best(order, ( x, y ) => (totals[y] ?? 0) - (totals[x] ?? 0) || ordered(keyOf(x), keyOf(y)), offset + limit)
                 .slice(offset)
                 .flatMap(( at ) => {
 

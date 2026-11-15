@@ -1,18 +1,6 @@
 import * as string from "engine-string";
-
-export type Catalog<T> = {
-    readonly all: readonly T[];
-    readonly size: number;
-    get: ( key: string ) => T | undefined;
-    has: ( key: string ) => boolean;
-    keys: () => string[];
-    search: ( query: string, limit?: number ) => T[];
-    pick: ( keys: readonly string[] ) => T[];
-    where: ( test: ( item: T ) => boolean ) => T[];
-};
-
-type Indexed = { texts: readonly string[]; weights: readonly number[] };
-type Scored<T> = { item: T; index: number; value: number; weight: number };
+import type { Catalog, Indexed, Scored } from "./arch.ts";
+import { best } from "./best.ts";
 
 function named ( key: string ): string {
 
@@ -43,21 +31,26 @@ export function catalog<T> ( items: readonly T[], keyOf: ( item: T ) => string, 
 
         const most = Number.isNaN(limit) ? 10 : Math.max(0, limit);
 
+        if ( most < 1 ) return [];
         if ( query.trim() === "" ) return items.slice(0, most);
 
         const needle = string.bare(query);
         const { texts, weights } = read();
-        const found: Scored<T>[] = [];
+        function* candidates (): Generator<Scored<T>> {
 
-        items.forEach(( item, index ) => {
+            for ( let index = 0; index < items.length; index += 1 ) {
 
-            const value = string.grade(texts[index] ?? "", needle);
+                if ( !(index in items) ) continue;
 
-            if ( value >= 0.3 ) found.push({ item, index, value, weight: weights[index] ?? 0 });
+                const value = string.grade(texts[index] ?? "", needle);
 
-        });
+                if ( value >= 0.3 ) yield { item: items[index] as T, index, value, weight: weights[index] ?? 0 };
 
-        return found.sort(( a, b ) => b.value - a.value || b.weight - a.weight || a.index - b.index).slice(0, most).map(( entry ) => entry.item);
+            }
+
+        }
+
+        return best(candidates(), ( a, b ) => b.value - a.value || b.weight - a.weight || a.index - b.index, most).map(( entry ) => entry.item);
 
     };
 

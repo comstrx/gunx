@@ -1,6 +1,6 @@
 from collections import Counter
 from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping, Sequence
-from itertools import dropwhile, product, takewhile
+from itertools import dropwhile, product, takewhile, islice
 from typing import Any, cast
 
 from engine.error import Code, Fault
@@ -9,6 +9,8 @@ from engine.json import json
 from .arch import Check, MAX_LIMIT, MISSING, NULLABLE, Page, PAIR, Pick, TESTS
 
 class Array:
+
+    __slots__ = ("_bitmap",)
 
     def __init__ ( self ) -> None:
 
@@ -66,13 +68,15 @@ class Array:
 
     def unique [T] ( self, items: Iterable[T], key: Pick[T] | None = None ) -> list[T]:
 
-        pick = self.getter(key) if key is not None else None
+        if key is None: return list(dict.fromkeys(items))
+
+        pick = self.getter(key)
         seen: set[Hashable] = set()
         kept: list[T] = []
 
         for item in items:
 
-            mark = pick(item) if pick else item
+            mark = pick(item)
 
             if mark in seen: continue
 
@@ -102,7 +106,12 @@ class Array:
         pick = self.getter(key)
         grouped: dict[Hashable, list[T]] = {}
 
-        for item in items: grouped.setdefault(pick(item), []).append(item)
+        for item in items:
+
+            mark = pick(item)
+
+            if mark in grouped: grouped[mark].append(item)
+            else: grouped[mark] = [item]
 
         return grouped
 
@@ -121,12 +130,27 @@ class Array:
     def flatten ( self, items: Iterable[Any], depth: int = 1 ) -> list[Any]:
 
         flat: list[Any] = []
+        stack = [(iter(items), depth, id(items))]
+        active = {id(items)}
 
-        for item in items:
+        while stack:
 
-            nested = depth != 0 and isinstance(item, list | tuple | set | frozenset)
+            source, remaining, identity = stack[-1]
 
-            if nested: flat.extend(self.flatten(item, depth - 1))
+            try: item = next(source)
+            except StopIteration:
+
+                stack.pop()
+                active.remove(identity)
+                continue
+
+            if remaining and isinstance(item, (list, tuple, set, frozenset)):
+
+                if id(item) in active: raise Fault(Code.BAD_REQUEST, reason="array.cycle")
+
+                active.add(id(item))
+                stack.append((iter(item), remaining - 1, id(item)))
+
             else: flat.append(item)
 
         return flat
@@ -238,16 +262,24 @@ class Array:
 
     def sole [T] ( self, items: Iterable[T], check: Check[T] | None = None ) -> T:
 
-        found = [item for item in items if check is None or check(item)]
+        source = iter(items) if check is None else filter(check, items)
 
-        if not found: raise Fault(Code.NOT_FOUND, reason="array.sole")
-        if len(found) > 1:
+        try: found = next(source)
+        except StopIteration: raise Fault(Code.NOT_FOUND, reason="array.sole") from None
 
-            raise Fault(Code.CONFLICT, reason="array.sole", errors={ "count": [str(len(found))] })
+        count = len(items) if isinstance(items, Sequence) and check is None else sum(1 for _ in source) + 1
 
-        return found[0]
+        if count > 1: raise Fault(Code.CONFLICT, reason="array.sole", errors={ "count": [str(count)] })
+
+        return found
 
     def where ( self, items: Iterable[Any], name: str, operator: Any = MISSING, value: Any = MISSING ) -> list[Any]:
+
+        pick, operator, value = self._where_(name, operator, value)
+
+        return [item for item in items if self.compare(pick(item), operator, value)]
+
+    def _where_ ( self, name: str, operator: Any, value: Any ) -> tuple[Callable[[Any], Any], Any, Any]:
 
         if value is MISSING: operator, value = "=", operator
 
@@ -255,21 +287,25 @@ class Array:
 
             raise Fault(Code.INTERNAL, reason="array.operator", errors={ "operator": [str(operator)] })
 
-        pick = self.getter(name)
-
-        return [item for item in items if self.compare(pick(item), operator, value)]
+        return self.getter(name), operator, value
 
     def where_in ( self, items: Iterable[Any], name: str, values: Iterable[Any] ) -> list[Any]:
 
-        return self.where(items, name, "in", list(values))
+        return self.where(items, name, "in", self._membership_(values))
 
     def where_not_in ( self, items: Iterable[Any], name: str, values: Iterable[Any] ) -> list[Any]:
 
-        return self.where(items, name, "not_in", list(values))
+        return self.where(items, name, "not_in", self._membership_(values))
 
     def first_where ( self, items: Iterable[Any], name: str, operator: Any = MISSING, value: Any = MISSING ) -> Any:
 
-        return self.first(self.where(items, name, operator, value))
+        pick, operator, value = self._where_(name, operator, value)
+
+        for item in items:
+
+            if self.compare(pick(item), operator, value): return item
+
+        return None
 
     def sort [T] ( self, items: Iterable[T], key: Pick[T] | None = None, reverse: bool = False ) -> list[T]:
 
@@ -289,7 +325,7 @@ class Array:
 
     def sum ( self, items: Iterable[Any], key: str | None = None ) -> Any:
 
-        return sum(self.numbers(items, key))
+        return sum(self._values_(items, key))
 
     def avg ( self, items: Iterable[Any], key: str | None = None ) -> Any:
 
@@ -299,15 +335,15 @@ class Array:
 
     def min ( self, items: Iterable[Any], key: str | None = None ) -> Any:
 
-        return min(self.numbers(items, key), default=None)
+        return min(self._values_(items, key), default=None)
 
     def max ( self, items: Iterable[Any], key: str | None = None ) -> Any:
 
-        return max(self.numbers(items, key), default=None)
+        return max(self._values_(items, key), default=None)
 
     def median ( self, items: Iterable[Any], key: str | None = None ) -> Any:
 
-        found = sorted(self.numbers(items, key))
+        found = sorted(self._values_(items, key))
 
         if not found: return None
 
@@ -317,26 +353,30 @@ class Array:
 
     def mode ( self, items: Iterable[Any], key: str | None = None ) -> Any:
 
-        found = Counter(self.numbers(items, key)).most_common(1)
+        found = Counter(self._values_(items, key)).most_common(1)
 
         return found[0][0] if found else None
 
     def numbers ( self, items: Iterable[Any], key: str | None = None ) -> list[Any]:
 
-        pick = self.getter(key) if key is not None else None
+        return list(self._values_(items, key))
 
-        return [value for value in (pick(item) if pick else item for item in items) if value is not None]
+    def _values_ ( self, items: Iterable[Any], key: str | None ) -> Iterator[Any]:
+
+        source = map(self.getter(key), items) if key is not None else iter(items)
+
+        return (value for value in source if value is not None)
 
     def after [T] ( self, items: Sequence[T], value: T ) -> T | None:
 
-        try: index = list(items).index(value)
+        try: index = items.index(value)
         except ValueError: return None
 
         return items[index + 1] if index + 1 < len(items) else None
 
     def before [T] ( self, items: Sequence[T], value: T ) -> T | None:
 
-        try: index = list(items).index(value)
+        try: index = items.index(value)
         except ValueError: return None
 
         return items[index - 1] if index > 0 else None
@@ -375,9 +415,10 @@ class Array:
         self, items: Sequence[T], start: int, length: int | None = None, replacement: Iterable[T] = (),
     ) -> tuple[list[T], list[T]]:
 
-        end     = len(items) if length is None else start + length
-        removed = list(items[start:end])
-        kept    = [*items[:start], *replacement, *items[end:]]
+        begin   = min(len(items), max(0, len(items) + start if start < 0 else start))
+        end     = len(items) if length is None else min(len(items), begin + max(0, length))
+        removed = list(items[begin:end])
+        kept    = [*items[:begin], *replacement, *items[end:]]
 
         return kept, removed
 
@@ -386,6 +427,8 @@ class Array:
         return items[0] if isinstance(items, list | tuple) and len(items) == 1 else items
 
     def window [T] ( self, items: Sequence[T], size: int ) -> Iterator[Sequence[T]]:
+
+        if type(size) is not int or size < 1: raise Fault(Code.BAD_REQUEST, reason="array.window")
 
         for start in range(max(0, len(items) - size + 1)): yield items[start:start + size]
 
@@ -407,7 +450,9 @@ class Array:
 
     def omit ( self, mapping: Mapping[str, Any], *keys: str ) -> dict[str, Any]:
 
-        return { key: value for key, value in mapping.items() if key not in keys }
+        removed = frozenset(keys)
+
+        return { key: value for key, value in mapping.items() if key not in removed }
 
     def page ( self, total: int, page: int = 1, limit: int = 20, ceiling: int = MAX_LIMIT ) -> Page:
 
@@ -437,10 +482,37 @@ class Array:
 
     def combine ( self, op: str, left: Iterable[Hashable], right: Iterable[Hashable] ) -> list[Any]:
 
+        if op not in ("and", "or", "sub"): raise Fault(Code.BAD_REQUEST, reason="array.operator")
+
         a, b = list(left), list(right)
+
+        numeric = all(type(item) is int for item in a) and all(type(item) is int for item in b)
+
+        if not numeric: return self._pure_bitmap_(op, a, b)
 
         try: return cast("list[Any]", self._bitmap(op, a, b))
         except (TypeError, OverflowError, ValueError): return self._pure_bitmap_(op, a, b)
+
+    def map [T, R] ( self, items: Iterable[T], make: Callable[[T], R] ) -> list[R]:
+
+        return list(map(make, items))
+
+    def batch [T] ( self, items: Iterable[T], size: int ) -> Iterator[list[T]]:
+
+        if type(size) is not int or size < 1: raise Fault(Code.BAD_REQUEST, reason="array.batch")
+
+        source = iter(items)
+
+        while made := list(islice(source, size)): yield made
+
+    def _membership_ ( self, values: Iterable[Any] ) -> set[Any] | frozenset[Any] | list[Any]:
+
+        if isinstance(values, (set, frozenset)): return values
+
+        items = list(values)
+
+        try: return set(items)
+        except TypeError: return items
 
     def getter ( self, key: Any ) -> Callable[[Any], Any]:
 
@@ -461,7 +533,15 @@ class Array:
         if found is None and operator not in NULLABLE: return False
 
         try: return bool(TESTS[operator](found, value))
-        except TypeError: return False
+        except TypeError:
+
+            if operator in ("in", "not_in") and isinstance(value, (set, frozenset)):
+
+                matched = any(found is item or found == item for item in value)
+
+                return matched if operator == "in" else not matched
+
+            return False
 
     def _native_bitmap_ ( self ) -> Any:
 
@@ -478,11 +558,12 @@ class Array:
     @staticmethod
     def _pure_bitmap_ ( op: str, left: Iterable[Any], right: Iterable[Any] ) -> list[Any]:
 
-        a, b = list(left), set(right)
+        a, other = list(left), list(right)
+        b = set(other)
 
         if op == "and": found = [item for item in dict.fromkeys(a) if item in b]
         elif op == "sub": found = [item for item in dict.fromkeys(a) if item not in b]
-        else: found = list(dict.fromkeys([*a, *right]))
+        else: found = list(dict.fromkeys([*a, *other]))
 
         try: return sorted(found)
         except TypeError: return found

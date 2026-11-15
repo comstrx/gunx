@@ -9,6 +9,8 @@ const allow = net.policy({ origins: ["https://api.example", "https://*.cdn.examp
 const guarded = net.guarded(redirecting, allow);
 const headers = { "user-agent": "Mozilla/5.0 (iPhone) Mobile Safari", "accept-language": "ar-EG,ar;q=0.9", "x-forwarded-for": "203.0.113.9, 10.0.0.1", referer: "https://ok.example/path", "x-request-id": "req-1" };
 const stream = "id: 1\nevent: tick\ndata: {\"n\":1}\n\ndata: a\ndata: b\n\n".repeat(200);
+const plain = "data: event received\n\n".repeat(200);
+const unicode = "data: مرحبًا 👨‍👩‍👧\n\n".repeat(200);
 const signal = new AbortController().signal;
 
 bench("net.parseUrl", () => do_not_optimize(net.parseUrl("https://a.io:8443/p/q?x=1&x=2#h")));
@@ -37,6 +39,8 @@ bench("net.request failure envelope", async () => do_not_optimize(await net.requ
 bench("net.guarded redirect", async () => do_not_optimize(await guarded("https://api.example/go", { method: "GET", headers: {}, signal })));
 bench("net.readBytes 64k", async () => do_not_optimize(await net.readBytes(new Response(new Uint8Array(65_536)), 1_000_000)));
 bench("net.parseEvents 200 blocks", () => do_not_optimize(net.parseEvents(stream)));
+bench("net.parseEvents 200 plain blocks", () => do_not_optimize(net.parseEvents(plain)));
+bench("net.parseEvents 200 Unicode blocks", () => do_not_optimize(net.parseEvents(unicode)));
 bench("net.events stream 200 blocks", async () => {
 
     let count = 0;

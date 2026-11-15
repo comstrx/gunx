@@ -2,6 +2,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TYPE_CHECKING
 
+from engine.error import Code, Fault
 import apsw, asyncpg, re
 
 if TYPE_CHECKING:
@@ -35,6 +36,11 @@ SCHEMES = {
     "postgresql" : "postgres", "postgres": "postgres", "sqlite": "sqlite", "mysql": "mysql", "mariadb": "mysql",
     "clickhouse" : "clickhouse", "clickhouses": "clickhouse",
 }
+
+LOCKS = { "update": "UPDATE", "share": "SHARE", "no_key": "NO KEY UPDATE", "key_share": "KEY SHARE" }
+WAITS = { "wait": "", "nowait": " NOWAIT", "skip": " SKIP LOCKED" }
+
+JOINS = frozenset({ "INNER", "LEFT", "LEFT OUTER", "RIGHT", "RIGHT OUTER", "FULL", "FULL OUTER" })
 
 IDENT = re.compile(r"^[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?$")
 KEY   = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -123,6 +129,8 @@ KINDS    = frozenset({
     "uuid", "text", "integer", "bigint", "boolean", "numeric", "timestamp", "date", "jsonb", "bytes", "vector",
     "tsvector",
 })
+ACTIONS = frozenset({ "RESTRICT", "CASCADE", "SET NULL", "SET DEFAULT", "NO ACTION" })
+
 WIDENING = { ("integer", "bigint"), ("integer", "numeric"), ("bigint", "numeric") }
 
 @dataclass(frozen=True, slots=True)
@@ -150,3 +158,15 @@ class Provision:
     database   : str
     extensions : tuple[str, ...] = ("pgcrypto",)
     maintenance: str = "postgres"
+
+RESET_SESSION = "RESET ROLE; RESET SESSION AUTHORIZATION; DISCARD TEMP; DISCARD SEQUENCES;"
+
+PROVISION_ROLE = "LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
+
+def cursor_size ( limit: int ) -> int:
+
+    if type(limit) is not int or limit < 1: raise Fault(Code.VALIDATION, reason="database.cursor.limit")
+
+    return limit
+
+JSONB_PREFIX = b"\x01"

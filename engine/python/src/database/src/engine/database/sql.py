@@ -1,8 +1,8 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Self
 
 from engine.error import Code, Fault
-from .arch import IDENT, NAME, OPER, OPS
+from .arch import IDENT, JOINS, LOCKS, NAME, OPER, OPS, WAITS
 from .dialect import Dialect
 from .postgres import POSTGRES
 from .vector import Vector
@@ -32,7 +32,7 @@ class Sql:
         self._offset: int | None = None
         self._conflict: tuple[tuple[str, ...], tuple[str, ...]] | None = None
         self._nearest: tuple[str, str] | None = None
-        self._lock = False
+        self._lock: tuple[str, str] | None = None
 
     @classmethod
     def select ( cls, table: str, *columns: str ) -> Self:
@@ -66,7 +66,11 @@ class Sql:
 
     def columns ( self, *columns: str ) -> Self:
 
-        self._columns = [Sql.quote(column, star=True) for column in columns]
+        made = [Sql.quote(column, star=True) for column in columns]
+
+        if self._values and made != self._columns: raise Fault(Code.INTERNAL, reason="sql.columns")
+
+        self._columns = made
 
         return self
 
@@ -97,6 +101,10 @@ class Sql:
         return self
 
     def join ( self, table: str, left: str, right: str, kind: str = "INNER" ) -> Self:
+
+        kind = kind.upper()
+
+        if kind not in JOINS: raise Fault(Code.INTERNAL, reason="sql.join")
 
         self._joins.append(f"{kind} JOIN {Sql.quote(table)} ON {Sql.quote(left)} = {Sql.quote(right)}")
 
@@ -207,15 +215,34 @@ class Sql:
 
     def values ( self, **pairs: Any ) -> Self:
 
-        if not self._columns: self._columns = [Sql.quote(column) for column in pairs]
+        if not pairs: raise Fault(Code.INTERNAL, reason="sql.values")
 
-        self._values.append([self.bind(pairs[column]) for column in pairs])
+        if not self._columns:
+
+            self._columns = [Sql.quote(column) for column in pairs]
+            values: Iterable[Any] = pairs.values()
+
+        else:
+
+            names = [column[1:-1] for column in self._columns]
+
+            if len(pairs) != len(names) or any(name not in pairs for name in names):
+
+                raise Fault(Code.INTERNAL, reason="sql.columns")
+
+            values = [pairs[name] for name in names]
+
+        self._values.append([self.bind(value) for value in values])
 
         return self
 
     def rows ( self, columns: Sequence[str], rows: Sequence[Mapping[str, Any]] ) -> Self:
 
-        self._columns = [Sql.quote(column) for column in columns]
+        made = [Sql.quote(column) for column in columns]
+
+        if not made or (self._values and made != self._columns): raise Fault(Code.INTERNAL, reason="sql.columns")
+
+        self._columns = made
 
         for row in rows: self._values.append([self.bind(row.get(column)) for column in columns])
 
@@ -235,9 +262,11 @@ class Sql:
 
         return self
 
-    def lock ( self ) -> Self:
+    def lock ( self, mode: str = "update", wait: str = "wait" ) -> Self:
 
-        self._lock = True
+        if mode not in LOCKS or wait not in WAITS: raise Fault(Code.INTERNAL, reason="sql.lock")
+
+        self._lock = mode, wait
 
         return self
 
@@ -313,7 +342,18 @@ class Sql:
         if order: parts.append(f"ORDER BY {', '.join(order)}")
         if self._limit is not None: parts.append(f"LIMIT {self._limit}")
         if self._offset: parts.append(f"OFFSET {self._offset}")
-        if self._lock and dialect.can("skip"): parts.append("FOR UPDATE SKIP LOCKED")
+        if self._lock is not None:
+
+            mode, wait = self._lock
+
+            dialect.ensure("lock")
+
+            if wait != "wait": dialect.ensure("skip")
+            if mode in ("no_key", "key_share") and dialect.name != "postgres":
+
+                raise Fault(Code.INTERNAL, reason="sql.capability", errors={ "capability": [mode] })
+
+            parts.append(f"FOR {LOCKS[mode]}{WAITS[wait]}")
 
         return " ".join(parts)
 
@@ -329,6 +369,8 @@ class Sql:
     def quote ( name: str, star: bool = False ) -> str:
 
         if star and name == "*": return name
-        if not IDENT.match(name): raise Fault(Code.INTERNAL, reason="sql.identifier", errors={ "name": [name[:64]] })
+        if not IDENT.fullmatch(name):
+
+            raise Fault(Code.INTERNAL, reason="sql.identifier", errors={ "name": [name[:64]] })
 
         return f"\x1e{name}\x1e"

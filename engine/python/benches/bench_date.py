@@ -1,4 +1,4 @@
-from engine.date import date
+from engine.date import Day, TimeDelta, date
 from engine.test import Bench
 
 bench = Bench()
@@ -59,3 +59,38 @@ bench.measure("date.add", add)
 bench.measure("date.diff", diff)
 bench.measure("date.humanize", humanize)
 bench.measure("date.business_days", business, rounds=2000)
+
+bench.measure("date.add_business_days.short", lambda: date.add_business_days(fixed, 2))
+bench.measure("date.add_business_days.long", lambda: date.add_business_days(fixed, 2500), rounds=5000)
+
+holidays = [Day(2026, 11, 12), Day(2026, 12, 25)]
+
+bench.measure("date.parse.compound", lambda: date.parse("in 2 days 3 hours"))
+bench.measure("date.parse.custom", lambda: date.parse("10/11/2026 12:30"))
+bench.measure("date.http", lambda: date.http(fixed))
+bench.measure("date.span", lambda: date.span(fixed, later))
+bench.measure("date.diff.months", lambda: date.diff(fixed, later, "months"))
+bench.measure("date.add_business_days.holidays", lambda: date.add_business_days(fixed, 2500, holidays=holidays))
+bench.measure("date.add_business_days.large", lambda: date.add_business_days(fixed, 200000, holidays=holidays), rounds=1000)
+
+window = date.period("day", fixed)
+
+bench.measure("date.parse.compact8", lambda: date.parse("20261110"))
+bench.measure("date.parse.compact14", lambda: date.parse("20261110123045"))
+bench.measure("date.format.utc", lambda: date.format(fixed))
+bench.measure("date.start.utc", lambda: date.start_of("day", fixed))
+bench.measure("date.end.utc", lambda: date.end_of("day", fixed))
+bench.measure("date.floor.exact", lambda: date.floor(fixed, 0.1))
+bench.measure("date.period.utc", lambda: date.period("day", fixed))
+bench.measure("date.period.zone", lambda: date.period("day", fixed, "America/New_York"))
+bench.measure("date.span.split", lambda: list(window.split(TimeDelta(hours=6))), rounds=5000)
+
+clock = date.options(zone="America/New_York", pattern="%d/%m/%Y %H:%M")
+clock.freeze(fixed)
+
+bench.measure("date.options", lambda: date.options(zone="America/New_York", pattern="%d/%m/%Y %H:%M"), rounds=5000)
+bench.measure("date.format.configured", clock.format)
+bench.measure("date.period.configured", lambda: clock.period("day"))
+bench.measure("date.start.minute", lambda: date.start_of("minute", fixed))
+bench.measure("date.start.hour", lambda: date.start_of("hour", fixed))
+bench.measure("date.parse.today", lambda: clock.parse("today"))

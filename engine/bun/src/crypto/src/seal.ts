@@ -1,9 +1,7 @@
 import * as rand from "engine-rand";
 import * as string from "engine-string";
-import { type Bytes, engine, equal, type Kept, kept, keyed, label, mac, view } from "./digest.ts";
-
-type Lane = { salt: Bytes; text: string; left: number };
-type Gcm = { name: "AES-GCM"; iv: Bytes; additionalData?: Bytes };
+import type { Bytes, Gcm, Kept, Lane, Source } from "./arch.ts";
+import { engine, equal, kept, keyed, label, mac, view } from "./digest.ts";
 
 const prefix = "v1";
 const iterations = 210_000;
@@ -36,9 +34,9 @@ function turn ( name: string ): Lane {
     return made;
 
 }
-function aesKey ( held: Kept<CryptoKey>, name: string, material: Bytes, salt: Bytes, text: string ): Promise<CryptoKey> {
+function aesKey ( held: Kept<CryptoKey>, source: Source, name: string, material: Bytes, salt: Bytes, text: string ): Promise<CryptoKey> {
 
-    return held(`${text}:${name}`, async ( subtle ) => {
+    return held(source, `${text}:${name}`, async ( subtle ) => {
 
         const base = await subtle.importKey("raw", material, "PBKDF2", false, ["deriveKey"]);
 
@@ -55,12 +53,13 @@ function gcm ( iv: Bytes, context: string | undefined ): Gcm {
 
 export async function seal ( text: string, secret: string | Uint8Array, context?: string ): Promise<string> {
 
+    const source = engine.get();
     const material = keyed(secret);
-    const name = label(secret, material);
+    const name = await label(source, material);
     const lane = turn(name);
     const iv = rand.bytes(12);
-    const key = await aesKey(sealing, name, material, lane.salt, lane.text);
-    const cipher = await engine.get().subtle.encrypt(gcm(iv, context), key, view(text));
+    const key = await aesKey(sealing, source, name, material, lane.salt, lane.text);
+    const cipher = await source.subtle.encrypt(gcm(iv, context), key, view(text));
 
     return `${prefix}.${lane.text}.${string.base64url(iv)}.${string.base64url(new Uint8Array(cipher))}`;
 
@@ -73,17 +72,19 @@ export function isSealed ( value: unknown ): boolean {
 export async function open ( sealed: string, secret: string | Uint8Array, context?: string ): Promise<string | undefined> {
 
     const material = keyed(secret);
-    const subtle = engine.get().subtle;
+    const source = engine.get();
+    const subtle = source.subtle;
 
     if ( !isSealed(sealed) ) return undefined;
 
     const [, salt = "", iv = "", cipher = ""] = sealed.split(".");
-    const name = label(secret, material);
-    const held = lanes.get(name)?.text === salt ? sealing : opening;
 
     try {
 
-        const key = await aesKey(held, name, material, view(string.fromBase64(salt)), salt);
+        const name = await label(source, material);
+        const held = lanes.get(name)?.text === salt ? sealing : opening;
+
+        const key = await aesKey(held, source, name, material, view(string.fromBase64(salt)), salt);
         const plain = await subtle.decrypt(gcm(view(string.fromBase64(iv)), context), key, view(string.fromBase64(cipher)));
 
         return string.utf8(new Uint8Array(plain));

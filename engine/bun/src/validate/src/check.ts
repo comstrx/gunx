@@ -1,50 +1,6 @@
 import * as error from "engine-error";
-import type { Issue, output, Schema } from "./schema.ts";
+import type { Def, Facts, Field, Found, Issue, Mark, Open, output, CheckRule as Rule, Schema, Stamp } from "./arch.ts";
 import * as zod from "./zod.ts";
-
-type Rule = { check: string; type?: string; format?: string; pattern?: RegExp; minimum?: number; maximum?: number; length?: number; size?: number; value?: unknown; inclusive?: boolean };
-type Mark = { _zod: { def: Rule } };
-type Stamp = zod.core.$ZodCheck<unknown>;
-type Def = {
-    type: string;
-    format?: string | undefined;
-    checks?: Mark[] | undefined;
-    innerType?: Schema | undefined;
-    in?: Schema | undefined;
-    out?: Schema | undefined;
-    shape?: Record<string, Schema> | undefined;
-    entries?: Record<string, unknown> | undefined;
-    values?: readonly unknown[] | undefined;
-    options?: Schema[] | undefined;
-    items?: Schema[] | undefined;
-    element?: Schema | undefined;
-    valueType?: Schema | undefined;
-    getter?: (() => Schema) | undefined;
-};
-type Found = { inner: Schema; optional: boolean; nullable: boolean; checks: Mark[]; notes: Facts[] };
-type Open = { above?: number; below?: number };
-
-export type Facts = { format?: string; min?: number; max?: number; above?: number; below?: number; step?: number; values?: unknown[]; pattern?: RegExp };
-
-export type Field = {
-    name: string;
-    kind: string;
-    required: boolean;
-    optional?: boolean | undefined;
-    nullable?: boolean | undefined;
-    min?: number | undefined;
-    max?: number | undefined;
-    above?: number | undefined;
-    below?: number | undefined;
-    step?: number | undefined;
-    options?: string[] | undefined;
-    values?: unknown[] | undefined;
-    format?: string | undefined;
-    pattern?: RegExp | undefined;
-    fields?: Field[] | undefined;
-    item?: Field | undefined;
-    variants?: Field[] | undefined;
-};
 
 const hops = 32;
 const deep = 8;

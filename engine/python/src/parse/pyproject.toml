@@ -1,17 +1,18 @@
 [project]
 name = "engine-parse"
-description = "Boundary parsing: scalars, durations, urls, identities, headers, toml"
-dynamic = ["version"]
-dependencies = ["engine-error", "engine-string"]
+description = "Documents and protocols: JSON, TOML, YAML, templates, paths and boundary readers"
+dynamic = ["version", "requires-python", "license"]
+dependencies = ["engine-cast", "engine-error", "engine-json", "engine-string", "pyyaml", "tomli-w"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "tomli-w"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-source = "regex"
-path = "../../pyproject.toml"
-pattern = '^version = "(?P<version>[^"]+)"$'
+[tool.hatch.metadata.hooks.custom]
+path = "../../metadata.py"
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "../../distribution.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engine"]

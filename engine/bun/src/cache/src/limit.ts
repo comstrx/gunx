@@ -1,11 +1,7 @@
 import * as date from "engine-date";
 import * as error from "engine-error";
+import type { Bucket, Limiter, Taken } from "./arch.ts";
 import { whole } from "./memory.ts";
-
-type Bucket = { count: number; start: number };
-
-export type Taken = { allowed: boolean; remaining: number; retryAfter: number; limit: number };
-export type Limiter = { take: ( key: string, cost?: number ) => Taken; peek: ( key: string ) => Taken; reset: ( key: string ) => void; clear: () => void; assert: ( key: string, cost?: number ) => Taken };
 
 function sized ( value: number ): number {
 
@@ -21,47 +17,69 @@ export function limiter ( limit: number, windowMs: number, size = 10_000 ): Limi
     const cap = sized(limit);
     const span = sized(windowMs);
     const most = whole(size, 10_000, 1);
-    const live = ( key: string, now: number ): Bucket | undefined => {
+    let clock = Number.NEGATIVE_INFINITY;
+
+    const now = (): number => {
+
+        clock = Math.max(clock, date.now());
+
+        return clock;
+
+    };
+    const live = ( key: string, at: number ): Bucket | undefined => {
 
         const found = buckets.get(key);
-        const passed = found === undefined ? span : now - found.start;
 
-        return passed >= 0 && passed < span ? found : undefined;
-
-    };
-    const opened = ( key: string, now: number ): Bucket => {
-
-        const fresh: Bucket = { count: 0, start: now };
-        const oldest = buckets.size >= most && !buckets.has(key) ? buckets.keys().next() : undefined;
-
-        if ( oldest && !oldest.done ) buckets.delete(oldest.value);
+        if ( found === undefined || at - found.start < span ) return found;
 
         buckets.delete(key);
-        buckets.set(key, fresh);
 
-        return fresh;
+        return undefined;
 
     };
-    const describe = ( found: Bucket | undefined, allowed: boolean, now: number ): Taken => ({
+    const room = ( at: number ): boolean => {
+
+        while ( buckets.size >= most ) {
+
+            const first = buckets.entries().next();
+
+            if ( first.done ) return true;
+            if ( at - first.value[1].start < span ) return false;
+
+            buckets.delete(first.value[0]);
+
+        }
+
+        return true;
+
+    };
+    const describe = ( found: Bucket | undefined, allowed: boolean, at: number ): Taken => ({
         allowed,
         limit: cap,
         remaining: Math.max(0, cap - (found?.count ?? 0)),
-        retryAfter: allowed ? 0 : Math.max(1, Math.ceil(((found?.start ?? now) + span - now) / 1000)),
+        retryAfter: allowed ? 0 : Math.max(1, Math.ceil(((found?.start ?? at) + span - at) / 1000)),
+    });
+    const full = ( at: number ): Taken => ({
+        ...describe(buckets.values().next().value, false, at),
+        remaining: 0,
     });
     const take = ( key: string, cost = 1 ): Taken => {
 
-        const now = date.now();
-        const weight = cost >= 0 ? cost : cost < 0 ? 0 : Number.POSITIVE_INFINITY;
-        const found = live(key, now);
-        const next = (found?.count ?? 0) + weight;
+        const at = now();
+        const found = live(key, at);
+        const next = (found?.count ?? 0) + cost;
 
-        if ( next > cap ) return describe(found, false, now);
+        if ( !Number.isFinite(cost) || cost < 0 || !Number.isFinite(next) || next > cap ) return describe(found, false, at);
+        if ( cost === 0 ) return describe(found, true, at);
+        if ( found === undefined && !room(at) ) return full(at);
 
-        const bucket = found ?? opened(key, now);
+        const bucket = found ?? { count: 0, start: at };
+
+        if ( found === undefined ) buckets.set(key, bucket);
 
         bucket.count = next;
 
-        return describe(bucket, true, now);
+        return describe(bucket, true, at);
 
     };
 
@@ -69,10 +87,12 @@ export function limiter ( limit: number, windowMs: number, size = 10_000 ): Limi
         take,
         peek: ( key ) => {
 
-            const now = date.now();
-            const found = live(key, now);
+            const at = now();
+            const found = live(key, at);
 
-            return describe(found, (found?.count ?? 0) < cap, now);
+            if ( found === undefined && !room(at) ) return full(at);
+
+            return describe(found, (found?.count ?? 0) < cap, at);
 
         },
         reset: ( key ) => {

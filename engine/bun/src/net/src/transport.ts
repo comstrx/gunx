@@ -4,33 +4,11 @@ import * as error from "engine-error";
 import * as event from "engine-event";
 import * as func from "engine-func";
 import * as json from "engine-json";
-import type * as parse from "engine-parse";
 import * as rand from "engine-rand";
+import type { Fetcher, Payload, Reply, RequestOptions } from "./arch.ts";
 import { readBytes } from "./guard.ts";
 import { retryAfter as retryAfterOf } from "./headers.ts";
 import { schemeOf, sound, withQuery } from "./url.ts";
-
-export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
-export type Redirect = "follow" | "error" | "manual";
-export type Payload = string | Uint8Array | FormData | Blob;
-export type Fetcher = ( url: string, init: { method: string; headers: Record<string, string>; body?: Payload | undefined; signal: AbortSignal; redirect?: Redirect | undefined } ) => Promise<Response>;
-export type RequestOptions = {
-    method?: Method | undefined;
-    headers?: Record<string, string | undefined> | undefined;
-    body?: unknown;
-    query?: parse.QueryInput | undefined;
-    timeout?: number | undefined;
-    retries?: number | undefined;
-    maxBytes?: number | undefined;
-    signal?: AbortSignal | undefined;
-    requestId?: string | undefined;
-    fetcher?: Fetcher | undefined;
-    idempotent?: boolean | undefined;
-    redirect?: Redirect | undefined;
-    as?: "auto" | "json" | "text" | "bytes" | undefined;
-    failure?: (( status: number, body: unknown, headers: Record<string, string> ) => error.Fault) | undefined;
-};
-export type Reply<T = unknown> = { status: number; ok: boolean; headers: Record<string, string>; body: T; text: string; ms: number; attempts: number; requestId: string };
 
 const decoder = new TextDecoder();
 
@@ -118,10 +96,37 @@ export function failure ( status: number, body: unknown, headers: Record<string,
 }
 export async function request<T = unknown> ( url: string, options: RequestOptions = {} ): Promise<Reply<T>> {
 
+    if ( options.budget !== undefined ) {
+
+        if ( !(options.budget >= 0) ) throw new RangeError("not a duration");
+
+        const scope = event.deadline(options.budget, options.signal);
+
+        try {
+
+            return await request<T>(url, { ...options, budget: undefined, signal: scope.signal });
+
+        } catch ( caught ) {
+
+            if ( options.signal?.aborted ) throw error.fault("timeout", "net.aborted", { cause: options.signal.reason });
+            if ( scope.signal.aborted ) throw error.fault("timeout", "net.budget", { cause: caught });
+
+            throw caught;
+
+        } finally {
+
+            scope.release();
+
+        }
+
+    }
+
     const { method = "GET", timeout = 10_000, retries = 0, maxBytes = 5_000_000, as = "auto" } = options;
     const target = address(options.query ? withQuery(url, options.query) : url);
     const bodiless = method === "GET" || method === "HEAD";
-    const headers: Record<string, string> = { accept: as === "auto" || as === "json" ? "application/json" : "*/*", "x-request-id": options.requestId ?? rand.trace() };
+    const headers: Record<string, string> = { accept: as === "auto" || as === "json" ? "application/json" : "*/*" };
+
+    if ( options.trace !== false ) headers["x-request-id"] = options.requestId ?? rand.trace();
 
     for ( const [name, value] of Object.entries(options.headers ?? {}) ) if ( value !== undefined ) headers[header(name, value)] = value;
 
@@ -185,6 +190,6 @@ export async function request<T = unknown> ( url: string, options: RequestOption
 
         }
 
-    }, { times: Math.max(1, (Math.trunc(retries) || 0) + 1), delay: 200, signal: options.signal, when: ( caught ) => error.retryable(caught) && (options.idempotent ?? bodiless) });
+    }, { times: Math.max(1, (Math.trunc(retries) || 0) + 1), delay: 200, signal: options.signal, when: ( caught ) => !(error.isFault(caught) && caught.reason === "net.json") && error.retryable(caught) && (options.idempotent ?? bodiless) });
 
 }

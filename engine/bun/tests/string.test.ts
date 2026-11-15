@@ -22,6 +22,18 @@ describe("string", () => {
         expect(string.transliterate("Café")).toBe("Cafe");
 
     });
+    it("excerpts expand interior matches to complete Unicode clusters", () => {
+
+        for ( const [cluster, phrase] of [["a\u0301", "\u0301"], ["👨‍👩‍👧", "👩"], ["🇪🇬", "🇬"], ["श्रे", "र"], ["\u0600a", "a"]] as const ) {
+
+            expect(string.excerpt(`xx${cluster}zz`, phrase, 0, "|")).toBe(`|${cluster}|`);
+            expect(string.excerpt(`xx${cluster}zz`, phrase, 20, "|")).toBe(`xx${cluster}zz`);
+
+        }
+
+        expect(string.excerpt("xx\r\nzz", "\n", 0, "|")).toBe("||");
+
+    });
     it("text verbs are grapheme aware and bidi aware", () => {
 
         expect(string.isBlank("  ") && string.isBlank(null) && !string.isBlank("a")).toBe(true);
@@ -118,6 +130,8 @@ describe("string", () => {
         expect(string.utf8(string.fromBase64("aGk"))).toBe("hi");
         expect([...string.fromBase64("-__-")]).toEqual([251, 255, 254]);
         expect(string.fromBase64("!!!").length).toBe(0);
+        for ( const invalid of ["=YQ", "Y=Q=", "YQ===", "YQ=", "YWJj=", "YQ==YQ==", "ab+_", "AB", "AAB"] ) expect(string.fromBase64(invalid).length).toBe(0);
+        expect(string.utf8(string.fromBase64(" YQ==\r\n"))).toBe("a");
         expect(string.utf8(string.fromBase64(string.base64(data)))).toBe("مرحبا ✓");
 
     });
@@ -232,4 +246,14 @@ describe("string", () => {
         expect(string.take("abc", -2)).toBe("bc");
 
     });
+});
+
+
+it("pluralization never appends English grammar to an unsupported language", () => {
+
+    expect(() => string.pluralize(5, "كتاب", undefined, "ar")).toThrow("a plural form is required");
+    expect(() => string.pluralize(3, "livre", undefined, "fr")).toThrow("a plural form is required");
+    expect(string.pluralize(3, "livre", "livres", "fr")).toBe("livres");
+    expect(string.pluralize(2, "كتاب", undefined, "AR_EG")).toBe("كتابان");
+
 });

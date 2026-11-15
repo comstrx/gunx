@@ -1,12 +1,14 @@
+from engine.date import date
 from collections.abc import AsyncIterator, Callable
-from engine.auth import Actor, Auth, Otp, Relay
+from engine.auth import Actor, Auth, Otp, Relay, Sessions
 from engine.auth.arch import CODE, digest, GRANTS, HEADER, HEADERS, IDENT, LARGEST, MINIMUM, OTP_LONGEST, SUBJECT, TAKEN
 from engine.cache import Cache, Memory, Redis
 from engine.crypto import crypto
 from engine.error import Code, Fault
+from engine.rand import rand
 from engine.http import App, Request, Route
 from engine.test import Client
-from engine.token import Claims, token
+from engine.token import Pair, Claims, token
 from functools import partial
 from typing import Any, cast
 import asyncio, os, pytest
@@ -189,9 +191,9 @@ def test_setup_refuses_settings_no_service_should_run_on () -> None:
         ("roles", lambda: auth.setup(roles={ "admin": ["a,b"] })), ("roles", lambda: auth.setup(roles={ "a b": ["x"] })),
         ("roles", lambda: auth.setup(roles={ "": ["x"] })), ("roles", lambda: auth.setup(roles=cast("Any", { "admin": 7 }))),
         ("roles", lambda: auth.setup(roles=cast("Any", { "admin": [1] }))), ("roles", lambda: auth.setup(roles=cast("Any", { 1: [] }))),
-        ("fixed_code", lambda: auth.setup(fixed_code="")), ("fixed_code", lambda: auth.setup(fixed_code="12a456")),
+        ("fixed_code", lambda: auth.setup(fixed_code="", testing=True)), ("fixed_code", lambda: auth.setup(fixed_code="12a456", testing=True)),
         ("fixed_code", lambda: auth.setup(fixed_code="1" * (CODE + 1))), ("fixed_code", lambda: auth.setup(fixed_code=cast("Any", 123456))),
-        ("fixed_code", lambda: auth.setup(fixed_code="١٢٣٤٥٦")),
+        ("fixed_code", lambda: auth.setup(fixed_code="١٢٣٤٥٦", testing=True)),
         ("ability", lambda: auth.define("", truthy)), ("ability", lambda: auth.define("a b", truthy)),
         ("ability", lambda: auth.define("x", cast("Any", "yes"))), ("ability", lambda: auth.define(cast("Any", None), truthy)),
     )
@@ -200,7 +202,7 @@ def test_setup_refuses_settings_no_service_should_run_on () -> None:
 
         assert refused(make, Code.INTERNAL, "auth.settings").errors == { "setting": [what] }, what
 
-    auth.setup(roles={ "admin": ("a.*", "b", "a.*") }, fixed_code="123456")
+    auth.setup(roles={ "admin": ("a.*", "b", "a.*") }, fixed_code="123456", testing=True)
 
     assert auth.describe() == { "abilities": [], "roles": { "admin": ["a.*", "b"] }, "fixed": True }
 
@@ -249,7 +251,7 @@ async def test_otp_codes_expire_lock_and_never_collide () -> None:
 
     fixed = Auth()
 
-    fixed.setup(Cache(store), fixed_code="111111")
+    fixed.setup(Cache(store), fixed_code="111111", testing=True)
 
     assert (await fixed.otp("+2011")).code == "111111"
 
@@ -292,7 +294,7 @@ async def test_one_code_opens_once_under_a_crowd ( kind: str ) -> None:
 
     await store.clear()
 
-    auth.setup(Cache(store), fixed_code="654321")
+    auth.setup(Cache(store), fixed_code="654321", testing=True)
 
     otp = await auth.otp("crowd")
 
@@ -491,3 +493,228 @@ async def test_guards_bind_the_principal_end_to_end ( served: tuple[Auth, str] )
     client.expect(await other.get("/relayed"), 403, "forbidden", "auth.scope")
     client.expect(await other.get("/staff"), 403, "forbidden", "auth.role")
     assert (await sent.get("/me")).status == 401
+
+def test_relay_expiry_audience_and_request_binding ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    relay = Relay()
+
+    relay.setup(SECRET, audience="orders", ttl=10, bound=True)
+
+    monkeypatch.setattr(date, "stamp", lambda: 1000.0)
+
+    signed = relay.sign(Actor("u"), "request", method="POST", target="/orders?tenant=1")
+
+    assert relay.read(signed, "request", method="POST", target="/orders?tenant=1") == Actor("u")
+
+    for method, target in (("GET", "/orders?tenant=1"), ("POST", "/orders?tenant=2"), ("", "")):
+
+        with pytest.raises(Fault): relay.read(signed, "request", method=method, target=target)
+
+    with pytest.raises(Fault): relay.sign(Actor("u"), "request")
+
+    other = Relay()
+
+    other.setup(SECRET, audience="billing")
+
+    with pytest.raises(Fault): other.read(signed, "request", method="POST", target="/orders?tenant=1")
+
+    monkeypatch.setattr(date, "stamp", lambda: 1010.0)
+
+    with pytest.raises(Fault): relay.read(signed, "request", method="POST", target="/orders?tenant=1")
+
+    monkeypatch.setattr(date, "stamp", lambda: 994.0)
+
+    with pytest.raises(Fault): relay.read(signed, "request", method="POST", target="/orders?tenant=1")
+
+def test_fixed_otp_requires_explicit_testing_mode () -> None:
+
+    keeper = Auth()
+
+    with pytest.raises(Fault): keeper.setup(fixed_code="123456")
+
+    keeper.setup(fixed_code="123456", testing=True)
+
+    assert keeper.describe()["fixed"] is True
+
+@pytest.mark.parametrize("remote", [False, True])
+async def test_refresh_rotation_race_revokes_the_entire_family ( remote: bool ) -> None:
+
+    store = Redis(REDIS, prefix="auth:sessions:") if remote else Memory()
+    cache = Cache(store)
+    owner = Sessions(cache)
+    peer  = Sessions(cache)
+
+    crypto.setup([crypto.key("session-key")])
+    token.setup(SECRET, issuer="sessions", access=60, refresh=300)
+
+    try:
+
+        first = await owner.issue(Actor("u", ("member",)), "device")
+        next_ = await peer.refresh(first.refresh, "device")
+
+        await owner.verify(token.verify(next_.access, fingerprint="device"))
+
+        with pytest.raises(Fault) as replay: await owner.refresh(first.refresh, "device")
+
+        assert replay.value.reason == "auth.session.replay"
+
+        with pytest.raises(Fault): await peer.verify(token.verify(next_.access, fingerprint="device"))
+        with pytest.raises(Fault): await peer.refresh(next_.refresh, "device")
+
+        other = await owner.issue(Actor("u"), "device")
+        raced = await asyncio.gather(owner.refresh(other.refresh, "device"), peer.refresh(other.refresh, "device"), return_exceptions=True)
+
+        assert sum(not isinstance(value, BaseException) for value in raced) == 1
+
+        for value in raced:
+
+            if isinstance(value, BaseException): continue
+
+            with pytest.raises(Fault): await owner.verify(token.verify(value.access, fingerprint="device"))
+
+        isolated = await owner.issue(Actor("u"), "device")
+
+        with pytest.raises(Fault): await peer.refresh(isolated.refresh, "stolen")
+
+        await owner.verify(token.verify(isolated.access, fingerprint="device"))
+
+    finally:
+
+        await store.clear()
+        await cache.close()
+
+@pytest.mark.parametrize("format_", ["jwt", "paseto", "opaque"])
+@pytest.mark.parametrize("remote", [False, True])
+async def test_selected_token_formats_work_on_http_and_revoke_the_family ( format_: str, remote: bool ) -> None:
+
+    store = Redis(REDIS, prefix="auth:formats:" + rand.hex(8) + ":") if remote else Memory()
+    cache = Cache(store)
+    options: dict[str, Any] = { "store": cache } if format_ == "opaque" else { "secret": b"k" * 32 }
+    access = token.options(format=format_, purpose="access", issuer="formats", ttl=60, **options)
+    refresh = token.options(format="opaque", purpose="refresh", issuer="formats", ttl=300, store=cache)
+    auth = Auth()
+    auth.setup(cache=cache, access=access, refresh=refresh)
+
+    async def me ( request: Request ) -> Any:
+
+        return {
+            "actor": auth.actor(request).dump(), "id": request.actor(),
+            "purpose": request.claims().purpose,
+        }
+
+    name = "formatted-" + rand.hex(8)
+    app = App(name).tokens(access).throttles(user="2/60s:actor").routing(
+        Route.get("/me", me, name).guarded(auth.guard()).throttled("user"),
+    )
+
+    try:
+
+        initial = await auth.sessions.issue(Actor("u", scopes=("read",)), "tests|127.0.0.1")
+        other   = await auth.sessions.issue(Actor("v"), "tests|127.0.0.1")
+
+        with pytest.raises(Fault): auth.issue(Actor("u"))
+
+        async with app.listen() as url:
+
+            client = Client(url, { "User-Agent": "tests" })
+            reply = await client.bearer(initial.access).get("/me")
+
+            assert reply.status == 200 and reply.data()["actor"]["id"] == reply.data()["id"] == "u"
+            assert reply.data()["purpose"] == "access"
+            assert (await client.bearer(initial.access).get("/me")).status == 200
+            assert (await client.bearer(initial.access).get("/me")).status == 429
+            assert (await client.bearer(other.access).get("/me")).status == 200
+
+            client.expect(await client.bearer(other.refresh).get("/me"), 401, "unauthorized")
+            client.expect(await client.bearer("invalid").get("/me"), 401, "unauthorized")
+
+            next_ = await auth.sessions.refresh(other.refresh, "tests|127.0.0.1")
+
+            with pytest.raises(Fault) as replay: await auth.sessions.refresh(other.refresh, "tests|127.0.0.1")
+
+            assert replay.value.reason == "auth.session.replay"
+            assert (await client.bearer(next_.access).get("/me")).status == 401
+
+            with pytest.raises(Fault): app.tokens(access)
+
+    finally:
+
+        await store.clear()
+        await cache.close()
+
+@pytest.mark.parametrize("format_", ["jwt", "paseto", "opaque"])
+async def test_scoped_refresh_race_keeps_rotation_in_auth ( format_: str ) -> None:
+
+    cache = Cache(Memory())
+    extra: dict[str, Any] = { "store": cache } if format_ == "opaque" else { "secret": b"k" * 32 }
+    access = token.options(secret=b"a" * 32, issuer="sessions")
+    refresh = token.options(format=format_, purpose="refresh", issuer="sessions", ttl=300, **extra)
+    first = Sessions(cache, access=access, refresh=refresh)
+    other = Sessions(cache, access=access, refresh=refresh)
+    pair  = await first.issue(Actor("u"), "device")
+    outcomes = await asyncio.gather(
+        first.refresh(pair.refresh, "device"), other.refresh(pair.refresh, "device"), return_exceptions=True,
+    )
+    winners = [outcome for outcome in outcomes if isinstance(outcome, Pair)]
+
+    assert len(winners) == 1
+    assert sum(isinstance(outcome, Fault) for outcome in outcomes) == 1
+
+    with pytest.raises(Fault): await first.verify(await access.verify(winners[0].access, fingerprint="device"))
+    with pytest.raises(Fault): await other.refresh(winners[0].refresh, "device")
+
+async def test_http_and_auth_share_one_opaque_lookup_per_request () -> None:
+
+    cache = Cache(Memory())
+
+    class Counted:
+
+        def __init__ ( self ) -> None:
+
+            self.reads = 0
+
+        async def add ( self, key: str, value: Any, ttl: float | None = None ) -> bool:
+
+            return await cache.add(key, value, ttl)
+
+        async def get ( self, key: str, default: Any = None ) -> Any:
+
+            self.reads += 1
+
+            return await cache.get(key, default)
+
+    counted = Counted()
+    access  = token.options(format="opaque", purpose="access", store=counted)
+    refresh = token.options(format="opaque", purpose="refresh", ttl=300, store=counted)
+    auth    = Auth()
+    auth.setup(cache=cache, access=access, refresh=refresh)
+    pair = await auth.sessions.issue(Actor("u"))
+
+    async def me ( request: Request ) -> Any:
+
+        return { "id": auth.actor(request).id, "purpose": request.claims().purpose }
+
+    app = App("single-lookup").tokens(access).routing(Route.get("/me", me).guarded(auth.guard()))
+
+    async with app.listen() as url:
+
+        counted.reads = 0
+        reply = await Client(url).bearer(pair.access).get("/me")
+
+        assert reply.status == 200 and reply.data() == { "id": "u", "purpose": "access" }
+        assert counted.reads == 1
+
+def test_scoped_auth_configuration_is_atomic () -> None:
+
+    cache = Cache(Memory())
+    access = token.options(secret=b"a" * 32)
+    refresh = token.options(format="opaque", purpose="refresh", store=cache)
+    auth = Auth()
+    auth.setup(cache=cache, access=access, refresh=refresh)
+    kept = auth.sessions
+
+    with pytest.raises(Fault): auth.setup(cache=cache, access=access)
+    with pytest.raises(Fault): auth.setup(cache=cache, access=refresh, refresh=access)
+    with pytest.raises(Fault): App("bad-purpose").tokens(refresh)
+
+    assert auth.sessions is kept

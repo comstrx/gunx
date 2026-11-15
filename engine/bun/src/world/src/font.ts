@@ -1,13 +1,9 @@
 import * as list from "engine-list";
 import * as string from "engine-string";
 import fontRows from "../data/fonts.json" with { type: "json" };
+import type { Display, Family, FontLink } from "./arch.ts";
 import { scripted } from "./language.ts";
 import { baseOf, rootOf, word } from "./lazy.ts";
-
-export type Face = { file: string; range: string };
-export type Family = { family: string; scripts: readonly string[]; weight: readonly [number, number]; sizeAdjust: string; files: readonly Face[] };
-export type Display = "auto" | "swap" | "optional" | "block" | "fallback";
-export type FontLink = { rel: "preload"; as: "font"; type: "font/woff2"; crossOrigin: "anonymous"; href: string };
 
 export const fontFolder = "/world/font";
 export const families: readonly Family[] = fontRows as unknown as Family[];

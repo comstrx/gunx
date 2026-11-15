@@ -1,8 +1,5 @@
-import { deg, distance, earthRadius, interpolate, isPoint, type Point, rad } from "./point.ts";
-
-export type Bounds = { south: number; west: number; north: number; east: number };
-export type Viewport = { width: number; height: number };
-export type Fit = { center: Point; zoom: number; bounds: Bounds };
+import type { Bounds, Fit, Point, Viewport } from "./arch.ts";
+import { deg, distance, earthRadius, interpolate, isPoint, rad } from "./point.ts";
 
 const mercator = 85.05112878;
 const tile = 256;

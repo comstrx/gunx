@@ -29,12 +29,12 @@ test:module:gate:homes-every-part () {
     @eq "$(module:gate:product "${root}" other)" other
     @errors 'Unknown product: nope' module:gate:product "${root}" nope
     @eq "$(module:gate:home "${root}" rust)" "${root}/engine/rust"
-    @eq "$(module:gate:home "${root}" global)" "${root}"
+    @eq "$(module:gate:home "${root}" root)" "${root}"
     @eq "$(module:gate:home "${root}" tutor)" "${root}/tutor"
     @eq "$(module:gate:home "${root}" web)" "${root}/product/demo/web"
     @eq "$(module:gate:home "${root}" api other)" "${root}/product/other/api"
     @errors 'Unknown part: x' module:gate:home "${root}" x
-    @eq "$(module:gate:present "${root}" | tr '\n' ' ')" 'rust infra tutor global api web '
+    @eq "$(module:gate:present "${root}" | tr '\n' ' ')" 'rust infra tutor root api web '
 
 }
 test:module:gate:picks-the-chain () {
@@ -93,10 +93,37 @@ TOOL
     @eq "$(module:gate:one "${root}" infra '' 'check' 7 false 2>&1 | grep -c 'checked in tool with 7s')" 1
     @eq "$(module:gate:one "${root}" infra '' 'fuzz' 100 false 2>&1 | grep -c 'fuzz 9')" 1
     @errors 'gate infra failed at test' module:gate:one "${root}" infra '' 'check test' 7 false
-    @contains "$(module:gate:one "${root}" infra '' 'check test' 7 true 2>&1)" 'passing as asked'
-    @contains "$(module:gate:one "${root}" infra '' 'check test' 7 true 2>&1)" 'gate infra passed: check test!'
+    @contains "$(module:gate:one "${root}" infra '' 'check test' 7 true 2>&1)" 'gate infra failed at test; passing as asked'
     @errors 'ran out of its 1s budget' module:gate:one "${root}" infra '' 'bench' 1 false
     @contains "$(module:gate:one "${root}" infra '' 'lint' 7 false 2>&1)" 'nothing to run'
+
+}
+test:module:gate:keeps-the-truth-in-the-summary () {
+
+    local root="${TMPDIR}/tool" summary="${TMPDIR}/summary.md" report=""
+
+    mkdir -p "${root}/src"
+    printf '' > "${root}/infra.toml"
+    cat > "${root}/src/main.sh" <<'TOOL'
+case "$1" in
+    check) exit 0 ;;
+    test)  exit 3 ;;
+    bench) sleep 5 ;;
+esac
+TOOL
+
+    GATE_RESULTS=()
+    module:gate:one "${root}" infra '' 'check test bench' 1 true 2>/dev/null
+    report="$(GITHUB_STEP_SUMMARY="${summary}" module:gate:summary)"
+
+    @contains "${report}" 'infra:check'
+    @contains "${report}" 'infra:test'
+    @contains "${report}" 'passed=1 failed=1 timed-out=1 not-run=0'
+    @contains "$(cat "${summary}")" '| infra | test | failed |'
+
+    GATE_RESULTS=()
+    module:gate:one "${root}" infra '' 'check test bench' 7 false 2>/dev/null || true
+    @contains "$(module:gate:summary)" 'passed=1 failed=1 timed-out=0 not-run=1'
 
 }
 
@@ -126,5 +153,13 @@ test:module:gate:twins-compare-the-shared-files-of-a-product () {
     @contains "$(module:gate:bun:twins 2>&1)" 'no twin surface'
     cd "${root}/product/demo/api" || return
     @contains "$(module:gate:one "${root}" api demo 'twins' 7 false 2>&1)" 'nothing to run'
+
+}
+test:module:gate:shares-the-budget () {
+
+    @eq "$(GATE_SECONDS=100 module:gate:share 3)" 30
+    @eq "$(GATE_SECONDS=1 module:gate:share 9)" 1
+    @errors 'A share needs a positive count' module:gate:share 0
+    GATE_SECONDS=abc @errors 'GATE_SECONDS is not a number' module:gate:share 2
 
 }

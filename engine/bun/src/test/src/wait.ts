@@ -1,7 +1,6 @@
 import * as error from "engine-error";
 import * as log from "engine-log";
-
-export type Logs = { logger: log.Logger; entries: log.Entry[]; messages: () => string[]; clear: () => void };
+import type { Logs } from "./arch.ts";
 
 const longest = 2_147_483_647;
 

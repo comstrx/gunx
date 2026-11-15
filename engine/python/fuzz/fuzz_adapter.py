@@ -3,10 +3,10 @@ from engine.error import Code, Fault
 from engine.log import log
 from collections.abc import Awaitable, Callable, Sequence
 from functools import partial
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import given, settings, strategies as st
 from pathlib import Path
 from typing import Any, ClassVar, cast, override
-import asyncio, math
+import asyncio, math, os, pytest
 
 type Mark = tuple[str, str]
 type Note = tuple[str, str, bool]
@@ -27,7 +27,7 @@ ACCEPTED = ("accepted", "sent", "queued", "delivered", "ok")
 POOL     = ("owl", "hawk", "SES", "gpt-4o")
 ABLE     = ("send", "track", "bulk")
 MODES    = ("ok", "ok", "late", "raises", "odd", "blunt", "drops", "stopped")
-FAILED   = { "raises": "OSError", "odd": "Strange", "blunt": "TypeError" }
+FAILED   = { "raises": "OSError", "odd": "Strange", "blunt": "TypeError", "drops": "Fault" }
 EMPTY    = (bytes, bytearray, list, tuple, set, frozenset, dict)
 
 class Strange ( Exception ):
@@ -81,12 +81,14 @@ class Shelf:
         self.order: list[str] = []
         self.held: dict[str, Adapter] = {}
         self.default: str | None = None
+        self.owned: list[Adapter] = []
 
     def use ( self, adapter: Adapter, first: bool ) -> bool:
 
         name     = adapter.name
         replaced = name in self.held and self.held[name] is not adapter
 
+        if all(adapter is not owned for owned in self.owned): self.owned.append(adapter)
         if name not in self.held: self.order.append(name)
 
         self.held[name] = adapter
@@ -174,7 +176,7 @@ CASES    = st.sampled_from([str.lower, str.upper, str.title, str.swapcase])
 RAW      = st.dictionaries(st.text(max_size=3), st.integers(0, 3), max_size=3)
 loop     = asyncio.new_event_loop()
 
-log.setup("debug", "json", Path("/dev/null"))
+log.setup("debug", "json", Path(os.devnull))
 
 def tried ( work: Callable[[], Any] ) -> Any:
 
@@ -247,6 +249,9 @@ def same ( mail: Manager[Adapter], shelf: Shelf ) -> None:
     assert mail.matrix() == matrix
     assert mail.default() == shelf.default
     assert mail.ready() is bool(names)
+    assert mail.pending() == sum(
+        all(owned is not active for active in shelf.held.values()) for owned in shelf.owned
+    )
     assert mail.describe() == { "family": "mail", "default": shelf.default, "adapters": matrix }
 
     for word in ABLE:
@@ -287,13 +292,18 @@ def stepped ( mail: Manager[Adapter], shelf: Shelf, notes: list[Note], step: Ste
 
     elif verb == "forget": assert mail.forget(asked) is shelf.forget(asked)
     elif verb == "get": assert got(mail, shelf, asked)
-    elif verb == "close": assert run(mail.close()) == len(shelf.order)
+    elif verb == "close":
+
+        assert run(mail.close()) == len(shelf.owned)
+
+        shelf.clear()
+        shelf.owned.clear()
     else:
 
         mail.clear()
         shelf.clear()
 
-def swept ( modes: Sequence[str], shelf: Shelf ) -> tuple[list[str], int | None, list[Mark]]:
+def swept ( modes: Sequence[str] ) -> tuple[list[str], int | None, list[Mark]]:
 
     reached: list[str] = []
     warned: list[Mark] = []
@@ -306,14 +316,13 @@ def swept ( modes: Sequence[str], shelf: Shelf ) -> tuple[list[str], int | None,
         reached.append(name)
 
         if mode == "stopped": return reached, None, warned
-        if mode == "drops": shelf.drop(name)
 
         if mode in FAILED: warned.append((name, FAILED[mode]))
         else: count += 1
 
     return reached, count, warned
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(FAMILIES, TITLES, ABLES, st.booleans())
 def declared ( family: Any, name: Any, able: Any, first: bool ) -> None:
 
@@ -338,7 +347,7 @@ def declared ( family: Any, name: Any, able: Any, first: bool ) -> None:
 
     same(mail, shelf)
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(STEPS)
 def scripted ( steps: list[Step] ) -> None:
 
@@ -360,7 +369,7 @@ def scripted ( steps: list[Step] ) -> None:
     assert told == notes
     assert all(event["level"] == "debug" for event in events)
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(WILD)
 def looked ( value: Any ) -> None:
 
@@ -388,7 +397,7 @@ def looked ( value: Any ) -> None:
 
     same(mail, shelf)
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(WANTED)
 def needed ( wanted: dict[str, Any] ) -> None:
 
@@ -404,7 +413,7 @@ def needed ( wanted: dict[str, Any] ) -> None:
     assert refused(found, "mail.settings", { "missing": missing })
     assert found.message == "owl needs " + ", ".join(missing)
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(PADS, WORDS, CASES, PADS, WILD, RAW)
 def receipted ( front: str, word: str, cased: Callable[[str], str], back: str, wild: Any, raw: dict[str, Any] ) -> None:
 
@@ -418,7 +427,7 @@ def receipted ( front: str, word: str, cased: Callable[[str], str], back: str, w
     assert receipt == Receipt("r1", status, dict(raw))
     assert Receipt("r1", status).raw == {}
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.lists(st.sampled_from(MODES), max_size=6))
 def closed ( modes: list[str] ) -> None:
 
@@ -435,7 +444,7 @@ def closed ( modes: list[str] ) -> None:
         mail.use(adapter)
         shelf.use(adapter, first=False)
 
-    reached, count, warned = swept(modes, shelf)
+    reached, count, warned = swept(modes)
 
     with log.capture() as events:
 
@@ -448,6 +457,10 @@ def closed ( modes: list[str] ) -> None:
         ("warning", "mail", name, kind) for name, kind in warned
     ]
 
+    cut = modes.index("stopped") if "stopped" in modes else len(modes)
+    shelf.owned = [held for index, held in enumerate(shelf.owned) if index >= cut or modes[index] in FAILED]
+    shelf.clear()
+
     same(mail, shelf)
 
 declared()
@@ -457,11 +470,9 @@ needed()
 receipted()
 closed()
 
-loop.close()
-log.close()
 
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.one_of(st.none(), st.text(max_size=6), st.integers(), st.lists(st.integers(), max_size=2), st.dictionaries(st.sampled_from(["id", "status", "extra"]), st.one_of(st.none(), st.text(max_size=12), st.integers(), st.just("x" * 300), st.just("a\nb")), max_size=3)), st.sampled_from(["sent", "queued", "failed", "ok"]))
 def receipted_loosely ( body: Any, fallback: str ) -> None:
 
@@ -476,8 +487,8 @@ def receipted_loosely ( body: Any, fallback: str ) -> None:
         assert made_.unknown
 
         key, word = (held or {}).get("id"), (held or {}).get("status", fallback)
-        sound_key = key is None or (type(key) is str and 0 < len(key) <= 256 and key.isprintable())
-        sound_word = type(word) is str and word.isascii() and 0 < len(word) <= 64
+        sound_key = key is None or (type(key) is str and 0 < len(key) <= 256 and key.isprintable() and bool(key.strip()))
+        sound_word = type(word) is str and word.isascii() and 0 < len(word) <= 64 and bool(word.strip()) and word.strip().isprintable()
 
         assert not isinstance(body, dict | type(None)) or not sound_key or not sound_word
 
@@ -490,4 +501,37 @@ def receipted_loosely ( body: Any, fallback: str ) -> None:
 
 receipted_loosely()
 
-print(f"fuzz adapter  examples={EXAMPLES * 7}  ok")
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.sampled_from(list(Code)), st.booleans(), st.one_of(st.none(), st.floats(min_value=0, max_value=3600, allow_nan=False)), st.integers(0, 20))
+def upstream_keeps_safety ( code: Code, unknown: bool, delay: float | None, size: int ) -> None:
+
+    original = Fault(code, reason="remote.refusal", retry_after=delay, unknown=unknown)
+
+    async def reject () -> None: raise original
+
+    async def probe () -> None:
+
+        with pytest.raises(Fault) as caught: await STOCK[0].upstream(reject())
+
+        fault = caught.value
+
+        assert fault.safe() is original.safe()
+        assert fault.safe(idempotent=True) is original.safe(idempotent=True)
+        assert fault.unknown is original.unknown and fault.retry_after == original.retry_after
+
+        if original.client(): assert fault.server() and fault.__cause__ is original
+        else: assert fault is original
+
+    loop.run_until_complete(probe())
+
+    raw = { "items": list(range(size)) }
+    receipt = Receipt("r", "sent", raw)
+    raw["items"].append(-1)
+
+    assert receipt.raw == { "items": list(range(size)) }
+
+upstream_keeps_safety()
+loop.close()
+log.close()
+
+print("fuzz adapter  properties=8  max_examples=per-property settings  ok")

@@ -43,3 +43,33 @@ test:module:bundle:pack:strips-the-entry () {
     @eq "$(module:bundle:pack:entry "${entry}")" 'run "$@"'
 
 }
+test:module:bundle:pack:embeds-the-parsed-data () {
+
+    local engine="${INFRA_ENGINE:-}" key="" code=""
+    local -A parsed=() inlined=() pairs=()
+    local -a order=()
+
+    [[ -n "${engine}" && -d "${engine}" ]] || { @err "INFRA_ENGINE must name the source checkout"; return; }
+    declare -F bundle:manifest >/dev/null || { @err "The test runs inside the bundle"; return; }
+
+    core:parse:toml parsed "${engine}/infra.toml"
+    bundle:manifest inlined
+
+    @eq "${#inlined[@]}" "${#parsed[@]}" 'every manifest key is embedded'
+
+    for key in "${!parsed[@]}"; do
+        @eq "${inlined[${key}]-missing}" "${parsed[${key}]}" "manifest ${key}"
+    done
+
+    bundle:schema pairs order
+    @contains " ${order[*]} " ' LOG_LEVEL '
+
+    code="$(module:bundle:pack:pair odd $'it\'s "q" $(x) \\ \n line')"
+
+    declare -gA FIXTURE_PAIR=()
+    source <(printf '%s\n' "FIXTURE_PAIR=(" "${code}" ")")
+
+    @eq "${FIXTURE_PAIR[odd]}" $'it\'s "q" $(x) \\ \n line'
+    @errors 'cannot be embedded' module:bundle:pack:pair "a'b" x
+
+}

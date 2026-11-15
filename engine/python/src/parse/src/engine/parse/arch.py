@@ -22,27 +22,20 @@ SHORT    = 4
 BYTE     = 255
 PAIR     = 2
 
-TRUE      = frozenset({"1", "true", "yes", "y", "on", "نعم", "ايوه", "أيوه"})
-FALSE     = frozenset({"0", "false", "no", "n", "off", "", "لا"})
 DURATION  = re.compile(r"(\d+(?:\.\d+)?)\s*(ms|s|m|h|d|w)?", re.IGNORECASE)
-SPELLED   = re.compile(r"(?:\d+(?:\.\d+)?(?:ms|s|m|h|d|w)\s*)+", re.IGNORECASE)
+SPELLED   = re.compile(r"(?:\d+(?:\.\d+)?\s*(?:ms|s|m|h|d|w)\s*)+", re.IGNORECASE)
 SIZE      = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([kmgt]i?b?|b)?\s*$", re.IGNORECASE)
 SEMVER    = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$")
-TEMPLATE  = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_.]*)\}")
 UNITS     = { "ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0, "w": 604800.0 }
 SIZES     = {
     "b": 1, "k": 1000, "kb": 1000, "kib": 1024, "m": 10**6, "mb": 10**6, "mib": 1024**2,
     "g": 10**9, "gb": 10**9, "gib": 1024**3, "t": 10**12, "tb": 10**12, "tib": 1024**4,
 }
 MAX_QUERY = 1024
-INTEGER   = re.compile(r"^[-+]?\d+$")
-FLOAT     = re.compile(r"^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$")
-NOTHING   = frozenset({"", "null", "none", "nil"})
 MAX_TEXT  = 65536
 MAX_INT   = 32
 MAX_FLOAT = 64
 MAX_URL   = 2048
-MAX_TOML  = 4 * MAX_TEXT
 
 @dataclass(frozen=True, slots=True)
 class Mime:
@@ -84,4 +77,41 @@ class Url:
 
     def origin ( self ) -> str:
 
-        return f"{self.scheme}://{self.host}{f':{self.port}' if self.port else ''}"
+        host = f"[{self.host}]" if ":" in self.host else self.host
+
+        return f"{self.scheme}://{host}{f':{self.port}' if self.port else ''}"
+
+
+DOCUMENT_LIMIT = 8 * 1024 * 1024
+NODE_LIMIT = 100_000
+DEPTH_LIMIT = 128
+ALIAS_LIMIT = 1000
+FORMATS = frozenset({"json", "toml", "yaml"})
+SCALARS = frozenset({str, int, float, bool, type(None), bytes})
+
+
+def separated ( text: str, separator: str ) -> list[str]:
+
+    parts: list[str] = []
+    begin = 0
+    quoted = escaped = False
+
+    for index, char in enumerate(text):
+
+        if escaped: escaped = False
+        elif char == "\\" and quoted: escaped = True
+        elif char == '"': quoted = not quoted
+        elif char == separator and not quoted:
+
+            parts.append(text[begin:index])
+            begin = index + 1
+
+    if quoted or escaped: raise ValueError("Unclosed header quote")
+
+    parts.append(text[begin:])
+
+    return parts
+
+QUOTED_PAIR = re.compile(r"\\(.)")
+CONTROL = 32
+DELETE = 127

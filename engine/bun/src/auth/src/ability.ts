@@ -1,7 +1,5 @@
 import * as error from "engine-error";
-
-export type Mode = "all" | "any";
-export type Holder = { abilities?: readonly string[] | undefined; roles?: readonly string[] | undefined } | null | undefined;
+import type { Holder, Mode } from "./arch.ts";
 
 function covers ( held: string, wanted: string ): boolean {
 

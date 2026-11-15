@@ -40,8 +40,7 @@ module:gate:python:surface () {
 
     [[ -f src/engine/pyproject.toml ]] || return 0
 
-    baseline="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null)" \
-        || { @info "surface: no earlier release tag; skipped"; return 0; }
+    baseline="$(core:git:latest .)" || { @info "surface: no earlier release tag; skipped"; return 0; }
 
     here="$(pwd)"
     top="$(git rev-parse --show-toplevel)" || return

@@ -1,4 +1,4 @@
-from .arch import Probe
+lazy from .arch import Probe
 from .health import Health
 
 health = Health()

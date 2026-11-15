@@ -1,12 +1,13 @@
 from collections.abc import Awaitable, Callable, Coroutine, Hashable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from enum import Enum
 from pathlib import PurePath
 from typing import Any
 from uuid import UUID
-import re
+from engine.error import Code, Fault
+import asyncio, math, re
 
 type Work[T] = Callable[[], Awaitable[T]]
 type Loader = Callable[[], Any]
@@ -63,3 +64,30 @@ class Info:
     arity        : int
     is_async     : bool
     is_generator : bool
+
+@dataclass(slots=True)
+class Lease:
+
+    loop  : asyncio.AbstractEventLoop
+    lock  : asyncio.Lock = field(default_factory=asyncio.Lock)
+    users : int = 0
+    valid : bool = True
+
+def count ( value: int, reason: str ) -> int:
+
+    if type(value) is not int or value < 1: raise Fault(Code.INTERNAL, reason=reason)
+
+    return value
+
+def span ( value: float, reason: str, *, infinite: bool = False ) -> float:
+
+    if type(value) not in (int, float) or not value >= 0:
+
+        raise Fault(Code.INTERNAL, reason=reason)
+
+    try: found = float(value)
+    except OverflowError as error: raise Fault(Code.INTERNAL, reason=reason) from error
+
+    if not infinite and not math.isfinite(found): raise Fault(Code.INTERNAL, reason=reason)
+
+    return found

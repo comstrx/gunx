@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import { existsSync } from "node:fs";
-import * as socket from "engine/socket";
+import * as api from "engine/api";
 import * as stage from "engine/test";
 
 describe("test", () => {
@@ -62,7 +62,7 @@ describe("test", () => {
     });
     it("a live socket server speaks the engine frames", async () => {
 
-        const server = stage.live({ auth: ( token ) => token === "good", onFrame: ( frame, reply ) => {
+        const server = stage.live({ codec: { encode: api.encodeFrame, decode: api.decodeFrame }, auth: ( token ) => token === "good", onFrame: ( frame, reply ) => {
 
             if ( frame.event !== "sum" ) return false;
 
@@ -71,7 +71,7 @@ describe("test", () => {
             return true;
 
         } });
-        const live = socket.open({ url: server.url, auth: "good", heartbeat: 0, reconnect: false });
+        const live = api.connect({ url: server.url, auth: "good", heartbeat: 0, reconnect: false });
 
         await live.connect();
         await live.join("orders");
@@ -87,7 +87,7 @@ describe("test", () => {
         expect(server.received().some(( frame ) => frame.event === "auth")).toBe(true);
         live.close();
 
-        const refused = socket.open({ url: server.url, auth: "bad", heartbeat: 0, reconnect: false });
+        const refused = api.connect({ url: server.url, auth: "bad", heartbeat: 0, reconnect: false });
 
         await refused.connect();
         await stage.until(() => refused.status() !== "open", { timeout: 1000 });

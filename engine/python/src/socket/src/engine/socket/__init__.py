@@ -1,6 +1,6 @@
-from .frame import Frame
-from .hub import Hub
-from .socket import Socket
+lazy from .frame import Frame
+lazy from .hub import Hub
+lazy from .socket import Socket
 from .sockets import Sockets
 
 sockets = Sockets()

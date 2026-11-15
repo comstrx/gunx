@@ -10,7 +10,7 @@ bench = Bench()
 loop  = asyncio.new_event_loop()
 seen: list[str] = []
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 
 def run ( work: Any ) -> Any:
 

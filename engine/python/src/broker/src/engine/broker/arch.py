@@ -28,3 +28,7 @@ class Message:
     def make ( cls, topic: str, payload: Mapping[str, Any], headers: Mapping[str, str] | None = None ) -> Message:
 
         return cls(str(rand.uuid7()), topic, dict(payload), { "sent_at": date.iso(), **(headers or {}) })
+
+KAFKA_INFLIGHT = 1024
+
+KAFKA_TAG = 3

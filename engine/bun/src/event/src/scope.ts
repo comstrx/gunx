@@ -1,7 +1,4 @@
-import type { Bus, Pattern } from "./bus.ts";
-
-export type Scoped = Omit<Bus, "clear"> & { readonly prefix: string };
-
+import type { Bus, Pattern, Scoped } from "./arch.ts";
 export function scope ( bus: Omit<Bus, "clear">, prefix: string ): Scoped {
 
     const head = prefix === "" || prefix.endsWith(".") ? prefix : `${prefix}.`;

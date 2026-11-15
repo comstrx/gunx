@@ -3,11 +3,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from structlog import configure, get_logger, make_filtering_bound_logger
+from structlog import make_filtering_bound_logger, wrap_logger
 from structlog.processors import StackInfoRenderer, TimeStamper, add_log_level, format_exc_info
 from structlog.typing import EventDict, Processor, WrappedLogger
 from engine.context import context
-from .arch import Fields, NUMBERS
+from engine.error import Code, Fault
+from .arch import CAPTURES, Capture, Fields, NUMBERS
 from .logger import Logger
 from .render import Render
 from .sink import Sink
@@ -20,15 +21,7 @@ class Log:
     def __init__ ( self ) -> None:
 
         self._sink: Sink | None = None
-        self._out      = Sink(sys.stderr)
-        self._level    = "info"
-        self._renderer = "console"
-        self._file: Path | None = None
-        self._render   = Render()
-        self._taps: list[list[EventDict]] = []
-        self._floor    = logging.INFO
-        self.debugging = False
-        self._logger   = Logger(get_logger(self.name))
+        self._render = Render()
 
         self.setup()
 
@@ -40,21 +33,32 @@ class Log:
             TimeStamper(fmt="iso", utc=True), self._tap_, self._render.renderer(renderer, colors=colors),
         ]
 
+        floor = self.level_of(level)
+        out   = self._open_(file)
+
+        try:
+
+            logger = Logger(wrap_logger(
+                out, processors=processors, wrapper_class=make_filtering_bound_logger(floor),
+                context_class=dict, cache_logger_on_first_use=True,
+            ).bind())
+
+        except BaseException:
+
+            if file is not None: out.close()
+
+            raise
+
         self.close()
 
-        configure(
-            processors=processors,
-            wrapper_class=make_filtering_bound_logger(self.level_of(level)),
-            logger_factory=self._factory_(file),
-            cache_logger_on_first_use=False,
-        )
-
+        self._out      = out
+        self._sink     = out if file is not None else None
         self._level    = level.lower()
         self._renderer = renderer
         self._file     = file
-        self._floor    = self.level_of(level)
-        self.debugging = self._floor <= logging.DEBUG
-        self._logger   = Logger(get_logger(self.name).bind())
+        self._floor    = floor
+        self.debugging = floor <= logging.DEBUG
+        self._logger   = logger
 
     def level_of ( self, level: str ) -> int:
 
@@ -77,11 +81,11 @@ class Log:
 
     def get ( self, name: str | None = None ) -> Logger:
 
-        return Logger(get_logger(name or self.name))
+        return self._logger.bind(logger=name) if name else self._logger
 
     def bind ( self, **fields: Any ) -> Logger:
 
-        return self.get().bind(**fields)
+        return self._logger.bind(**fields)
 
     def share ( self, **fields: Any ) -> None:
 
@@ -126,17 +130,20 @@ class Log:
     @contextmanager
     def span ( self, event: str, level: str = "info", **fields: Any ) -> Iterator[Fields]:
 
-        with self.get().span(event, level, **fields) as extra: yield extra
+        with self._logger.span(event, level, **fields) as extra: yield extra
 
     @contextmanager
     def capture ( self ) -> Iterator[list[EventDict]]:
 
-        events: list[EventDict] = []
+        captured = Capture(self, [])
+        token    = CAPTURES.set((*CAPTURES.get(), captured))
 
-        self._taps.append(events)
+        try: yield captured.events
 
-        try: yield events
-        finally: self._taps.remove(events)
+        finally:
+
+            captured.active = False
+            CAPTURES.reset(token)
 
     def ms ( self, started: float ) -> float:
 
@@ -150,22 +157,20 @@ class Log:
 
     def _tap_ ( self, _: WrappedLogger, __: str, event: EventDict ) -> EventDict:
 
-        for tap in self._taps: tap.append(dict(event))
+        for captured in CAPTURES.get():
+
+            if captured.active and captured.owner is self: captured.events.append(dict(event))
 
         return event
 
-    def _factory_ ( self, file: Path | None ) -> Any:
+    def _open_ ( self, file: Path | None ) -> Sink:
 
-        if file is None: self._out = Sink(sys.stderr)
+        if file is None: return Sink(sys.stderr)
 
-        else:
+        try:
 
             file.parent.mkdir(parents=True, exist_ok=True)
 
-            self._out = self._sink = Sink(file.open("a", encoding="utf-8", errors="backslashreplace", buffering=1))
+            return Sink(file.open("a", encoding="utf-8", errors="backslashreplace", buffering=1))
 
-        return self._made_
-
-    def _made_ ( self, *_: object ) -> Sink:
-
-        return self._out
+        except OSError as error: raise Fault(Code.INTERNAL, reason="log.open") from error

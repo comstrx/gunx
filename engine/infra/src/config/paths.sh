@@ -7,7 +7,7 @@ config:paths:lab () {
 
     local root="${TOOL_ROOT}" cache="" lab=""
 
-    cache="$(config:paths:cache)" || return
+    cache="${MANIFEST[paths.cache]}"
     lab="${root}/${cache}"
 
     if [[ -d "${lab}" && -w "${lab}" ]] || [[ ! -e "${lab}" && -w "${root}" ]]; then

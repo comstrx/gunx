@@ -36,7 +36,9 @@ class Dialect:
     def ident ( self, name: str, star: bool = False ) -> str:
 
         if star and name == "*": return name
-        if not IDENT.match(name): raise Fault(Code.INTERNAL, reason="sql.identifier", errors={ "name": [name[:64]] })
+        if not IDENT.fullmatch(name):
+
+            raise Fault(Code.INTERNAL, reason="sql.identifier", errors={ "name": [name[:64]] })
 
         return ".".join(f"{self.quote}{part}{self.quote}" for part in name.split("."))
 
@@ -82,10 +84,20 @@ class Dialect:
 
         return self.defaults.get(text, text)
 
+    def literal ( self, value: str ) -> str:
+
+        return "'" + value.replace("'", "''") + "'"
+
+    def value ( self, column: Column ) -> str | None:
+
+        if column.choices is not None and column.default is not None: return self.literal(column.default)
+
+        return self.default(column.default)
+
     def column ( self, column: Column ) -> str:
 
         parts   = [self.ident(column.name), self.kind(column)]
-        default = self.default(column.default)
+        default = self.value(column)
 
         if column.generated: return " ".join([*parts, self.generated(column.generated)])
 
@@ -93,7 +105,15 @@ class Dialect:
         if not column.nullable: parts.append("NOT NULL")
         if default is not None: parts.append(f"DEFAULT {default}")
         if column.unique and not column.primary: parts.append("UNIQUE")
-        if column.check and self.can("check"): parts.append(f"CHECK ({column.check})")
+        if self.can("check"):
+
+            if column.choices is not None:
+
+                values = ", ".join(self.literal(value) for value in column.choices)
+
+                parts.append(f"CHECK ({self.ident(column.name)} IN ({values}))")
+
+            if column.check: parts.append(f"CHECK ({column.check})")
         if column.foreign and self.can("foreign"):
 
             table, _, key = column.foreign.partition(".")
@@ -195,7 +215,7 @@ class Dialect:
 
     def json ( self, column: str, key: str ) -> str:
 
-        if not KEY.match(key): raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [key[:64]] })
+        if not KEY.fullmatch(key): raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [key[:64]] })
 
         return f"{self.ident(column)} ->> '{key}'"
 
@@ -203,7 +223,7 @@ class Dialect:
 
         self.ensure("scope")
 
-        if not KEY.match(name) or not KEY.match(kind):
+        if not KEY.fullmatch(name) or not KEY.fullmatch(kind):
 
             raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [name[:64]] })
 

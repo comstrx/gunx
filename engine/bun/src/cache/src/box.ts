@@ -1,30 +1,10 @@
 import * as crypto from "engine-crypto";
 import * as date from "engine-date";
 import * as json from "engine-json";
-import { type Kind, lazy, namespaced, type Storage, storage, unguarded } from "./storage.ts";
-
-type Envelope = { v: unknown; e?: number | undefined; k?: string | undefined };
-
-export type Place = { kind?: Kind | string | undefined; storage?: Storage | undefined; prefix?: string | undefined };
-export type Options = Place & { secret?: string | undefined; sign?: string | undefined; ttl?: number | undefined };
-export type Keep = { ttl?: number | undefined; exclusive?: boolean | undefined };
-export type Box = {
-    readonly storage: Storage;
-    get: <T = unknown>( key: string ) => Promise<T | undefined>;
-    set: <T>( key: string, value: T, keep?: Keep ) => Promise<void>;
-    has: ( key: string ) => Promise<boolean>;
-    remove: ( key: string ) => Promise<void>;
-    pull: <T = unknown>( key: string ) => Promise<T | undefined>;
-    keys: () => Promise<string[]>;
-    clear: () => Promise<void>;
-    remember: <T>( key: string, make: () => T | Promise<T>, keep?: Keep ) => Promise<T>;
-    update: <T>( key: string, change: ( current: T | undefined ) => T | undefined | Promise<T | undefined>, keep?: Keep ) => Promise<T | undefined>;
-    all: <T = unknown>() => Promise<Record<string, T>>;
-    touch: ( key: string, keep?: Keep ) => Promise<boolean>;
-    increment: ( key: string, by?: number, keep?: Keep ) => Promise<number>;
-    decrement: ( key: string, by?: number, keep?: Keep ) => Promise<number>;
-    watch: <T = unknown>( key: string, onChange: ( value: T | undefined ) => void ) => () => void;
-};
+import * as list from "engine-list";
+import type { Box, Envelope, Keep, Options, Place, Storage } from "./arch.ts";
+import { unpack } from "./envelope.ts";
+import { lazy, namespaced, storage, unguarded } from "./storage.ts";
 
 const ready: Promise<void> = Promise.resolve();
 const noop = (): void => undefined;
@@ -62,7 +42,7 @@ export function open ( options: Options = {} ): Box {
     const guarded = secret !== undefined || sign !== undefined;
     const turns = new Map<string, Promise<unknown>>();
     const named = ( key: string ): string => (prefix ? `${prefix}.${key}` : key);
-    const lasting = ( kept: Envelope | undefined, keep: Keep | undefined ): number | undefined => (keep === undefined && kept !== undefined ? kept.e : until(keep?.ttl ?? ttl));
+    const lasting = ( kept: Envelope | undefined, keep: Keep | undefined ): number | undefined => (keep?.ttl === undefined && kept !== undefined ? kept.e : until(keep?.ttl ?? ttl));
     const locked = <T>( key: string, work: () => Promise<T> | T, keep?: Keep ): Promise<T> => {
 
         const shared = keep?.exclusive === true ? inner.lock : undefined;
@@ -103,12 +83,9 @@ export function open ( options: Options = {} ): Box {
 
         if ( plain === undefined ) return undefined;
 
-        const envelope = json.parse(plain);
+        const envelope = unpack(plain);
 
-        if ( !json.isRecord(envelope) || !Object.hasOwn(envelope, "v") ) return undefined;
-        if ( envelope.e !== undefined && typeof envelope.e !== "number" ) return undefined;
-
-        return guarded && envelope.k !== named(key) ? undefined : (envelope as Envelope);
+        return guarded && envelope?.k !== named(key) ? undefined : envelope;
 
     };
     const sweep = async ( key: string, text: string ): Promise<void> => {
@@ -162,6 +139,7 @@ export function open ( options: Options = {} ): Box {
     }, keep);
     const box: Box = {
         storage: inner,
+        flush: () => inner.flush(),
         get: async <T>( key: string ) => (await seen(key))?.v as T | undefined,
         set: ( key, value, keep ) => locked(key, () => write(key, value, until(keep?.ttl ?? ttl)), keep),
         has: async ( key ) => (await seen(key)) !== undefined,
@@ -178,7 +156,7 @@ export function open ( options: Options = {} ): Box {
         keys: () => inner.keys(),
         clear: async () => {
 
-            await Promise.all((await inner.keys()).map(( key ) => box.remove(key)));
+            await list.eachAsync(await inner.keys(), ( key ) => box.remove(key));
 
         },
         remember: async <T>( key: string, make: () => T | Promise<T>, keep?: Keep ): Promise<T> => {
@@ -214,17 +192,21 @@ export function open ( options: Options = {} ): Box {
         }, keep),
         all: async <T>() => {
 
-            const names = (await inner.keys()).filter(( key ) => json.safeKey(key));
-            const kept = await Promise.all(names.map(( key ) => read(key)));
+            const names = await inner.keys();
             const found: Record<string, T> = {};
 
-            for ( let index = 0; index < names.length; index += 1 ) {
+            for ( const key of names ) if ( json.safeKey(key) ) found[key] = undefined as T;
 
-                const envelope = kept[index];
+            await list.eachAsync(names, async ( key ) => {
 
-                if ( envelope !== undefined ) found[names[index] ?? ""] = envelope.v as T;
+                if ( !json.safeKey(key) ) return;
 
-            }
+                const envelope = await read(key);
+
+                if ( envelope !== undefined ) found[key] = envelope.v as T;
+                else delete found[key];
+
+            });
 
             return found;
 
@@ -235,7 +217,7 @@ export function open ( options: Options = {} ): Box {
 
             if ( kept === undefined ) return false;
 
-            await write(key, kept.v, until(keep?.ttl ?? ttl));
+            await write(key, kept.v, keep?.ttl === undefined && ttl === undefined ? kept.e : until(keep?.ttl ?? ttl));
 
             return true;
 
@@ -248,14 +230,15 @@ export function open ( options: Options = {} ): Box {
             let live = true;
             const stop = inner.watch(key, ( next ) => {
 
-                const turn = chain.then(() => (next === null ? undefined : decode(key, next)));
+                const turn = chain.then(() => (next === null ? undefined : decode(key, next))).then(( envelope ) => {
 
-                chain = turn.then(noop, noop);
-                void turn.then(( envelope ) => {
-
-                    if ( live ) onChange(fresh(envelope)?.v as T | undefined);
+                    if ( live ) return onChange(fresh(envelope)?.v as T | undefined);
 
                 });
+
+                chain = turn.then(noop, noop);
+
+                return turn;
 
             });
 

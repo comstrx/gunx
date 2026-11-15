@@ -1,19 +1,25 @@
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, override
 
 from sanic import Request as Incoming
 from engine.error import Code, Fault
+from engine.json import json
 from engine.parse import parse
-from engine.token import Claims, token
+from engine.token import Claims, Issuer, token
 from engine.translate import translate
 from engine.validate import Shape, validator
-from .arch import LANGUAGE, PRIVATE
+from .arch import Credential, LANGUAGE, SKIP, networks
 
 class Request(Incoming):
 
     __slots__ = ()
 
-    proxies: tuple[str, ...] = PRIVATE
+    proxies: tuple[str, ...] = ()
+
+    @override
+    def load_json ( self, loads: Callable[[bytes], Any] | None = None ) -> Any:
+
+        return super().load_json(loads or json.loads)
 
     def trace ( self ) -> str:
 
@@ -21,13 +27,13 @@ class Request(Incoming):
 
     def header ( self, name: str, default: str | None = None ) -> str | None:
 
-        return self.headers.get(name.lower(), default)
+        return self.headers.get(name, default)
 
     def unique ( self, *names: str ) -> None:
 
         for name in names:
 
-            if len(self.headers.getall(name.lower(), [])) > 1:
+            if len(self.headers.getall(name, ())) > 1:
 
                 raise Fault(Code.BAD_REQUEST, reason="http.header", errors={ name: ["is repeated"] })
 
@@ -41,7 +47,38 @@ class Request(Incoming):
 
         if not found: raise Fault(Code.UNAUTHORIZED, reason="auth.missing")
 
+        held = getattr(self.ctx, "credential", None)
+
+        if isinstance(held, Credential) and held.token == found and held.fingerprint == self.fingerprint():
+
+            if held.claims.purpose != kind: raise Fault(Code.UNAUTHORIZED, reason="token.kind")
+
+            return held.claims
+
+        if getattr(self.ctx, "token_issuer", None) is not None:
+
+            raise Fault(Code.UNAUTHORIZED, reason="auth.principal")
+
         return token.verify(found, kind, self.fingerprint())
+
+    async def authenticate ( self, issuer: Issuer ) -> Claims:
+
+        found = self.bearer()
+
+        if not found: raise Fault(Code.UNAUTHORIZED, reason="auth.missing")
+
+        fingerprint = self.fingerprint()
+        held = getattr(self.ctx, "credential", None)
+
+        if (
+            isinstance(held, Credential) and held.issuer is issuer
+            and held.token == found and held.fingerprint == fingerprint
+        ): return held.claims
+
+        claims = await issuer.verify(found, fingerprint=fingerprint)
+        self.ctx.credential = Credential(issuer, found, fingerprint, claims)
+
+        return claims
 
     def actor ( self ) -> Any:
 
@@ -58,13 +95,19 @@ class Request(Incoming):
 
         if forwarded and self.trusted(peer):
 
-            hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+            self.unique("x-forwarded-for")
 
-            for hop in reversed(hops):
+            hops = forwarded.split(",")
+            hop  = peer
+
+            for value in reversed(hops):
+
+                try: hop = str(parse.ip(value.strip()))
+                except Fault: raise Fault(Code.BAD_REQUEST, reason="http.forwarded") from None
 
                 if not self.trusted(hop): return hop
 
-            return hops[0] if hops else peer
+            return hop
 
         return peer
 
@@ -77,7 +120,7 @@ class Request(Incoming):
         try: ip = parse.ip(address)
         except Fault: return False
 
-        return any(ip in parse.cidr(block) for block in self.proxies)
+        return any(ip in block for block in networks(self.proxies))
 
     def fingerprint ( self ) -> str:
 
@@ -141,29 +184,28 @@ class Request(Incoming):
 
     def input ( self, name: str, default: Any = None ) -> Any:
 
-        return self.merged().get(name, default)
+        payload = self.payload() if self.body and self.json_body() else None
+
+        if name in self.match_info: return parse.unquote(str(self.match_info[name]))
+        if payload is not None and name in payload: return payload[name]
+
+        return self.query(name, default)
 
     def has ( self, *names: str ) -> bool:
 
-        found = self.merged()
-
-        return all(name in found for name in names)
+        return all(self.input(name, SKIP) is not SKIP for name in names)
 
     def filled ( self, *names: str ) -> bool:
 
-        found = self.merged()
-
-        return all(found.get(name) not in (None, "", [], {}) for name in names)
+        return all(self.input(name) not in (None, "", [], {}) for name in names)
 
     def only ( self, *names: str ) -> dict[str, Any]:
 
-        found = self.merged()
-
-        return { name: found[name] for name in names if name in found }
+        return { name: found for name in names if (found := self.input(name, SKIP)) is not SKIP }
 
     def boolean ( self, name: str, default: bool = False ) -> bool:
 
-        found = self.merged().get(name)
+        found = self.input(name)
 
         return default if found in (None, "") else parse.boolean(found)
 
@@ -185,9 +227,11 @@ class Request(Incoming):
 
         if self.scheme in ("https", "wss"): return True
 
-        forwarded = (self.header("x-forwarded-proto") or "").split(",")[0].strip().lower()
+        if not self.trusted(self.ip_addr()): return False
 
-        return forwarded == "https" and self.trusted(self.ip_addr())
+        self.unique("x-forwarded-proto")
+
+        return (self.header("x-forwarded-proto") or "").strip().lower() == "https"
 
     def fresh ( self, etag: str ) -> bool:
 

@@ -1,7 +1,8 @@
-from .arch import Opened, Report, Work
+lazy from .arch import Opened, Report, Work
+from .trace import Trace
 from .context import Context
-from .deferral import Deferral
+lazy from .deferral import Deferral
 
 context = Context()
 
-__all__ = ["Context", "Deferral", "Opened", "Report", "Work", "context"]
+__all__ = ["Context", "Deferral", "Opened", "Report", "Trace", "Work", "context"]

@@ -2,23 +2,9 @@ import * as error from "engine-error";
 import * as json from "engine-json";
 import * as net from "engine-net";
 import * as parse from "engine-parse";
+import type { Plan, Recorded, Route, Routes, Row, Stub, Wire } from "./arch.ts";
 import { envelope, isEnvelope, refusal } from "./envelope.ts";
-import { house, type Wire } from "./wire.ts";
-
-export type Route = ( context: { params: Record<string, string>; query: parse.Query; body: unknown; headers: Record<string, string>; method: string; path: string } ) => unknown | Promise<unknown>;
-export type Routes = Record<string, Route>;
-export type Recorded = { method: string; path: string; query: parse.Query; body: unknown; headers: Record<string, string> };
-export type Stub = {
-    fetcher: net.Fetcher;
-    calls: () => Recorded[];
-    reset: () => void;
-    latency: ( ms: number ) => void;
-    route: ( key: string, handler: Route ) => void;
-    refuse: ( key: string, fault: error.Fault | error.Code, times?: number ) => void;
-};
-
-type Row = { key: string; method: string; pattern: string; handler: Route; rank: number };
-type Plan = { method: string; pattern: string; fault: error.Fault; left: number };
+import { house } from "./wire.ts";
 
 const methods: readonly string[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 const gap = /\s/;

@@ -31,13 +31,16 @@
       "dependencies": {
         "engine-date": "workspace:*",
         "engine-error": "workspace:*",
+        "engine-event": "workspace:*",
         "engine-fake": "workspace:*",
+        "engine-func": "workspace:*",
         "engine-json": "workspace:*",
         "engine-list": "workspace:*",
         "engine-net": "workspace:*",
         "engine-parse": "workspace:*",
         "engine-rand": "workspace:*",
         "engine-socket": "workspace:*",
+        "engine-string": "workspace:*",
         "engine-validate": "workspace:*",
       },
     },
@@ -60,6 +63,7 @@
         "engine-date": "workspace:*",
         "engine-error": "workspace:*",
         "engine-json": "workspace:*",
+        "engine-list": "workspace:*",
         "engine-string": "workspace:*",
       },
     },
@@ -240,6 +244,9 @@
     },
     "src/number": {
       "name": "engine-number",
+      "dependencies": {
+        "engine-string": "workspace:*",
+      },
     },
     "src/parse": {
       "name": "engine-parse",
@@ -295,8 +302,8 @@
         "engine-error": "workspace:*",
         "engine-event": "workspace:*",
         "engine-func": "workspace:*",
-        "engine-json": "workspace:*",
         "engine-rand": "workspace:*",
+        "engine-string": "workspace:*",
       },
     },
     "src/spec": {
@@ -322,12 +329,12 @@
         "engine-json": "workspace:*",
         "zustand": "catalog:",
       },
-      "peerDependencies": {
-        "react": ">=19.0.0",
-      },
     },
     "src/string": {
       "name": "engine-string",
+      "dependencies": {
+        "unicode-segmenter": "catalog:",
+      },
     },
     "src/test": {
       "name": "engine-test",
@@ -392,6 +399,7 @@
         "engine-list": "workspace:*",
         "engine-number": "workspace:*",
         "engine-string": "workspace:*",
+        "engine-translate": "workspace:*",
         "engine-value": "workspace:*",
       },
     },
@@ -407,6 +415,7 @@
     "react-dom": "19.3.0",
     "subset-font": "2.9.0",
     "typescript": "7.0.2",
+    "unicode-segmenter": "0.17.3",
     "zod": "4.6.7",
     "zustand": "5.0.16",
   },
@@ -570,6 +579,8 @@
     "typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
+
+    "unicode-segmenter": ["unicode-segmenter@0.17.3", "", {}, "sha512-hKZwqBjJDmqNrq1+LjDxck1qLzJFcLLJM2Xq92ORRHOuau6GSHeELmn+uyk6zNH1CK9mogrUJGP9WJCJUQXMAw=="],
 
     "zod": ["zod@4.6.7", "", {}, "sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg=="],
 

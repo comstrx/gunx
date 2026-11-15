@@ -5,10 +5,9 @@ from engine.error import Code, Fault
 from engine.json import json
 from engine.log import log
 from engine.thread import thread
+from .arch import Swept
 from .arch import Check, FACTS, LIMIT, NAME, PROBES, Probe, RESERVED, UNREADY, WEIGHT, WORD
 import asyncio, inspect, time
-
-type Swept = tuple[bool, dict[str, bool]]
 
 class Health:
 

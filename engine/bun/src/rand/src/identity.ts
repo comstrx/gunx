@@ -1,9 +1,6 @@
 import * as adapter from "engine-adapter";
 import * as string from "engine-string";
-
-export type Source = { getRandomValues: ( data: Uint8Array<ArrayBuffer> ) => unknown; randomUUID?: (() => string) | undefined };
-
-type Track = { time: number; tail: Uint8Array<ArrayBuffer> };
+import type { Source, Track } from "./arch.ts";
 
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const urlSafe = "useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";

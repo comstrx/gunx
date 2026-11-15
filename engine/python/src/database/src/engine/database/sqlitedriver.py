@@ -36,19 +36,30 @@ class SqliteDriver(Driver):
 
         pool: asyncio.Queue[apsw.AsyncConnection] = asyncio.Queue(self._size)
 
-        for _ in range(self._size):
+        try:
 
-            connection = await apsw.Connection.as_async(self._path)
+            for _ in range(self._size):
 
-            await connection.set_busy_timeout(int(self._wait * 1000))
+                connection = await apsw.Connection.as_async(self._path)
 
-            if self._path != MEMORY: await connection.pragma("journal_mode", "wal")
+                self._all.append(connection)
 
-            await connection.pragma("synchronous", self._synchronous)
-            await connection.pragma("foreign_keys", 1)
+                await connection.set_busy_timeout(int(self._wait * 1000))
 
-            self._all.append(connection)
-            pool.put_nowait(connection)
+                if self._path != MEMORY: await connection.pragma("journal_mode", "wal")
+
+                await connection.pragma("synchronous", self._synchronous)
+                await connection.pragma("foreign_keys", 1)
+
+                pool.put_nowait(connection)
+
+        except BaseException:
+
+            opened, self._all = self._all, []
+
+            for connection in opened: await connection.aclose()
+
+            raise
 
         self._pool = pool
 

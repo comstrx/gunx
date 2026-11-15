@@ -1,12 +1,12 @@
 import * as json from "engine/json";
 import type * as spec from "engine/spec";
-import * as state from "engine/state";
 import { type Asked, confirmations, live, menu } from "@/specs/runtime.ts";
+import { bind } from "@/stores/bind.ts";
 import type { Locale } from "@/types/index.ts";
 
-const session = state.bind(live.state);
-const viewing = state.bind(live.view);
-const asking = state.bind(confirmations);
+const session = bind(live.state);
+const viewing = bind(live.view);
+const asking = bind(confirmations);
 
 export function useOpens ( screen: string | undefined ): boolean {
 

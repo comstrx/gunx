@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from functools import lru_cache
+from contextlib import suppress
 from urllib.parse import urlsplit
 
 from structlog.dev import ConsoleRenderer
@@ -7,8 +8,8 @@ from structlog.processors import JSONRenderer
 from structlog.typing import EventDict, Processor, WrappedLogger
 from engine.context import context
 from .arch import (
-    BARE, BEARER, DEPTH, HOST, JWT, KNOWN, LONG, MASK, MASKED, NESTED, OPAQUE, PAIR, PEM, PLAIN, QUERY, QUOTE, QUOTED,
-    REST, SCHEME, SECRETS, SHORT, STEMS, URL_AUTH, WHOLE,
+    BARE, BEARER, DEPTH, HOST, JWT, KNOWN, LONG, MASK, MASKED, NESTED, OPAQUE, PAIR, PEM, PLAIN, PREFIX, QUERY, QUOTE,
+    QUOTED, REST, SCHEME, SECRETS, SHORT, STEMS, URL_AUTH, WHOLE,
 )
 import re
 
@@ -38,16 +39,26 @@ class Render:
 
     def renderer ( self, name: str, colors: bool ) -> Processor:
 
-        if name == "json": return JSONRenderer()
+        if name == "json":
+
+            return JSONRenderer(default=repr, ensure_ascii=True, check_circular=False, separators=(",", ":"))
 
         return ConsoleRenderer(colors=colors)
 
     @staticmethod
     def grade ( name: str ) -> int:
 
-        if name.isascii() and STEMS.search(name.lower()) is None: return 0
+        start = 0
 
-        found = SECRETS.search(name)
+        if name.isascii():
+
+            stem = STEMS.search(name.lower())
+
+            if stem is None: return 0
+
+            start = max(0, stem.start() - PREFIX) if stem.group() == "key" else stem.start()
+
+        found = SECRETS.search(name, start)
 
         if found is None: return 0
 
@@ -67,7 +78,7 @@ class Render:
 
         if value is None or isinstance(value, bool): return value
 
-        return MASK if grade > 1 or isinstance(value, NESTED) else Render.mask(value)
+        return MASK if grade > 1 or (not isinstance(value, str) and type(value) not in PLAIN) else Render.mask(value)
 
     @staticmethod
     def origin ( value: object ) -> str:
@@ -98,7 +109,9 @@ class Render:
         if "eyJ" in text: text = JWT.sub(MASK, text)
         if "PRIVATE KEY-----" in text: text = PEM.sub(MASK, text)
         if ("=" in text or ":" in text) and STEMS.search(text.lower()): text = Render._pairs_(text)
-        if "earer" in text: text = BEARER.sub(rf"\g<scheme> {MASK}", text)
+        if ("b" in text or "B" in text) and "bearer" in text.lower():
+
+            text = BEARER.sub(rf"\g<scheme> {MASK}", text)
 
         return text
 
@@ -117,15 +130,16 @@ class Render:
 
             return [Render.clean(item, deep) for item in value]
 
-        text  = repr(value)
-        shown = Render.scrub(text)
+        shown = MASK
 
-        return value if shown == text else shown
+        with suppress(Exception): shown = Render.scrub(repr(value))
+
+        return shown
 
     @staticmethod
     def _veil_ ( name: str, value: object, depth: int ) -> object:
 
-        grade = Render._known_(name[:LONG])
+        grade = Render._known_(name) if len(name) <= LONG else Render.grade(name)
 
         return Render.hide(value, grade) if grade else Render.clean(value, depth)
 
@@ -158,7 +172,7 @@ class Render:
         for found in PAIR.finditer(text):
 
             start, stop = found.span()
-            name        = found.group("name")[-LONG:]
+            name        = found.group("name")
 
             if text.startswith(MASKED, stop) or not Render._wanted_(text, start, name): continue
 

@@ -1,2 +1,3 @@
-export { type Field, type Hit, type Index, index, type Options, type Query, tokenize } from "./index_.ts";
-export { type Facet, type Filter, facets, filter, highlight, matcher, type Operator, type Parsed, parse, type Scope, type Segment } from "./query.ts";
+export type { Facet, Field, Filter, Hit, Index, Operator, Options, Parsed, Query, Scope, Segment } from "./arch.ts";
+export { index, tokenize } from "./index_.ts";
+export { facets, filter, highlight, matcher, parse } from "./query.ts";

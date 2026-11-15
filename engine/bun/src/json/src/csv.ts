@@ -1,16 +1,23 @@
 import * as list from "engine-list";
-import { type Dictionary, stringify } from "./object.ts";
+import type { CsvOptions, Dictionary } from "./arch.ts";
+import { stringify } from "./object.ts";
 
-export type CsvOptions = {
-    separator?: string | undefined;
-    header?: boolean | undefined;
-    columns?: readonly string[] | undefined;
-    guard?: boolean | undefined;
-};
-
-const formula = /^[=+\-@\t\r]/;
+const formula = /^[=+\-@＝＋－＠]/;
 const quotable = /["\r\n]/;
 
+function hazardous ( text: string ): boolean {
+
+    const first = text.charCodeAt(0);
+
+    if ( first === 9 || first === 10 || first === 13 ) return true;
+
+    let start = 0;
+
+    while ( start < text.length && text.charCodeAt(start) <= 32 ) start += 1;
+
+    return formula.test(text.slice(start));
+
+}
 function shown ( value: unknown ): string {
 
     if ( value === null || value === undefined || typeof value === "function" ) return "";
@@ -22,9 +29,10 @@ function shown ( value: unknown ): string {
 function cell ( value: unknown, separator: string, guard: boolean ): string {
 
     const raw = shown(value);
-    const text = guard && typeof value === "string" && formula.test(raw) ? `'${raw}` : raw;
+    const guarded = guard && typeof value === "string" && hazardous(raw);
+    const text = guarded ? `'${raw}` : raw;
 
-    return text.includes(separator) || quotable.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+    return guarded || text.includes(separator) || quotable.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 
 }
 export function toCsv ( rows: readonly Dictionary[], options: CsvOptions = {} ): string {

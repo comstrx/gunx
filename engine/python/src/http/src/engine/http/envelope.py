@@ -31,7 +31,7 @@ class Envelope:
     @staticmethod
     def failure ( fault: Fault, meta: Meta | None = None ) -> dict[str, Any]:
 
-        hidden = fault.server()
+        hidden = fault.server() or fault.code.server()
 
         return {
             "data"    : None,

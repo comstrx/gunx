@@ -3,18 +3,11 @@ import * as fake from "engine-fake";
 import * as json from "engine-json";
 import * as list from "engine-list";
 import * as validate from "engine-validate";
-import { type Catalogue, type Endpoint, endpoints, fieldsOf, idOf, type Part, partsOf } from "./contract.ts";
+import type { Asked, Bound, Catalogue, Endpoint, FakeOptions, Fakes, Kind, Part, Place, Route, Routes } from "./arch.ts";
+import { endpoints, fieldsOf, idOf, partsOf } from "./contract.ts";
 import { envelope } from "./envelope.ts";
-import { type Route, type Routes, type Stub, stub } from "./stub.ts";
-import { house, type Wire } from "./wire.ts";
-
-export type Bound = Readonly<Record<string, string | number>>;
-export type FakeOptions = fake.Options & { seed?: fake.Seed | undefined; rows?: number | undefined; wire?: Wire | undefined; latency?: number | undefined };
-export type Fakes = Stub & { routes: Routes; rows: ( endpoint: Endpoint, params?: Bound ) => json.Dictionary[] };
-
-type Asked = string | string[] | undefined;
-type Place = { shape: string; key: string; scope: readonly string[]; name: ( params: Bound ) => string };
-type Kind = { source: Endpoint; held: boolean; count: number; columns: ReadonlyMap<string, validate.Field>; uniques: readonly string[]; boxed: boolean };
+import { stub } from "./stub.ts";
+import { house } from "./wire.ts";
 
 const reserved: ReadonlySet<string> = new Set(["page", "limit", "sort", "search", "q"]);
 const digits = /^\d{1,9}$/;

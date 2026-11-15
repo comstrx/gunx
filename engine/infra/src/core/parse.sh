@@ -13,7 +13,7 @@ core:parse:env () {
     local -n _pairs="${1}"
     local -n _order="${2}"
 
-    local file="${3}" line="" key="" value="" number=0
+    local file="${3}" line="" key="" value="" quote="" rest="" number=0 LC_ALL=C
 
     _pairs=()
     _order=()
@@ -30,10 +30,27 @@ core:parse:env () {
         [[ "${line}" == *=* && "${key}" == [A-Z]* && "${key}" != *[!A-Z0-9_]* ]] \
             || { core:error:fail "${file}:${number}: expected KEY=VALUE"; return; }
 
-        value="${value%%[[:space:]]#*}"
-        value="${value%"${value##*[![:space:]]}"}"
+        value="${value#"${value%%[![:space:]]*}"}"
+        quote="${value:0:1}"
 
-        [[ ! "${value}" =~ ^\"(.*)\"$ && ! "${value}" =~ ^\'(.*)\'$ ]] || value="${BASH_REMATCH[1]}"
+        if [[ "${quote}" == \" || "${quote}" == \' ]]; then
+
+            rest="${value:1}"
+
+            [[ "${rest}" == *"${quote}"* ]] || { core:error:fail "${file}:${number}: ${key}: unterminated quote"; return; }
+
+            value="${rest%%"${quote}"*}"
+            rest="${rest#*"${quote}"}"
+            rest="${rest#"${rest%%[![:space:]]*}"}"
+
+            [[ -z "${rest}" || "${rest}" == \#* ]] || { core:error:fail "${file}:${number}: ${key}: text after the closing quote"; return; }
+
+        else
+
+            value="${value%%[[:space:]]#*}"
+            value="${value%"${value##*[![:space:]]}"}"
+
+        fi
 
         [[ -z "${_pairs[${key}]+x}" ]] || { core:error:fail "${file}:${number}: ${key} is repeated"; return; }
 
@@ -46,6 +63,11 @@ core:parse:env () {
 core:parse:toml () {
 
     core:toml:read "$@"
+
+}
+core:parse:toml:drop () {
+
+    core:toml:drop "$@"
 
 }
 core:parse:has () {
@@ -75,8 +97,11 @@ core:parse:get () {
 core:parse:count () {
 
     local -n _table="${1}"
+    local count="${_table[${2:-}]:-0}"
 
-    core:log:print "${_table[${2}]:-0}"
+    core:num:natural "${count}" || count=0
+
+    core:log:print "${count}"
 
 }
 core:parse:list () {
@@ -85,10 +110,11 @@ core:parse:list () {
     local key="${2}" count=0 index=0
 
     count="${_table[${key}]:-0}"
+    core:num:natural "${count}" || return 0
 
     while (( index < count )); do
 
-        core:log:print "${_table[${key}.${index}]}"
+        core:log:print "${_table[${key}.${index}]:-}"
         index=$(( index + 1 ))
 
     done

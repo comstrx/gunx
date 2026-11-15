@@ -4,4 +4,5 @@ core:load:use module::bundle || return
 
 @use module::gate
 @use module::extract
+@use module::notify
 @use app::router

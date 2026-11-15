@@ -1,7 +1,7 @@
 [project]
 name = "engine-storage"
 description = "Storage: one disk DSL over local folders, S3 and Google Drive, with policies"
-dynamic = ["version"]
+dynamic = ["version", "requires-python", "license"]
 dependencies = [
     "engine-error",
     "engine-fs",
@@ -14,13 +14,14 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "tomli-w"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-source = "regex"
-path = "../../pyproject.toml"
-pattern = '^version = "(?P<version>[^"]+)"$'
+[tool.hatch.metadata.hooks.custom]
+path = "../../metadata.py"
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "../../distribution.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engine"]

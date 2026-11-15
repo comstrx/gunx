@@ -1,6 +1,7 @@
-from .arch import Email, Mime, Url
+lazy from .arch import Email, Mime, Url
+lazy from .document import Document
 from .parse import Parse
 
 parse = Parse()
 
-__all__ = ["Email", "Mime", "Parse", "Url", "parse"]
+__all__ = ["Document", "Email", "Mime", "Parse", "Url", "parse"]

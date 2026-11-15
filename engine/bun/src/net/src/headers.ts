@@ -1,22 +1,8 @@
 import * as date from "engine-date";
 import * as string from "engine-string";
-import { type Address, fenced, read, shown } from "./address.ts";
+import { fenced, read, shown } from "./address.ts";
+import type { Address, Bag, Directives, Facts, Hsts, Security } from "./arch.ts";
 import { isEndpoint } from "./url.ts";
-
-export type Directives = Record<string, readonly string[] | string | boolean | undefined>;
-export type Hsts = { maxAge?: number | undefined; subdomains?: boolean | undefined; preload?: boolean | undefined };
-export type Security = {
-    csp?: Directives | undefined;
-    reportOnly?: boolean | undefined;
-    frame?: "DENY" | "SAMEORIGIN" | undefined;
-    hsts?: boolean | Hsts | undefined;
-    referrer?: string | undefined;
-    permissions?: string | undefined;
-    opener?: string | undefined;
-};
-export type Facts = { ip: string | undefined; agent: string; language: string | undefined; referer: string | undefined; requestId: string | undefined; secure: boolean; mobile: boolean; bot: boolean };
-
-type Bag = Record<string, string | undefined> | { get: ( name: string ) => string | null };
 
 const botPattern = /bot|crawl|spider|slurp|facebookexternalhit|preview|fetch|headless|lighthouse/i;
 const mobilePattern = /android|iphone|ipad|ipod|mobile|windows phone/i;
@@ -147,7 +133,9 @@ export function securityHeaders ( options: Security = {} ): Record<string, strin
     return headers;
 
 }
-export function facts ( headers: Record<string, string | undefined> | Headers, remote?: string, hops?: number ): Facts {
+export function facts ( headers: Record<string, string | undefined> | Headers, remote?: string, hops = 0 ): Facts {
+
+    if ( !Number.isInteger(hops) || hops < 0 ) throw new RangeError("not a hop count");
 
     const get = reader(headers);
     const agent = get("user-agent") ?? "";
@@ -163,7 +151,7 @@ export function facts ( headers: Record<string, string | undefined> | Headers, r
         language: /^[a-z]{2,3}(?:-[a-z0-9]{1,8}){0,4}$/i.test(language) ? language : undefined,
         referer: referer.length <= longest && isEndpoint(referer) ? referer : undefined,
         requestId: /^[\w.:-]{1,128}$/.test(requestId) ? requestId : undefined,
-        secure: proto === "https",
+        secure: hops > 0 && proto === "https",
         mobile: mobilePattern.test(agent),
         bot: botPattern.test(agent),
     };

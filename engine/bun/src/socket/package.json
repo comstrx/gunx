@@ -13,7 +13,7 @@
     "engine-error": "workspace:*",
     "engine-event": "workspace:*",
     "engine-func": "workspace:*",
-    "engine-json": "workspace:*",
-    "engine-rand": "workspace:*"
+    "engine-rand": "workspace:*",
+    "engine-string": "workspace:*"
   }
 }

@@ -1,6 +1,6 @@
-from .arch import Policy, Stored
-from .disk import Disk
-from .drive import Drive
+lazy from .arch import Policy, Stored
+lazy from .disk import Disk
+lazy from .drive import Drive
 from .storage import Storage
 
 storage = Storage()

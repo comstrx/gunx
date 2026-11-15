@@ -7,8 +7,12 @@ import asyncio, contextlib, time
 
 class Lane:
 
-    def __init__ ( self, opener: Opener, closer: Closer, low: int, high: int, recycle: float = LANE_RECYCLE ) -> None:
+    def __init__ (
+        self, opener: Opener, closer: Closer, low: int, high: int, recycle: float = LANE_RECYCLE,
+        reset: Closer | None = None,
+    ) -> None:
 
+        self._reset   = reset
         self._opener  = opener
         self._closer  = closer
         self._low     = max(1, low)
@@ -22,11 +26,19 @@ class Lane:
 
     async def open ( self ) -> None:
 
-        for _ in range(self._low):
+        try:
 
-            self._size += 1
+            for _ in range(self._low):
 
-            self._idle.append((await self._open_(), time.monotonic()))
+                self._size += 1
+
+                self._idle.append((await self._open_(), time.monotonic()))
+
+        except BaseException:
+
+            await self.close()
+
+            raise
 
     async def acquire ( self, wait: float ) -> Any:
 
@@ -59,6 +71,13 @@ class Lane:
 
             raise
 
+        if self.closed():
+
+            if connection is None: self._free_()
+            else: await self._discard_(connection)
+
+            raise Fault(Code.UNAVAILABLE, reason="database.closed")
+
         return await self._open_() if connection is None else connection
 
     def take ( self ) -> Any:
@@ -75,7 +94,8 @@ class Lane:
 
     def give ( self, connection: Any ) -> bool:
 
-        if self._closed or connection.is_closed() or connection.is_in_transaction(): return False
+        if self._reset is not None or self._closed: return False
+        if connection.is_closed() or connection.is_in_transaction(): return False
 
         if self._waiters: self._hand_(connection)
         else: self._idle.append((connection, time.monotonic()))
@@ -90,9 +110,12 @@ class Lane:
 
             return
 
-        if connection.is_in_transaction():
+        if self._reset is not None or connection.is_in_transaction():
 
-            try: await connection.execute("ROLLBACK")
+            try:
+
+                if self._reset is not None: await self._reset(connection)
+                else: await connection.execute("ROLLBACK")
             except Exception:
 
                 await self._discard_(connection)
@@ -145,12 +168,20 @@ class Lane:
 
     async def _open_ ( self ) -> Any:
 
-        try: return await self._opener()
+        try: connection = await self._opener()
         except BaseException:
 
             self._free_()
 
             raise
+
+        if self._closed:
+
+            await self._discard_(connection)
+
+            raise Fault(Code.UNAVAILABLE, reason="database.closed")
+
+        return connection
 
     async def _discard_ ( self, connection: Any ) -> None:
 

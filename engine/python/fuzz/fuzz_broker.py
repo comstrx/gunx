@@ -4,7 +4,7 @@ from engine.log import log
 from hypothesis import HealthCheck, given, settings, strategies as st
 from pathlib import Path
 from typing import Any
-import asyncio, fnmatch
+import asyncio, fnmatch, os
 
 EXAMPLES = 800
 LABEL    = st.from_regex(r"[a-z]{1,4}", fullmatch=True)
@@ -14,7 +14,7 @@ LEAVES   = st.one_of(st.none(), st.booleans(), st.integers(-(1 << 62), 1 << 62),
 
 loop = asyncio.new_event_loop()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 
 def run ( work: Any ) -> Any:
 

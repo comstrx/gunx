@@ -6,7 +6,7 @@ from engine.date import date
 from engine.error import Code, Fault
 from engine.log import log
 from engine.rand import rand
-from engine.thread import thread
+from engine.thread import Tasks
 from .arch import Hit, life, Loader, Loaders, LOCK_TTL, name, real, STALE, STEP, whole
 from .memory import Memory
 from .store import Store
@@ -21,7 +21,8 @@ class Cache:
         self._local  = Memory()
         self._hits   = 0
         self._misses = 0
-        self._waits: dict[str, asyncio.Lock] = {}
+        self._waits: dict[str, tuple[asyncio.Lock, int]] = {}
+        self._refresh = Tasks("cache.refresh")
 
     def use ( self, store: Store ) -> None:
 
@@ -89,7 +90,15 @@ class Cache:
 
     async def forget ( self, *keys: str ) -> int:
 
-        return sum([await self._store.delete(key) for key in keys])
+        delete = getattr(self._store, "delete_many", None)
+
+        if callable(delete): return int(await delete(keys))
+
+        removed = 0
+
+        for key in keys: removed += await self._store.delete(key)
+
+        return removed
 
     async def take ( self, key: str, default: Any = None ) -> Any:
 
@@ -130,7 +139,10 @@ class Cache:
 
         self._misses += 1
 
-        lock = self._waits.setdefault(key, asyncio.Lock())
+        held = self._waits.get(key)
+        lock, users = held if held is not None else (asyncio.Lock(), 0)
+
+        self._waits[key] = (lock, users + 1)
 
         try:
 
@@ -146,7 +158,10 @@ class Cache:
 
         finally:
 
-            if self._waits.get(key) is lock: del self._waits[key]
+            _, users = self._waits[key]
+
+            if users == 1: del self._waits[key]
+            else: self._waits[key] = (lock, users - 1)
 
         return value
 
@@ -171,7 +186,8 @@ class Cache:
         if missed:
 
             given  = dict(await load(missed))
-            loaded = { key: value for key, value in given.items() if value is not None and key in missed }
+            absent = set(missed)
+            loaded = { key: value for key, value in given.items() if value is not None and key in absent }
 
             if loaded: await self._store.set_many(loaded, ttl)
 
@@ -200,7 +216,12 @@ class Cache:
 
         self._hits += 1
 
-        if until <= date.stamp() and await self._store.add(f"refresh:{key}", 1, extra):
+        if until > date.stamp(): return cast("T", found["value"])
+
+        owner = rand.hex(16)
+        marker = f"refresh:{key}"
+
+        if await self._store.add(marker, owner, extra):
 
             async def refresh () -> None:
 
@@ -208,11 +229,11 @@ class Cache:
 
                     value = await load()
 
-                    await self._store.set(key, { STALE: date.stamp() + span, "value": value }, span + extra)
+                    await self._store.swap(key, found, { STALE: date.stamp() + span, "value": value }, span + extra)
 
-                finally: await self._store.delete(f"refresh:{key}")
+                finally: await self._store.drop(marker, owner)
 
-            _ = thread.spawn(refresh(), f"cache.refresh:{key}")
+            _ = self._refresh.spawn(refresh(), "cache.refresh")
 
         return cast("T", found["value"])
 
@@ -303,6 +324,7 @@ class Cache:
 
     async def close ( self ) -> None:
 
+        await self._refresh.close()
         await self._store.close()
         await self._local.close()
 
@@ -314,7 +336,7 @@ class Cache:
 
         log.debug("cache.describe", store=self._store.name)
 
-        return { "store": self._store.name, **self.stats() }
+        return { "store": self._store.name, "shared": getattr(self._store, "shared", False), **self.stats() }
 
     @staticmethod
     def _valued_ ( value: Any ) -> Any:

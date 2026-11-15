@@ -1,7 +1,7 @@
 [project]
 name = "engine"
 description = "The one door into the engine: the namespace root over every domain."
-dynamic = ["version"]
+dynamic = ["version", "requires-python", "license"]
 dependencies = [
     "engine-adapter",
     "engine-ai",
@@ -10,6 +10,7 @@ dependencies = [
     "engine-broadcast",
     "engine-broker",
     "engine-cache",
+    "engine-cast",
     "engine-cli",
     "engine-config",
     "engine-context",
@@ -55,13 +56,14 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "tomli-w"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-source = "regex"
-path = "../../pyproject.toml"
-pattern = '^version = "(?P<version>[^"]+)"$'
+[tool.hatch.metadata.hooks.custom]
+path = "../../metadata.py"
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "../../distribution.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/engine"]

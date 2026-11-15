@@ -1,31 +1,5 @@
 import * as date from "engine-date";
-
-type Node<K, V> = { key: K; value: V; older: Node<K, V> | undefined; newer: Node<K, V> | undefined };
-type Kept<V> = { value: V; until: number };
-type Aged<V> = { value: V; at: number };
-type Timed<V> = {
-    data: Map<string, Kept<V>>;
-    find: ( key: string ) => Kept<V> | undefined;
-    put: ( key: string, value: V, life: number | undefined ) => void;
-    drop: ( key: string ) => boolean;
-    prune: () => number;
-};
-
-export type Lru<K, V> = {
-    get: ( key: K ) => V | undefined;
-    peek: ( key: K ) => V | undefined;
-    set: ( key: K, value: V ) => void;
-    has: ( key: K ) => boolean;
-    delete: ( key: K ) => boolean;
-    clear: () => void;
-    readonly size: number;
-    keys: () => K[];
-};
-export type Expiring<V> = { get: ( key: string ) => V | undefined; set: ( key: string, value: V, ttl?: number ) => void; has: ( key: string ) => boolean; delete: ( key: string ) => boolean; clear: () => void; prune: () => number; readonly size: number };
-export type Remember<V> = { get: ( key: string, load: () => Promise<V>, ttl?: number ) => Promise<V>; forget: ( key: string ) => void; clear: () => void; peek: ( key: string ) => V | undefined; has: ( key: string ) => boolean };
-export type Swr<V> = { get: ( key: string, load: () => Promise<V> ) => Promise<V>; forget: ( key: string ) => void; clear: () => void; peek: ( key: string ) => V | undefined; state: ( key: string ) => "missing" | "fresh" | "stale" };
-export type Dedupe = <V>( key: string, work: () => Promise<V> ) => Promise<V>;
-export type Tagged<V> = { set: ( key: string, value: V, tags: readonly string[], ttl?: number ) => void; get: ( key: string ) => V | undefined; has: ( key: string ) => boolean; invalidate: ( tag: string ) => number; delete: ( key: string ) => void; clear: () => void };
+import type { Aged, Dedupe, Expiring, Kept, Lru, Node, Remember, Swr, Tagged, Timed } from "./arch.ts";
 
 const noop = (): void => undefined;
 

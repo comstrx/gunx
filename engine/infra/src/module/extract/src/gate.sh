@@ -16,6 +16,8 @@ module:extract:gate () {
         module:gate:one "${tree}" "${part}" . "${GATE_DEFAULT[*]}" "${seconds}" false || failed=1
     done
 
+    module:gate:summary
+
     (( failed == 0 )) || { @err "gates failed for ${name}"; return; }
 
 }

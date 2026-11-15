@@ -1,4 +1,6 @@
+from engine.thread.capacity import Capacity
 from collections.abc import Awaitable, Callable, Iterator
+from concurrent.futures import BrokenExecutor
 from contextvars import ContextVar
 from functools import partial
 from typing import Any, cast
@@ -7,7 +9,7 @@ from engine.error import Code, Fault
 from engine.log import log
 from engine.thread import Cluster, Gate, Lane, Outcome, Pool, Run, Tasks, Thread, thread
 from engine.thread.arch import CEILING, CORES, REMOTES, RETRIES
-import asyncio, contextlib, gc, inspect, math, operator, os, pytest, signal, sys, threading, time, types, weakref
+import asyncio, builtins, contextlib, gc, inspect, math, operator, os, pytest, signal, sys, threading, time, types, weakref
 
 MARK: ContextVar[str] = ContextVar("mark", default="none")
 
@@ -67,9 +69,9 @@ async def test_offload_leaves_the_loop_and_carries_the_context () -> None:
     await denied("thread.work", thread.offload(cast("Any", 5)))
     await denied("thread.work", thread.offload(nap, 0))
 
-async def test_setup_bounds_the_thread_pool () -> None:
+async def test_options_bounds_the_thread_pool () -> None:
 
-    unit = Thread()
+    unit = thread.mode("thread")
     lock = threading.Lock()
     live = peak = 0
 
@@ -85,26 +87,24 @@ async def test_setup_bounds_the_thread_pool () -> None:
 
         return n
 
-    for bad in (0, -1, CEILING + 1, True, 2.0, "4", None): refused("thread.workers", partial(unit.setup, cast("Any", bad)))
+    for bad in (0, -1, CEILING + 1, True, 2.0, "4"):
 
-    unit.setup(3)
+        refused("thread.workers", partial(unit.options, cast("Any", bad)))
 
-    assert unit.describe() == { "tasks": 0, "stopping": False, "workers": 3, "pools": [] }
-    assert (await unit.run(range(4), operator.neg)).workers == 3 and (await unit.run([1], operator.neg, workers=7)).workers == 7
+    assert unit.options(workers=3) is unit
+    assert unit.describe()["workers"] == 3 and unit.describe()["tasks"] == 0
+    assert (await unit.run(range(4), operator.neg)).workers == 3
+    assert (await unit.run([1], operator.neg, workers=7)).workers == 3
 
-    made = await unit.run(range(12), tracked, "thread", workers=64)
+    made = await unit.run(range(12), tracked, workers=64)
 
     assert made.workers == 3 and peak == 3 and made.results() == list(range(12))
-    assert unit.describe()["pools"] == ["thread"]
 
-    unit.setup(3)
+    with pytest.raises(Fault) as caught: unit.options(workers=5)
 
-    assert unit.describe()["pools"] == ["thread"]
-
-    unit.setup(5)
-
-    assert unit.describe()["pools"] == [] and await unit.offload(operator.neg, 4) == -4
-    assert await unit.close() == 0 and unit.describe()["pools"] == []
+    assert caught.value.reason == "thread.started"
+    assert unit.describe()["workers"] == 3 and await unit.offload(operator.neg, 4) == -4
+    assert await unit.drop() == 0 and unit.describe()["closed"] is True
 
 async def test_gather_keeps_order_bounds_and_cancels_the_rest () -> None:
 
@@ -228,9 +228,11 @@ async def test_map_pulls_lazily_and_refuses_bad_work () -> None:
     await denied("thread.work", thread.map([1], cast("Any", 5)))
     await denied("thread.work", thread.map([1], cast("Any", str)))
 
-    for bad in (0, -2, 1.0, True, None, CEILING + 1, 10 ** 30):
+    for bad in (0, -2, 1.0, True, CEILING + 1, 10 ** 30):
 
         await denied("thread.limit", thread.map([1], work, limit=cast("Any", bad)))
+
+    assert await thread.map([1], work, limit=None) == [2]
 
 async def nap_word ( word: str ) -> str:
 
@@ -239,6 +241,8 @@ async def nap_word ( word: str ) -> str:
     return word.upper()
 
 async def test_tasks_track_report_close_and_drain () -> None:
+
+    log.setup("info")
 
     tasks = Tasks("crowd")
 
@@ -521,7 +525,7 @@ async def test_run_orders_hooks_retries_and_stops () -> None:
 
         left["tries"] += 1
 
-        if left["tries"] < 3: raise OSError("not yet")
+        if left["tries"] < 3: raise Fault(Code.UNAVAILABLE, reason="test.again")
 
         return n
 
@@ -549,15 +553,15 @@ async def test_run_orders_hooks_retries_and_stops () -> None:
 
     made = await thread.run([5], eventually, retries=1)
 
-    assert not made.ok() and left["tries"] == 2 and made.errors()[0].reason == "thread.failed"
-    assert isinstance(made.errors()[0].__cause__, OSError)
+    assert not made.ok() and left["tries"] == 2 and made.errors()[0].reason == "test.again"
+    assert made.errors()[0].safe()
 
     made = await thread.run(range(4), first_fails, workers=1, fail_fast=True)
 
     assert [(outcome.index, outcome.error.reason if outcome.error else None) for outcome in made.outcomes] == [
-        (0, "test.taken"), (1, "thread.stopped"), (2, "thread.stopped"), (3, "thread.stopped"),
+        (0, "test.taken"),
     ]
-    assert made.errors()[1].code is Code.CONFLICT and made.outcomes[1].ms == 0.0
+    assert made.errors()[0].code is Code.CONFLICT
 
     made = await thread.run(range(4), first_fails, workers=1)
 
@@ -572,7 +576,7 @@ async def test_run_times_out_and_can_be_cancelled () -> None:
     assert made.results() == [0.01, 0.02] and fault.code is Code.TIMEOUT and fault.reason == "thread.timeout"
     assert fault.unknown and time.perf_counter() - started < 2
 
-    made = await thread.run([0.3], time.sleep, "thread", timeout=0.05, retries=1)
+    made = await thread.run([0.3], time.sleep, "thread", timeout=0.05, retries=1, idempotent=True)
 
     assert made.errors()[0].reason == "thread.timeout" and 90 <= made.ms < 300
     assert (await thread.run([0.01], nap, timeout=math.inf)).ok()
@@ -846,6 +850,8 @@ class Rig:
 
     def remote ( self, handler: Callable[..., object] ) -> Remote:
 
+        if not inspect.isfunction(handler): raise TypeError("Ray requires a function")
+
         return Remote(self.calls, handler)
 
     def get ( self, ref: Ref ) -> object:
@@ -939,6 +945,12 @@ async def test_ray_rides_a_cluster_through_the_same_dsl ( monkeypatch: pytest.Mo
     await denied("thread.cluster", Cluster.connect("ray://late:1"))
     await cluster.close()
 
+    assert calls.count("shutdown") == 1
+
+    current = await Cluster.connect()
+
+    await current.close()
+
     assert calls.count("shutdown") == 2
 
     monkeypatch.setitem(sys.modules, "ray", rigged(calls, []))
@@ -963,7 +975,7 @@ async def test_ray_rides_a_cluster_through_the_same_dsl ( monkeypatch: pytest.Mo
 
     fault = await denied("thread.ray", thread.cluster())
 
-    assert fault.code is Code.INTERNAL and fault.message == "ray is required"
+    assert fault.code is Code.INTERNAL and "Ray could not be loaded on Python" in fault.message
 
     await denied("thread.ray", thread.run([1], math.factorial, "ray"))
 
@@ -1354,11 +1366,15 @@ async def test_lane_steers_around_its_stuck_workers_and_serves_a_second_loop () 
 
     await asyncio.sleep(0.02)
 
-    assert await thread.offload(aside) == -5
+    other = asyncio.create_task(thread.offload(aside))
+
+    await asyncio.sleep(0.03)
+
+    assert not other.done() and narrow.describe()["live"] == 1
 
     latch.set()
 
-    assert await lone is True
+    assert await lone is True and await other == -5
 
     narrow.close()
 
@@ -1460,3 +1476,1067 @@ def test_outcome_and_run_report_what_happened () -> None:
     with pytest.raises(Fault) as raised: twice.raise_first()
 
     assert raised.value is fault and twice.errors() == [fault, late] and twice.dump()["failed"] == 2
+
+
+async def test_capacity_remains_reserved_until_cancelled_thread_really_finishes () -> None:
+
+
+    capacity = Capacity(1)
+
+    await capacity.acquire()
+
+    pending = asyncio.create_task(capacity.acquire())
+
+    await asyncio.sleep(0)
+
+    pending.cancel()
+
+    with pytest.raises(asyncio.CancelledError): await pending
+
+    capacity.release()
+
+    await asyncio.wait_for(capacity.acquire(), 0.5)
+
+    waiting = asyncio.create_task(capacity.acquire())
+
+    await asyncio.sleep(0)
+
+    capacity.close()
+
+    with pytest.raises(Fault): await waiting
+
+    capacity.release()
+
+
+async def test_pool_bounds_submissions_after_running_awaiters_are_cancelled ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    pool = Pool("thread", 1)
+    executor = pool.executor()
+    original = executor.submit
+    latch = threading.Event()
+    submitted = 0
+
+    def submit ( *args: Any, **kwargs: Any ) -> Any:
+
+        nonlocal submitted
+
+        submitted += 1
+
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(executor, "submit", submit)
+
+    first = asyncio.create_task(pool.submit(cast("Any", latch.wait), 2))
+    second = asyncio.create_task(pool.submit(cast("Any", latch.wait), 2))
+
+    await asyncio.sleep(0.02)
+
+    third = asyncio.create_task(pool.submit(operator.neg, 7))
+
+    await asyncio.sleep(0.02)
+
+    assert submitted == 2
+
+    first.cancel()
+
+    with pytest.raises(asyncio.CancelledError): await first
+
+    await asyncio.sleep(0.02)
+
+    assert submitted == 2
+
+    latch.set()
+
+    assert await second is True
+    assert await third == -7
+    assert submitted == 3
+
+    pool.close()
+
+
+async def test_run_consumes_iterators_only_within_its_worker_window () -> None:
+
+    produced = completed = 0
+
+    def source () -> Iterator[int]:
+
+        nonlocal produced
+
+        for value in range(200):
+
+            produced += 1
+
+            assert produced - completed <= 3
+
+            yield value
+
+    async def work ( value: int ) -> int:
+
+        nonlocal completed
+
+        await asyncio.sleep(0)
+
+        completed += 1
+
+        return value * 2
+
+    result = await thread.run(source(), work, workers=3)
+
+    assert result.results() == [value * 2 for value in range(200)]
+    assert produced == completed == 200
+
+@pytest.mark.parametrize("method", ["run", "map", "gather"])
+async def test_child_cancellation_propagates_without_partial_success ( method: str ) -> None:
+
+    finished: list[int] = []
+
+    async def work ( item: int ) -> int:
+
+        try:
+
+            if item == 0:
+
+                await asyncio.sleep(0)
+                raise asyncio.CancelledError
+
+            await asyncio.sleep(10)
+
+            return item
+
+        finally: finished.append(item)
+
+    with pytest.raises(asyncio.CancelledError):
+
+        if method == "gather": await thread.gather(work(0), work(1))
+        elif method == "map": await thread.map([0, 1], work, limit=2)
+        else: await thread.run([0, 1], work, workers=2)
+
+    assert sorted(finished) == [0, 1]
+
+@pytest.mark.parametrize(("code", "unknown", "idempotent", "attempts"), [
+    (Code.UNAVAILABLE, False, False, 2),
+    (Code.UNAVAILABLE, True, False, 1),
+    (Code.UNAVAILABLE, True, True, 2),
+    (Code.VALIDATION, False, True, 1),
+    (Code.INTERNAL, True, True, 1),
+])
+async def test_retries_delegate_safety_to_fault (
+    code: Code, unknown: bool, idempotent: bool, attempts: int,
+) -> None:
+
+    calls = 0
+
+    async def work ( item: int ) -> int:
+
+        nonlocal calls
+
+        calls += 1
+
+        if calls == 1: raise Fault(code, reason="test.retry", unknown=unknown)
+
+        return item
+
+    result = await thread.run([7], work, retries=3, idempotent=idempotent)
+
+    assert calls == attempts
+    assert result.results() == ([7] if attempts == 2 else [])
+    assert result.ok() is (attempts == 2)
+
+async def test_arbitrary_errors_are_not_retried_and_retry_delay_is_respected () -> None:
+
+    calls: list[float] = []
+
+    def broken ( _: int ) -> None:
+
+        calls.append(time.monotonic())
+        raise ValueError("permanent")
+
+    result = await thread.run([1], broken, retries=3, idempotent=True)
+
+    assert len(calls) == 1 and isinstance(result.errors()[0].__cause__, ValueError)
+
+    calls.clear()
+
+    def busy ( item: int ) -> int:
+
+        calls.append(time.monotonic())
+
+        if len(calls) == 1: raise Fault(Code.UNAVAILABLE, retry_after=0.01)
+
+        return item
+
+    assert (await thread.run([7], busy, retries=1)).results() == [7]
+    assert len(calls) == 2 and calls[1] - calls[0] >= 0.01
+
+async def test_timed_thread_does_not_repeat_unknown_side_effects_by_default () -> None:
+
+    unit = Thread()
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[int] = []
+
+    def work ( item: int ) -> int:
+
+        calls.append(item)
+        started.set()
+        release.wait(2)
+
+        return item
+
+    try:
+
+        pending = asyncio.create_task(unit.run([7], work, "thread", timeout=0.05, retries=3))
+
+        assert await asyncio.to_thread(started.wait, 1)
+
+        result = await pending
+
+        assert calls == [7] and result.errors()[0].unknown and result.errors()[0].reason == "thread.timeout"
+
+    finally:
+
+        release.set()
+        await unit.close()
+
+async def test_fail_fast_stops_pulling_an_unbounded_source () -> None:
+
+    produced: list[int] = []
+
+    def source () -> Iterator[int]:
+
+        for item in range(1000000):
+
+            if item >= 2: raise AssertionError("fail_fast consumed after failure")
+
+            produced.append(item)
+
+            yield item
+
+    async def work ( _: int ) -> None: raise Fault(Code.CONFLICT, reason="test.stop")
+
+    result = await thread.run(source(), work, workers=2, fail_fast=True)
+
+    assert produced == [0, 1]
+    assert len(result.outcomes) == 1 and result.errors()[0].reason == "test.stop"
+
+async def test_gate_expires_waiter_before_a_delayed_timer_runs ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    gate = Gate(1)
+    loop = asyncio.get_running_loop()
+    clock = loop.time()
+
+    with monkeypatch.context() as patch:
+
+        patch.setattr(loop, "time", lambda: clock)
+        assert gate.take()
+        waiter = asyncio.create_task(gate.acquire(1))
+        await asyncio.sleep(0)
+        clock += 2
+        gate.release()
+
+        with pytest.raises(TimeoutError): await waiter
+
+    assert gate.free() == 1 and gate.waiting() == 0
+
+async def test_cancelled_waiters_release_queue_storage_without_a_permit () -> None:
+
+    class MeasuredGate(Gate):
+
+        def retained ( self ) -> int: return len(self._waiters)
+
+        def timed ( self ) -> bool: return self._timer is not None
+
+    class MeasuredCapacity(Capacity):
+
+        def retained ( self ) -> int: return len(self._waiters)
+
+    gate = MeasuredGate(1)
+    capacity = MeasuredCapacity(1)
+    assert gate.take()
+    await capacity.acquire()
+    waiting = [asyncio.create_task(gate.acquire(math.inf)) for _ in range(100)]
+    waiting += [asyncio.create_task(capacity.acquire()) for _ in range(100)]
+
+    await asyncio.sleep(0)
+
+    for task in waiting: task.cancel()
+
+    await asyncio.gather(*waiting, return_exceptions=True)
+
+    assert gate.waiting() == gate.retained() == capacity.retained() == 0 and not gate.timed()
+
+    gate.release()
+    capacity.release()
+
+@pytest.mark.parametrize("factory", [Pool, Lane])
+@pytest.mark.parametrize(("mode", "workers", "reason"), [
+    ("wrong", 1, "thread.mode"), ("async", 1, "thread.mode"),
+    ("thread", 0, "thread.workers"), ("process", True, "thread.workers"),
+    ("interpreter", CEILING + 1, "thread.workers"),
+])
+def test_direct_worker_objects_validate_their_contracts ( factory: Any, mode: str, workers: int, reason: str ) -> None:
+
+    refused(reason, lambda: factory(mode, workers))
+
+@pytest.mark.parametrize("value", [None, 1, "yes"])
+async def test_idempotence_requires_an_explicit_boolean ( value: Any ) -> None:
+
+    await denied("thread.idempotent", thread.run([1], operator.neg, idempotent=value))
+
+
+@pytest.mark.parametrize("method", ["run", "map", "gather"])
+async def test_parent_cancellation_finishes_async_child_cleanup ( method: str ) -> None:
+
+    entered: set[int] = set()
+    cleaned: set[int] = set()
+    ready = asyncio.Event()
+    hold = asyncio.Event()
+
+    async def work ( item: int ) -> int:
+
+        entered.add(item)
+
+        if len(entered) == 2: ready.set()
+
+        try:
+
+            await hold.wait()
+
+            return item
+
+        finally:
+
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            cleaned.add(item)
+
+    async def batch () -> None:
+
+        if method == "gather": await thread.gather(work(0), work(1))
+        elif method == "map": await thread.map([0, 1], work, limit=2)
+        else: await thread.run([0, 1], work, workers=2)
+
+    task = asyncio.create_task(batch())
+
+    try:
+
+        await asyncio.wait_for(ready.wait(), 1)
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await task
+
+        assert cleaned == entered == { 0, 1 }
+
+    finally:
+
+        hold.set()
+
+        if not task.done(): task.cancel()
+
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_retired_executor_failure_preserves_its_replacement () -> None:
+
+    pool = Pool("thread", 1)
+    started = threading.Event()
+    release = threading.Event()
+
+    def broken ( _: int ) -> None:
+
+        started.set()
+        release.wait(2)
+
+        raise BrokenExecutor
+
+    task = asyncio.create_task(pool.submit(broken, 1))
+
+    try:
+
+        assert await asyncio.to_thread(started.wait, 1)
+
+        pool.close()
+
+        replacement = pool.executor()
+
+        release.set()
+
+        fault = await denied("thread.broken", task)
+
+        assert fault.unknown and pool.executor() is replacement
+        assert await pool.submit(operator.neg, 7) == -7
+
+    finally:
+
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        pool.close()
+
+
+@pytest.mark.parametrize("mode", ["async", "thread", "process", "interpreter", "remote"])
+async def test_fluent_verbs_share_one_contract ( mode: str, monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[str] = []
+
+    if mode == "remote": monkeypatch.setitem(sys.modules, "ray", rigged(calls, []))
+
+    unit = thread.mode(mode).options(workers=2)
+    before = thread.describe()
+
+    try:
+
+        assert await unit.start() is unit
+
+        pid = await unit.submit(os.getpid)
+
+        assert (pid != os.getpid()) is (mode == "process")
+
+        if mode == "thread": assert await unit.submit(threading.get_ident) != threading.get_ident()
+
+        assert await unit.submit(pow, 2, exp=3) == 8
+        assert await unit.gather(unit.submit(operator.add, 2, 3), unit.submit(operator.mul, 2, 3)) == [5, 6]
+        assert await unit.gather(partial(operator.neg, 2), partial(math.factorial, 4)) == [-2, 24]
+        assert await unit.map(range(5), operator.neg) == [0, -1, -2, -3, -4]
+
+        made = await unit.run(range(4), operator.neg)
+
+        assert made.mode == mode and made.workers == 2 and made.results() == [0, -1, -2, -3]
+        assert await unit.compute(operator.add, 2, 7) == 9
+
+        fault = await denied("thread.failed", unit.submit(int, "bad"))
+
+        assert fault.code is Code.INTERNAL
+        await denied("thread.failed", unit.map(["bad"], int))
+        await unit.join()
+
+        assert unit.describe()["tasks"] == 0 and thread.describe() == before
+
+        unit.stop()
+
+        with pytest.raises(Fault) as stopped: _ = unit.submit(operator.neg, 1)
+
+        assert stopped.value.reason == "thread.stopped"
+
+        await unit.start()
+
+        assert await unit.submit(operator.neg, 4) == -4
+
+    finally: await unit.drop()
+
+    assert unit.describe()["closed"] is True and await unit.drop() == 0
+    await denied("thread.closed", unit.start())
+    await denied("thread.closed", unit.run([1], operator.neg))
+
+    if mode == "remote":
+
+        assert "init:auto" in calls and "shutdown" not in calls
+
+        cluster = await Cluster.connect("auto")
+
+        await cluster.close()
+
+
+def test_mode_options_are_local_atomic_and_validated () -> None:
+
+    first = thread.mode("thread").options(workers=2)
+    second = first.mode("process").options(workers=1)
+
+    assert first is not second and first.describe()["workers"] == 2 and second.describe()["workers"] == 1
+    assert first.describe()["mode"] == "thread" and second.describe()["mode"] == "process"
+
+    for bad in ("unknown", "ray", "", None, 1):
+
+        refused("thread.mode", partial(thread.mode, cast("Any", bad)))
+
+    with pytest.raises(Fault) as missing: thread.options(workers=2)
+
+    assert missing.value.reason == "thread.mode_required"
+
+    with pytest.raises(Fault) as unsupported: first.options(workers=7, provider="ray")
+
+    assert unsupported.value.code is Code.NOT_IMPLEMENTED
+    assert unsupported.value.errors == { "mode": ["thread"], "verb": ["provider"] }
+    assert first.describe()["workers"] == 2
+
+    remote = thread.mode("remote")
+
+    for bad in ("", "   ", 3, True): refused("thread.host", partial(remote.options, host=cast("Any", bad)))
+
+    with pytest.raises(Fault) as provider: remote.options(provider="missing")
+
+    assert provider.value.reason == "thread.unsupported"
+    assert remote.options(provider="ray", host="ray://head:10001").describe()["host"] == "ray://head:10001"
+
+
+async def test_scope_stop_join_and_drop_have_distinct_meanings () -> None:
+
+    unit = thread.mode("async").options(workers=1)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    finished: list[int] = []
+
+    async def work ( n: int ) -> int:
+
+        entered.set()
+
+        try:
+
+            await release.wait()
+
+            return n
+
+        finally: finished.append(n)
+
+    first = unit.submit(work, 7)
+
+    await entered.wait()
+
+    unit.stop()
+
+    fault = await denied("thread.join", unit.join(0))
+
+    assert fault.code is Code.TIMEOUT and not first.done()
+    assert unit.stopping()
+
+    release.set()
+    await unit.join()
+
+    assert await first == 7 and finished == [7]
+
+    await unit.start()
+    release.clear()
+    entered.clear()
+
+    second = unit.submit(work, 8)
+
+    await entered.wait()
+
+    assert await unit.drop() == 1
+    assert second.cancelled() and finished == [7, 8]
+
+
+async def test_scope_workers_bound_concurrent_batches_and_submits () -> None:
+
+    unit = thread.mode("async").options(workers=2)
+    live = peak = 0
+
+    async def work ( n: int ) -> int:
+
+        nonlocal live, peak
+
+        live += 1
+        peak = max(peak, live)
+
+        try:
+
+            await asyncio.sleep(0.001)
+
+            return n
+
+        finally: live -= 1
+
+    try:
+
+        results = await asyncio.gather(
+            unit.map(range(12), work), unit.run(range(12), work), unit.gather(*(unit.submit(work, i) for i in range(12))),
+        )
+
+        assert results[0] == results[1].results() == results[2] == list(range(12))
+        assert peak == 2 and live == 0
+
+    finally: await unit.drop()
+
+
+async def test_scope_join_tracks_cancelled_running_thread_until_actual_completion () -> None:
+
+    unit = thread.mode("thread").options(workers=1)
+    entered = threading.Event()
+    release = threading.Event()
+
+    def work () -> int:
+
+        entered.set()
+        release.wait(3)
+
+        return 7
+
+    task = unit.submit(work)
+
+    try:
+
+        assert await asyncio.to_thread(entered.wait, 1)
+
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await task
+
+        fault = await denied("thread.join", unit.join(0.01))
+
+        assert fault.unknown
+
+        release.set()
+        await unit.join(1)
+
+    finally:
+
+        release.set()
+        await unit.drop()
+
+
+async def test_scope_unsupported_verbs_and_mode_overrides_are_explicit () -> None:
+
+    unit = thread.mode("process").options(workers=1)
+
+    try:
+
+        await denied("thread.unsupported", unit.offload(operator.neg, 1))
+        await denied("thread.unsupported", unit.cluster())
+        await denied("thread.unsupported", unit.forever())
+
+        work = nap(0)
+
+        with pytest.raises(Fault) as caught: _ = unit.spawn(work)
+
+        assert caught.value.errors == { "mode": ["process"], "verb": ["spawn"] }
+        assert inspect.getcoroutinestate(work) == inspect.CORO_CLOSED
+
+        await denied("thread.mode", unit.run([1], operator.neg, mode="thread"))
+        await denied("thread.host", unit.run([1], operator.neg, address="ray://elsewhere"))
+
+    finally: await unit.drop()
+
+
+async def test_scope_cannot_be_reconfigured_or_entered_from_another_loop () -> None:
+
+    unit = thread.mode("thread").options(workers=1)
+
+    try:
+
+        await unit.start()
+
+        with pytest.raises(Fault) as caught: unit.options(workers=2)
+
+        assert caught.value.reason == "thread.started"
+
+        def other () -> Fault:
+
+            async def call () -> Fault: return await denied("thread.loop", unit.start())
+
+            return asyncio.run(call())
+
+        assert (await asyncio.to_thread(other)).code is Code.CONFLICT
+
+    finally: await unit.drop()
+
+
+async def test_scope_async_callables_and_drop_do_not_leak_coroutines () -> None:
+
+    class Async:
+
+        async def __call__ ( self, n: int ) -> int: return n
+
+    direct = thread.mode("async")
+    local = thread.mode("thread")
+
+    try:
+
+        assert await direct.submit(Async(), 3) == 3
+
+        with pytest.raises(Fault) as caught: _ = local.submit(Async(), 3)
+
+        assert caught.value.reason == "thread.work"
+
+        await direct.drop()
+
+        work = nap(0)
+
+        with pytest.raises(Fault) as closed: _ = direct.spawn(work)
+
+        assert closed.value.reason == "thread.closed" and inspect.getcoroutinestate(work) == inspect.CORO_CLOSED
+
+    finally:
+
+        await direct.drop()
+        await local.drop()
+
+
+async def test_remote_scope_drop_does_not_close_another_scope ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[str] = []
+
+    monkeypatch.setitem(sys.modules, "ray", rigged(calls, []))
+
+    first = thread.mode("remote").options(workers=1)
+    second = thread.mode("remote").options(workers=1)
+
+    try:
+
+        assert await first.submit(operator.neg, 3) == -3
+        await first.drop()
+        assert await second.submit(operator.neg, 4) == -4
+        assert "shutdown" not in calls
+
+    finally:
+
+        await first.drop()
+        await second.drop()
+
+        cluster = await Cluster.connect("auto")
+
+        await cluster.close()
+
+
+@pytest.mark.parametrize("verb", ["stop", "drop"])
+async def test_remote_start_does_not_override_later_shutdown (
+    verb: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+
+    calls: list[str] = []
+    entered = threading.Event()
+    release = threading.Event()
+    fake = rigged(calls, [])
+    original = fake.init
+
+    def delayed ( **options: object ) -> None:
+
+        entered.set()
+        release.wait(2)
+        original(**options)
+
+    monkeypatch.setattr(fake, "init", delayed)
+    monkeypatch.setitem(sys.modules, "ray", fake)
+
+    unit = thread.mode("remote")
+    started = asyncio.create_task(unit.start())
+
+    try:
+
+        assert await asyncio.to_thread(entered.wait, 1)
+
+        if verb == "stop": unit.stop()
+        else: await unit.drop()
+
+        release.set()
+
+        if verb == "stop":
+
+            assert await started is unit and unit.stopping()
+
+            with pytest.raises(Fault) as stopped: _ = unit.submit(operator.neg, 1)
+
+            assert stopped.value.reason == "thread.stopped"
+
+        else: await denied("thread.closed", started)
+
+    finally:
+
+        release.set()
+        await asyncio.gather(started, return_exceptions=True)
+        await unit.drop()
+
+        cluster = await Cluster.connect("auto")
+
+        await cluster.close()
+
+@pytest.mark.parametrize("scoped", [False, True])
+async def test_failed_task_creation_closes_coroutines_and_cancels_started_siblings ( scoped: bool ) -> None:
+
+    unit = thread.mode("async").options(workers=4) if scoped else Thread()
+    loop = asyncio.get_running_loop()
+    previous = loop.get_task_factory()
+    made: list[asyncio.Task[Any]] = []
+    rejected: list[Any] = []
+
+    def factory ( loop: asyncio.AbstractEventLoop, work: Any, **options: Any ) -> asyncio.Task[Any]:
+
+        if len(made) == 2:
+
+            rejected.append(work)
+
+            raise ValueError("task allocation refused")
+
+        task = asyncio.Task(work, loop=loop, **options)
+
+        made.append(task)
+
+        return task
+
+    async def held ( value: int ) -> int:
+
+        await asyncio.sleep(30)
+
+        return value
+
+    try:
+
+        loop.set_task_factory(factory)
+
+        with pytest.raises(ValueError, match="task allocation refused"): await unit.map(range(10), held, limit=4)
+
+    finally:
+
+        loop.set_task_factory(previous)
+        await unit.close()
+
+    assert made and all(task.done() for task in made)
+    assert rejected and all(inspect.getcoroutinestate(work) == inspect.CORO_CLOSED for work in rejected)
+
+async def test_eager_scope_completion_is_not_reported_as_unfinished_work () -> None:
+
+    unit = thread.mode("async").options(workers=1)
+    loop = asyncio.get_running_loop()
+    before = loop.get_task_factory()
+
+    async def value () -> int: return 7
+
+    try:
+
+        loop.set_task_factory(asyncio.eager_task_factory)
+
+        task = unit.submit(value)
+
+        assert task.done() and await task == 7 and unit.tasks().count() == 0
+
+        await unit.join(0)
+
+    finally:
+
+        loop.set_task_factory(before)
+        await unit.drop()
+
+async def test_remote_options_snapshot_environment_and_reject_conflicting_connections (
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+
+    calls: list[str] = []
+    fake = rigged(calls, [])
+    original = fake.init
+    received: list[dict[str, Any]] = []
+
+    def capture ( **options: Any ) -> None:
+
+        received.append(options)
+        original(**options)
+
+    monkeypatch.setattr(fake, "init", capture)
+    monkeypatch.setitem(sys.modules, "ray", fake)
+    module = types.ModuleType("worker_module")
+    env = { "env_vars": { "TENANT": "first" }, "pip": ["example==1"], "py_modules": [module] }
+    first = thread.mode("remote").options(host="ray://head:1", namespace="first", runtime_env=env)
+    cast("dict[str, str]", env["env_vars"])["TENANT"] = "changed"
+
+    try:
+
+        assert await first.submit(operator.neg, 3) == -3
+        assert received[0]["namespace"] == "first"
+        assert received[0]["runtime_env"]["py_modules"] == [module]
+        assert received[0]["runtime_env"]["py_modules"] is not env["py_modules"]
+        assert received[0]["runtime_env"]["env_vars"] == { "TENANT": "first" }
+        assert first.describe()["runtime_env"] is True and "TENANT" not in str(first.describe())
+
+        same = thread.mode("remote").options(
+            host="ray://head:1", namespace="first",
+            runtime_env={ "env_vars": { "TENANT": "first" }, "pip": ["example==1"], "py_modules": [module] },
+        )
+
+        try: assert await same.submit(operator.neg, 4) == -4
+        finally: await same.drop()
+
+        changes: list[dict[str, Any]] = [
+            { "namespace": "second" }, { "runtime_env": { "env_vars": { "TENANT": "second" } } },
+            { "runtime_env": {} },
+        ]
+
+        for options in changes:
+
+            await denied("thread.cluster", Cluster.connect("ray://head:1", **options))
+
+        assert len(received) == 1 and await first.submit(operator.neg, 5) == -5
+
+    finally:
+
+        await first.drop()
+
+        cluster = await Cluster.connect("ray://head:1")
+
+        await cluster.close()
+
+
+async def test_retired_ray_handle_cannot_use_or_close_its_successor ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[str] = []
+    monkeypatch.setitem(sys.modules, "ray", rigged(calls, []))
+    first = await Cluster.connect("ray://head:1", namespace="first")
+
+    await first.close()
+
+    second = await Cluster.connect("ray://head:1", namespace="second")
+
+    try:
+
+        await first.close()
+        await denied("thread.cluster", first.call(operator.neg, 1))
+        await denied("thread.cluster", first.nodes())
+
+        assert await second.call(operator.neg, 2) == -2
+        assert calls.count("shutdown") == 1
+
+    finally: await second.close()
+
+
+async def test_remote_options_are_validated_before_mutation_or_connection ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[str] = []
+    monkeypatch.setitem(sys.modules, "ray", rigged(calls, []))
+    unit = thread.mode("remote").options(workers=2, namespace="first")
+
+    for value in ("", "  ", True, 1):
+
+        refused("thread.namespace", partial(unit.options, workers=9, namespace=cast("Any", value)))
+
+        assert unit.describe()["workers"] == 2 and unit.describe()["namespace"] == "first"
+
+    invalid_envs: tuple[object, ...] = ([], 1, "x", { 1: "bad" })
+
+    for bad_env in invalid_envs:
+
+        refused("thread.runtime_env", partial(unit.options, workers=9, runtime_env=cast("Any", bad_env)))
+
+        assert unit.describe()["workers"] == 2
+
+    for mode in ("async", "thread", "process", "interpreter"):
+
+        local = thread.mode(mode)
+
+        with pytest.raises(Fault) as caught: local.options(namespace="x")
+
+        assert caught.value.code is Code.NOT_IMPLEMENTED
+
+        with pytest.raises(Fault) as caught: local.options(runtime_env={})
+
+        assert caught.value.code is Code.NOT_IMPLEMENTED
+
+    assert not calls
+
+
+async def test_external_ray_session_is_not_silently_adopted ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[str] = []
+    fake = rigged(calls, [])
+    fake.init(address="external")
+    monkeypatch.setitem(sys.modules, "ray", fake)
+
+    await denied("thread.cluster", Cluster.connect("ray://elsewhere", namespace="private"))
+
+    assert calls == ["init:external"]
+
+    fake.shutdown()
+
+async def test_ray_cancellation_preserves_the_provider_future_until_its_reply (
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+
+    calls: list[str] = []
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[int] = loop.create_future()
+    fake = rigged(calls, [])
+    monkeypatch.setattr(fake, "remote", lambda _: types.SimpleNamespace(remote=lambda _: future))
+    monkeypatch.setitem(sys.modules, "ray", fake)
+    cluster = await Cluster.connect("ray://head:1")
+
+    try:
+
+        task = asyncio.create_task(cluster.call(operator.neg, 1))
+
+        await asyncio.sleep(0)
+
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await task
+
+        assert calls[-1] == "cancel" and not future.cancelled()
+
+        future.set_exception(RuntimeError("provider acknowledged cancellation"))
+
+        await asyncio.sleep(0)
+
+        assert future.done()
+
+    finally: await cluster.close()
+
+
+async def test_concurrent_ray_connections_choose_one_configuration ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[str] = []
+    monkeypatch.setitem(sys.modules, "ray", rigged(calls, []))
+    links = await asyncio.gather(
+        *(Cluster.connect("ray://head:1", namespace=name) for name in ["first", "second"] * 8),
+        return_exceptions=True,
+    )
+    active = [link for link in links if isinstance(link, Cluster)]
+    errors = [link for link in links if isinstance(link, Fault)]
+
+    try:
+
+        assert len(active) == len(errors) == 8
+        assert calls.count("init:ray://head:1") == 1
+        assert all(error.code is Code.CONFLICT and error.reason == "thread.cluster" for error in errors)
+        assert await active[0].call(operator.neg, 4) == -4
+
+    finally:
+
+        for link in active: await link.close()
+
+    assert calls.count("shutdown") == 1
+
+
+@pytest.mark.parametrize("host", ["auto", "ray://head:10001"])
+@pytest.mark.parametrize("failure", [ModuleNotFoundError, OSError])
+async def test_ray_load_failure_warns_at_execution_without_affecting_other_modes (
+    monkeypatch: pytest.MonkeyPatch, host: str, failure: type[Exception],
+) -> None:
+
+    original = builtins.__import__
+    attempts = 0
+    cause = failure("private loader detail")
+
+    def importing ( name: str, *args: Any, **kwargs: Any ) -> Any:
+
+        nonlocal attempts
+
+        if name == "ray":
+
+            attempts += 1
+
+            raise cause
+
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", importing)
+    version = ".".join(str(part) for part in sys.version_info[:3])
+
+    with log.capture() as events:
+
+        remote = thread.mode("remote").options(host=host, namespace="jobs", runtime_env={})
+        local = thread.mode("async")
+
+        try:
+
+            assert attempts == 0 and events == []
+            assert await local.submit(operator.neg, 4) == -4
+
+            fault = await denied("thread.ray", remote.start())
+
+            assert fault.__cause__ is cause
+            assert f"Python {version}" in fault.message
+            assert "compatible" in fault.message and "driver and cluster" in fault.message
+            assert attempts == 1 and len(events) == 1
+            assert events[0]["event"] == "thread.ray" and events[0]["level"] == "warning"
+            assert events[0]["python"] == version and events[0]["message"] == fault.message
+            assert "private loader detail" not in str(events)
+            assert await local.submit(operator.neg, 5) == -5
+
+        finally:
+
+            await remote.drop()
+            await local.drop()

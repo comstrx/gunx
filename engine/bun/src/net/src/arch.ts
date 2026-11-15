@@ -1,0 +1,65 @@
+import type * as error from "engine-error";
+import type * as parse from "engine-parse";
+
+export type Address = { version: 4 | 6; words: readonly number[] };
+export type Parts = { protocol: string; host: string; hostname: string; port: string; path: string; query: parse.Query; hash: string; origin: string };
+export type Directives = Record<string, readonly string[] | string | boolean | undefined>;
+export type Hsts = { maxAge?: number | undefined; subdomains?: boolean | undefined; preload?: boolean | undefined };
+export type Security = {
+    csp?: Directives | undefined;
+    reportOnly?: boolean | undefined;
+    frame?: "DENY" | "SAMEORIGIN" | undefined;
+    hsts?: boolean | Hsts | undefined;
+    referrer?: string | undefined;
+    permissions?: string | undefined;
+    opener?: string | undefined;
+};
+export type Facts = { ip: string | undefined; agent: string; language: string | undefined; referer: string | undefined; requestId: string | undefined; secure: boolean; mobile: boolean; bot: boolean };
+export type Bag = Record<string, string | undefined> | { get: ( name: string ) => string | null };
+export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+export type Redirect = "follow" | "error" | "manual";
+export type Payload = string | Uint8Array | FormData | Blob;
+export type Fetcher = ( url: string, init: { method: string; headers: Record<string, string>; body?: Payload | undefined; signal: AbortSignal; redirect?: Redirect | undefined } ) => Promise<Response>;
+export type RequestOptions = {
+    trace?: boolean | undefined;
+    budget?: number | undefined;
+    method?: Method | undefined;
+    headers?: Record<string, string | undefined> | undefined;
+    body?: unknown;
+    query?: parse.QueryInput | undefined;
+    timeout?: number | undefined;
+    retries?: number | undefined;
+    maxBytes?: number | undefined;
+    signal?: AbortSignal | undefined;
+    requestId?: string | undefined;
+    fetcher?: Fetcher | undefined;
+    idempotent?: boolean | undefined;
+    redirect?: Redirect | undefined;
+    as?: "auto" | "json" | "text" | "bytes" | undefined;
+    failure?: (( status: number, body: unknown, headers: Record<string, string> ) => error.Fault) | undefined;
+};
+export type Reply<T = unknown> = { status: number; ok: boolean; headers: Record<string, string>; body: T; text: string; ms: number; attempts: number; requestId: string };
+export type Policy = { origins: readonly string[]; allowLoopback?: boolean | undefined };
+export type Body = { body?: ReadableStream<Uint8Array> | null | undefined; arrayBuffer: () => Promise<ArrayBuffer>; headers?: { get: ( name: string ) => string | null } | undefined };
+export type Reader = { read: () => Promise<{ done: boolean; value?: Uint8Array | undefined }> };
+export type Wild = { protocol: string; suffix: string; port: string };
+export type Event = { id: string | undefined; event: string; data: string; json: unknown };
+export type EventsOptions = {
+    headers?: Record<string, string | undefined> | undefined;
+    signal?: AbortSignal | undefined;
+    fetcher?: Fetcher | undefined;
+    lastId?: string | undefined;
+    reconnect?: number | undefined;
+    retry?: number | undefined;
+    idle?: number | undefined;
+    maxBytes?: number | undefined;
+};
+export type PollOptions<T> = {
+    every?: number | (( attempt: number, value: T ) => number) | undefined;
+    until?: (( value: T, attempt: number ) => boolean) | undefined;
+    limit?: number | undefined;
+    timeout?: number | undefined;
+    signal?: AbortSignal | undefined;
+};
+export type Feed = { push: ( chunk: string ) => Event[]; last: () => string | undefined; retry: () => number | undefined };
+export type Held = { cancel: () => Promise<void> } | null | undefined;

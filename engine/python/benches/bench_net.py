@@ -5,7 +5,7 @@ from engine.test import Bench
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
-import asyncio
+import asyncio, os
 
 LOCAL  = Egress(allow_private=True, ports=frozenset())
 STRICT = Egress()
@@ -78,7 +78,7 @@ async def framing () -> None:
 
 upstream = Upstream()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 run(upstream.start())
 
 base   = f"http://127.0.0.1:{upstream.port}"

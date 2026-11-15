@@ -1,4 +1,4 @@
-export type Address = { version: 4 | 6; words: readonly number[] };
+import type { Address } from "./arch.ts";
 
 const names = [".localhost", ".local", ".internal", ".home.arpa"];
 const dns = /^(?:[a-z0-9-]+\.)*[a-z][a-z0-9-]*$/;

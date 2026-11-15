@@ -4,11 +4,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from sanic import HTTPResponse
-from sanic.response import ResponseStream, file as served, redirect as moved
+from sanic.response import ResponseStream, file_stream as served, redirect as moved
 from engine.array import array
 from engine.crypto import crypto
 from engine.error import Code, Fault
 from engine.json import json
+from engine.parse import parse
 from engine.thread import thread
 from .arch import Answer, ANSWERS, CHALLENGE, Headers, JSON, Meta, TEXT
 from .envelope import Envelope
@@ -110,11 +111,60 @@ class Response:
         return cls.download(buffer.getvalue().encode(), name, "text/csv; charset=utf-8")
 
     @classmethod
+    def csv_stream (
+        cls, rows: AsyncIterator[Sequence[object]], name: str = "export.csv", header: Sequence[str] | None = None,
+    ) -> ResponseStream:
+
+        async def chunks () -> AsyncIterator[bytes]:
+
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+
+            try:
+
+                if header:
+
+                    writer.writerow(header)
+
+                    yield buffer.getvalue().encode()
+
+                    buffer.seek(0)
+                    buffer.truncate(0)
+
+                async for row in rows:
+
+                    writer.writerow(row)
+
+                    yield buffer.getvalue().encode()
+
+                    buffer.seek(0)
+                    buffer.truncate(0)
+
+            finally:
+
+                buffer.close()
+                close = getattr(rows, "aclose", None)
+
+                if close is not None: await close()
+
+        return cls.stream(chunks(), "text/csv; charset=utf-8", { "Content-Disposition": cls._attachment_(name) })
+
+    @classmethod
     def download ( cls, body: bytes, name: str, media: str = "application/octet-stream" ) -> HTTPResponse:
 
-        safe = "".join(ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in str(name)) or "download"
+        return cls.raw(body, HTTPStatus.OK, media, { "Content-Disposition": cls._attachment_(name) })
 
-        return cls.raw(body, HTTPStatus.OK, media, { "Content-Disposition": f'attachment; filename="{safe}"' })
+    @staticmethod
+    def _attachment_ ( name: str ) -> str:
+
+        safe = "".join(ch if ch.isascii() and (ch.isalnum() or ch in "._-") else "_" for ch in str(name)) or "download"
+        head = f'attachment; filename="{safe}"'
+
+        if name.isascii(): return head
+
+        shown = "".join(ch if ch.isprintable() and ch not in "/\\" else "_" for ch in name)
+
+        return head + "; filename*=UTF-8" + "''" + parse.quote(shown)
 
     @staticmethod
     def etag ( body: bytes | str, weak: bool = True ) -> str:
@@ -153,14 +203,18 @@ class Response:
 
         return moved(target, status=status)
 
-    @staticmethod
-    async def file ( path: Path, media: str | None = None, name: str | None = None, cache: int = 0 ) -> HTTPResponse:
+    @classmethod
+    async def file (
+        cls, path: Path, media: str | None = None, name: str | None = None, cache: int = 0,
+    ) -> ResponseStream:
 
         if not await thread.offload(path.is_file): raise Fault(Code.NOT_FOUND, reason="http.file")
 
         headers = { "Cache-Control": f"public, max-age={cache}" if cache else "no-store" }
 
-        return await served(str(path), mime_type=media, filename=name, headers=headers)
+        if name: headers["Content-Disposition"] = cls._attachment_(name)
+
+        return await served(str(path), mime_type=media, headers=headers, chunk_size=256 * 1024)
 
     @staticmethod
     def stream (
@@ -172,19 +226,48 @@ class Response:
 
             if source is None: return
 
-            async for chunk in source: await response.write(chunk)
+            try:
+
+                async for chunk in source: await response.write(chunk)
+
+            finally:
+
+                close = getattr(source, "aclose", None)
+
+                if close is not None: await close()
 
         return ResponseStream(pump, status=status, content_type=media, headers=dict(headers or {}))
 
     @classmethod
+    def json_stream (
+        cls, source: AsyncIterator[object], status: int = HTTPStatus.OK, headers: Headers | None = None,
+    ) -> ResponseStream:
+
+        return cls.stream(json.encode_stream(source), JSON, headers, status)
+
+    @classmethod
     def sse ( cls, source: AsyncIterator[tuple[str, object]], retry: int = 3000 ) -> ResponseStream:
+
+        if type(retry) is not int or retry < 0: raise Fault(Code.INTERNAL, reason="http.sse")
 
         async def frames () -> AsyncIterator[bytes]:
 
-            yield f"retry: {retry}\n\n".encode()
+            try:
 
-            async for event, data in source:
+                yield f"retry: {retry}\n\n".encode()
 
-                yield f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+                async for event, data in source:
+
+                    if type(event) is not str or any(char in event for char in "\r\n\x00"):
+
+                        raise Fault(Code.INTERNAL, reason="http.sse")
+
+                    yield b"".join((b"event: ", event.encode(), b"\ndata: ", json.encode(data), b"\n\n"))
+
+            finally:
+
+                close = getattr(source, "aclose", None)
+
+                if close is not None: await close()
 
         return cls.stream(frames(), "text/event-stream", { "Cache-Control": "no-cache", "X-Accel-Buffering": "no" })

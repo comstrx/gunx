@@ -64,18 +64,35 @@ core:sys:is:wsl () {
 }
 core:sys:is:container () {
 
-    local line=""
+    local line="" rest=""
 
     [[ ! -f /.dockerenv && ! -f /run/.containerenv ]] || return 0
-    [[ -r /proc/1/cgroup ]] || return 1
+    [[ -z "${KUBERNETES_SERVICE_HOST:-}${container:-}" ]] || return 0
+
+    if [[ -r /proc/1/cgroup ]]; then
+
+        while IFS= read -r line || [[ -n "${line}" ]]; do
+
+            case "${line,,}" in
+                *docker*|*kubepods*|*containerd*|*podman*|*libpod*|*lxc*) return 0 ;;
+            esac
+
+        done < /proc/1/cgroup
+
+    fi
+
+    [[ -r /proc/self/mountinfo ]] || return 1
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
 
+        rest="${line#* * * * }"
+        [[ "${rest}" == '/ '* ]] || continue
+
         case "${line,,}" in
-            *docker*|*kubepods*|*containerd*|*podman*|*lxc*) return 0 ;;
+            *' - overlay '*docker*|*' - overlay '*containerd*|*' - overlay '*libpod*|*' - overlay '*kubelet*) return 0 ;;
         esac
 
-    done < /proc/1/cgroup
+    done < /proc/self/mountinfo
 
     return 1
 
@@ -212,16 +229,17 @@ core:sys:now () {
 
     local now="${EPOCHREALTIME}"
 
-    core:log:print "${now/./}"
+    core:log:print "${now//[!0-9]/}"
 
 }
 core:sys:session () {
 
     local lab="${1}" stamp="" directory=""
 
-    stamp="$(printf '%(%Y%m%d-%H%M%S)T' -1)-$$"
+    printf -v stamp '%(%Y%m%d-%H%M%S)T-%s' -1 "$$"
 
-    core:fs:dir:own "${lab}/run" 700 || return
+    core:fs:dir:new "${lab}/run" 700 || return
+    [[ -O "${lab}/run" && ! -L "${lab}/run" ]] || { core:error:fail "Not owned by this user: ${lab}/run"; return; }
     core:sys:prune "${lab}/run"
 
     directory="$(mktemp -d "${lab}/run/${stamp}.XXXX")" || { core:error:fail "Cannot create the session directory"; return; }
@@ -240,7 +258,12 @@ core:sys:prune () {
         [[ -d "${directory}" ]] || continue
 
         directory="${directory%/}"
-        pid="$(cat -- "${directory}/pid" 2>/dev/null)" || pid=""
+        pid="${directory##*/}"
+        pid="${pid%.*}"
+        pid="${pid##*-}"
+
+        core:num:natural "${pid}" && [[ "${directory##*/}" == [0-9]*-[0-9]*-"${pid}".* ]] \
+            || { pid="$(cat -- "${directory}/pid" 2>/dev/null)" || pid=""; }
 
         [[ -n "${pid}" ]] || { rm -rf -- "${directory}"; continue; }
 

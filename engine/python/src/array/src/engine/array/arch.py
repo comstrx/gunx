@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from engine.string import string
-import math, operator as ops
+import operator as ops
 
 type Key[T] = Callable[[T], Any]
 type Pick[T] = Key[T] | str
@@ -40,7 +40,7 @@ class Page:
 
     def pages ( self ) -> int:
 
-        return max(1, math.ceil(self.total / self.limit)) if self.limit else 1
+        return max(1, (self.total + self.limit - 1) // self.limit) if self.limit else 1
 
     def offset ( self ) -> int:
 

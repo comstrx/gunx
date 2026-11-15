@@ -316,3 +316,11 @@ describe("translate", () => {
 
     });
 });
+
+
+it("currency names follow Intl through the translation owner", () => {
+
+    expect(translate.currencyName("EGP", "fr")).toBe(new Intl.DisplayNames("fr", { type: "currency" }).of("EGP") ?? "");
+    expect(translate.currencyName("not-a-currency", "fr")).toBe("not-a-currency");
+
+});

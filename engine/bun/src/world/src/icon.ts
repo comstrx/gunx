@@ -1,21 +1,6 @@
 import * as string from "engine-string";
+import type { Entry, Glyph, Icon, IconSet, Icons, Shape } from "./arch.ts";
 import { word } from "./lazy.ts";
-
-export type Glyph = { path: string | readonly string[]; viewBox?: string | undefined; mirror?: boolean | undefined; filled?: boolean | undefined };
-export type IconSet = Readonly<Record<string, string | Glyph>>;
-export type Icon = { readonly name: string; readonly path: readonly string[]; readonly viewBox: string; readonly mirror: boolean; readonly filled: boolean };
-export type Icons = {
-    readonly size: number;
-    resolve: ( name: string, direction?: "ltr" | "rtl" ) => Icon | undefined;
-    nameOf: ( name: string ) => string | undefined;
-    has: ( name: string ) => boolean;
-    names: () => string[];
-    search: ( query: string, limit?: number ) => string[];
-    extend: ( more: IconSet, aliases?: Readonly<Record<string, string>> ) => Icons;
-};
-
-type Shape = { readonly path: readonly string[]; readonly viewBox: string; readonly mirror: boolean; readonly filled: boolean };
-type Entry = { name: string; text: string };
 
 const square = "0 0 24 24";
 const boxed = /^-?\d+(?:\.\d+)?(?:[\s,]+-?\d+(?:\.\d+)?){3}$/;

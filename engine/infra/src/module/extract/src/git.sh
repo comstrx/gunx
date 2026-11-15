@@ -113,7 +113,7 @@ module:extract:git:ref () {
 }
 module:extract:git:create () {
 
-    local path="${1}" host="" owner="" name="" token="" login="" api=""
+    local path="${1}" host="" owner="" name="" token="" login="" api="" body=""
 
     if [[ "${path}" == /* ]]; then
 
@@ -129,7 +129,7 @@ module:extract:git:create () {
 
     if [[ -z "${GIT_TOKEN:-}" ]] && core:sys:has gh; then
 
-        core:process:io gh repo create "${owner}/${name}" --private >/dev/null \
+        core:process:timeout "${CONFIG[RUN_TIMEOUT]:-300}" gh repo create "${owner}/${name}" --private >/dev/null \
             || { @err "gh could not create ${path}"; return; }
 
         return 0
@@ -142,14 +142,26 @@ module:extract:git:create () {
     else api="https://${host}/api/v3"
     fi
 
-    login="$(core:net:json GET "${api}/user" '' "${token}" | grep -oE '"login": *"[^"]+"' | head -1 | cut -d'"' -f4)" || login=""
+    login="$(module:extract:git:api GET "${api}/user" '' "${token}" | grep -oE '"login": *"[^"]+"' | head -1 | cut -d'"' -f4)" || login=""
 
     if [[ "${login}" == "${owner}" ]]; then api+="/user/repos"
     else api+="/orgs/${owner}/repos"
     fi
 
-    core:net:json POST "${api}" "{\"name\":\"${name}\",\"private\":true}" "${token}" >/dev/null \
+    body="$(core:json:object name "$(core:json:string "${name}")" private true)" || return
+
+    module:extract:git:api POST "${api}" "${body}" "${token}" >/dev/null \
         || { @err "Cannot create the repository ${path}"; return; }
+
+}
+module:extract:git:api () {
+
+    local method="${1}" url="${2}" body="${3}" token="${4}"
+
+    core:net:json "${method}" "${url}" "${body}" \
+        'Accept: application/vnd.github+json' \
+        'X-GitHub-Api-Version: 2022-11-28' \
+        "Authorization: Bearer ${token}"
 
 }
 module:extract:git:ensure () {
@@ -190,9 +202,21 @@ module:extract:git:call () {
 }
 module:extract:git:checkout () {
 
-    local remote="${1}" branch="${2}" clone="${3}" path="${4:-${1}}"
+    local remote="${1}" branch="${2}" clone="${3}" path="${4:-${1}}" create="${5:-true}"
 
     core:validate:branch "${branch}" || { @err "Not a branch name: ${branch}"; return; }
+
+    if [[ "${create}" != true ]] && ! module:extract:git:exists "${remote}"; then
+
+        if ! git init -q -- "${clone}" || ! git -C "${clone}" switch -q --orphan "${branch}"; then
+            @err "Cannot open an empty clone for ${path}"
+            return
+        fi
+
+        @print absent
+        return 0
+
+    fi
 
     module:extract:git:ensure "${remote}" "${path}" || return
 

@@ -1,17 +1,4 @@
-export type Locale = "ar" | "en";
-export type Country = "EG" | "SA" | "AE" | "KW" | "QA" | "JO";
-export type Pool = {
-    first: readonly string[];
-    last: readonly string[];
-    city: readonly string[];
-    street: readonly string[];
-    company: readonly string[];
-    words: readonly string[];
-    goods: readonly string[];
-    traits: readonly string[];
-};
-export type Plan = { dial: string; heads: readonly string[]; rest: number };
-
+import type { Country, Locale, Plan, Pool } from "./arch.ts";
 export const pools: Readonly<Record<Locale, Pool>> = {
     en: {
         first: ["Adam", "Ann", "Omar", "Lina", "Sara", "Yusuf", "Mona", "Karim", "Hana", "Ali", "Nour", "Tarek", "Dina", "Hassan", "Laila", "Sami", "Farah", "Ziad", "Reem", "Khaled", "Salma", "Mazen", "Yara", "Bilal"],
@@ -49,7 +36,6 @@ export const plans: Readonly<Record<Country, Plan>> = {
     JO: { dial: "962", heads: ["77", "78", "79"], rest: 7 },
 };
 export const domains: readonly string[] = ["example.com", "example.net", "example.org", "mail.test", "shop.test"];
-export const statuses = ["pending", "active", "paused", "done", "failed"] as const;
 export const zones: readonly string[] = ["Africa/Cairo", "Asia/Riyadh", "Asia/Dubai", "Asia/Kuwait", "Asia/Qatar", "Asia/Amman", "Europe/London", "Europe/Berlin", "America/New_York", "UTC"];
 export const locales: readonly string[] = ["ar", "en", "ar-EG", "ar-SA", "en-US", "en-GB", "fr", "de", "tr"];
 export const coins: readonly string[] = ["EGP", "SAR", "AED", "QAR", "USD", "EUR", "GBP"];

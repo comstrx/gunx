@@ -1,19 +1,7 @@
 import * as error from "engine-error";
 import * as event from "engine-event";
-import { createStore, type StoreApi } from "./zustand.ts";
-
-export type Resource<T> = { status: "idle" | "pending" | "done" | "failed"; data: T | undefined; error: error.Fault | undefined; at: number; stale: boolean };
-export type ResourceOptions<T> = { load: ( signal: AbortSignal ) => Promise<T>; seed?: T | undefined; staleAfter?: number | undefined; now?: (() => number) | undefined };
-export type Handle<T> = StoreApi<Resource<T>> & {
-    refresh: () => Promise<T | undefined>;
-    ensure: () => Promise<T | undefined>;
-    abort: () => void;
-    set: ( data: T ) => void;
-    update: ( change: ( current: T | undefined ) => T ) => void;
-    reset: () => void;
-};
-
-type Flight<T> = { controller: AbortController; promise: Promise<T | undefined>; settle: ( value: T | undefined ) => void };
+import type { ResourceFlight as Flight, Handle, Resource, ResourceOptions } from "./arch.ts";
+import { createStore } from "./zustand.ts";
 
 function flight<T> (): Flight<T> {
 
@@ -48,7 +36,7 @@ export function resource<T> ( options: ResourceOptions<T> ): Handle<T> {
         gone?.controller.abort();
 
     };
-    const keep = ( data: T ): void => {
+    const keep = ( data: T, at = now() ): void => {
 
         calm();
 
@@ -59,16 +47,27 @@ export function resource<T> ( options: ResourceOptions<T> ): Handle<T> {
 
         }
 
-        store.setState({ status: "done", data, error: undefined, at: now(), stale: false });
+        store.setState({ status: "done", data, error: undefined, at, stale: false });
 
     };
     const work = async ( mine: Flight<T> ): Promise<void> => {
 
         let data: T;
+        let at: number;
 
         try {
 
             data = await event.race(load(mine.controller.signal), mine.controller.signal);
+
+            if ( current !== mine ) {
+
+                mine.settle(undefined);
+
+                return;
+
+            }
+
+            at = now();
 
         } catch ( caught ) {
 
@@ -85,8 +84,16 @@ export function resource<T> ( options: ResourceOptions<T> ): Handle<T> {
 
         }
 
+        if ( current !== mine ) {
+
+            mine.settle(undefined);
+
+            return;
+
+        }
+
         current = undefined;
-        keep(data);
+        keep(data, at);
         mine.settle(data);
 
     };

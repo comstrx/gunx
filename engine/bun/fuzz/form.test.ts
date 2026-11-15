@@ -455,3 +455,22 @@ describe("fuzz form", () => {
     });
 
 });
+
+it("verification cannot reuse a result after any dependent value changes", async () => {
+
+    await fc.assert(fc.asyncProperty(fc.array(fc.boolean(), { minLength: 1, maxLength: 30 }), async ( choices ) => {
+
+        const schema = validate.object({ name: validate.string(), allowed: validate.boolean() });
+        const made = form.define({ schema, initial: { name: "stable", allowed: true }, submit: async () => undefined });
+        const ask: form.Ask<{ name: string; allowed: boolean }> = ( _, values ) => values.allowed ? undefined : "refused";
+
+        for ( const allowed of choices ) {
+
+            made.set("allowed", allowed);
+            expect(await made.verify("name", ask)).toBe(allowed);
+
+        }
+
+    }), { numRuns: 1000 });
+
+});

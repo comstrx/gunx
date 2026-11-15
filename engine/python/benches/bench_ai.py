@@ -10,7 +10,7 @@ from engine.validate import Shape
 from collections.abc import Awaitable, Coroutine, Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast, override
-import asyncio
+import asyncio, os
 
 LOCAL = Egress(allow_private=True, ports=frozenset())
 PLACE = { "type": "object", "properties": { "city": { "type": "string" } }, "required": ["city"] }
@@ -98,7 +98,7 @@ def run [T] ( work: Awaitable[T] ) -> T:
 
     return loop.run_until_complete(cast("Coroutine[Any, Any, T]", work))
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 run(fake.start())
 
 brain.setup(timeout=5.0)
@@ -161,6 +161,9 @@ run(bench.measure_async("ai.cache.warm", hitting, rounds=1))
 bench.measure("ai.message", message)
 bench.measure("ai.options.checked", checks)
 bench.measure("ai.turn.trim60", turning, rounds=5000)
+
+orphaned = [Message("tool", str(at), call_id="c") for at in range(10000)]
+bench.measure("ai.turn.orphaned10000", lambda: Turn(orphaned, 64), rounds=100)
 bench.measure("ai.reply.calls100", replying, rounds=5000)
 run(bench.measure_async("ai.chat.mock19", chatting))
 run(bench.measure_async("ai.complete.mock", completing))

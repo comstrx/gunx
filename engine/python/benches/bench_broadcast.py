@@ -5,7 +5,7 @@ from engine.socket import Hub, Socket
 from engine.test import Bench
 from pathlib import Path
 from typing import Any
-import asyncio
+import asyncio, os
 
 bench = Bench()
 loop  = asyncio.new_event_loop()
@@ -23,7 +23,7 @@ class Quiet:
 
         return None
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 local.setup(hub)
 
 for at in range(100):

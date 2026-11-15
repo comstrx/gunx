@@ -2,6 +2,7 @@ from aiohttp import BodyPartReader, web
 from engine.ai import Ai, Mock
 from engine.net import Egress, Remote, net
 from engine.video import Asset, Playback
+from engine.video.local import Local
 from collections.abc import Awaitable, Callable
 from typing import Any, Self, cast
 from engine.error import Code, Fault
@@ -361,3 +362,15 @@ async def test_presets_and_settings_are_validated ( tmp_path: Path ) -> None:
         with pytest.raises(Fault) as unset: await work
 
         assert unset.value.reason == "video.settings" and unset.value.errors == { "setting": [setting] }, setting
+
+
+async def test_local_assets_only_materialize_the_requested_prefix ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    driver = Local(video, storage)
+    assets = [Asset(str(value), str(value), ready=True) for value in range(100)]
+
+    monkeypatch.setattr(driver, "_assets", { asset.id: asset for asset in assets })
+
+    for limit in (0, 1, 10, 100, 101, -1, -100, -101):
+
+        assert await driver.assets(limit) == assets[:limit]

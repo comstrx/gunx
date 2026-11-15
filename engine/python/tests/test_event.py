@@ -6,7 +6,7 @@ from engine.event import Event, Events, Signal, Subscriber
 from engine.queue import Queue
 from typing import Any, ClassVar, cast
 from pathlib import Path
-import asyncio, pytest
+import asyncio, importlib, pytest
 
 @pytest.fixture
 async def events () -> Events:
@@ -257,3 +257,45 @@ async def test_a_signal_is_a_typed_event_that_dispatches_itself ( events: Events
     with pytest.raises(Fault) as unnamed: await Nameless().dispatch(events)
 
     assert unnamed.value.reason == "event.name"
+
+async def test_cancelled_waiters_release_capacity_without_removing_other_waiters ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    events = Events()
+    bus = Broker()
+
+    bus.setup(Memory())
+    events.setup("waiters", bus)
+    monkeypatch.setattr(importlib.import_module("engine.event.events"), "MOST", 2)
+
+    survivor = asyncio.create_task(events.wait("orders.paid"))
+
+    await asyncio.sleep(0)
+
+    try:
+
+        for _ in range(8):
+
+            cancelled = asyncio.create_task(events.wait("never.ready"))
+
+            await asyncio.sleep(0)
+
+            cancelled.cancel()
+
+            with pytest.raises(asyncio.CancelledError): await cancelled
+
+            assert not survivor.done()
+
+        made = await events.dispatch("orders.paid", id=7)
+
+        assert await survivor == made
+
+        for _ in range(8):
+
+            with pytest.raises(Fault) as timed: await events.wait("never.ready", timeout=0.001)
+
+            assert timed.value.code is Code.TIMEOUT
+
+    finally:
+
+        survivor.cancel()
+        await asyncio.gather(survivor, return_exceptions=True)

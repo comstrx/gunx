@@ -1,43 +1,9 @@
 import * as error from "engine-error";
 import * as json from "engine-json";
-import * as socket from "engine-socket";
+import type * as socket from "engine-socket";
+import type { Change, Entry, Events, Live, Patch, Patched, Realtime, Watcher } from "./arch.ts";
 
-export type Patch = { key?: string | undefined; version?: string | undefined; at?: "start" | "end" | undefined };
-export type Patched = { value: unknown; applied: boolean };
-export type Events = { created: string; updated: string; deleted: string };
-export type Realtime = {
-    url: socket.Options["url"];
-    token?: (() => string | null | undefined | Promise<string | null | undefined>) | undefined;
-    channel?: string | undefined;
-    events?: Partial<Events> | undefined;
-    key?: string | undefined;
-    version?: string | undefined;
-    protocols?: socket.Options["protocols"];
-    reconnect?: socket.Options["reconnect"];
-    heartbeat?: number | undefined;
-    timeout?: number | undefined;
-    factory?: socket.SocketFactory | undefined;
-    fail?: socket.Options["fail"];
-    onStatus?: socket.Options["onStatus"];
-};
-export type Change = "created" | "updated" | "deleted" | "other";
-export type Delivery = { change: Change; event: string; data: unknown; channel: string | undefined };
-export type Live = {
-    readonly status: () => socket.Status;
-    open: () => Promise<void>;
-    close: () => void;
-    channelOf: ( feature: string, id?: string | number ) => string;
-    subscribe: ( feature: string, handler: ( delivery: Delivery ) => void, id?: string | number ) => () => void;
-    request: <T = unknown>( event: string, data?: unknown, channel?: string ) => Promise<T>;
-    emit: ( event: string, data?: unknown, channel?: string ) => boolean;
-    on: ( event: string, handler: socket.Handler, channel?: string ) => () => void;
-    watch: ( listener: Listener ) => () => void;
-    patch: ( current: unknown, many: boolean, delivery: Delivery ) => Patched;
-};
-
-type Listener = ( status: socket.Status, attempt: number ) => void;
-type Entry = { event: string; channel: string | undefined; handler: socket.Handler; off: (() => void) | undefined };
-type Watcher = { listener: Listener; off: (() => void) | undefined };
+import { connect as connectSocket } from "./realtime.ts";
 
 const slot = "{feature}";
 const counted = /^\d{1,15}(?:\.\d{1,9})?$/;
@@ -144,7 +110,7 @@ export function live ( options: Realtime ): Live {
 
         if ( connection ) return connection;
 
-        const link = socket.open({
+        const link = connectSocket({
             url: options.url,
             auth: options.token ? async () => (await options.token?.()) ?? undefined : undefined,
             protocols: options.protocols,

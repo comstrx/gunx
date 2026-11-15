@@ -11,11 +11,11 @@ const look = world.variants({
     defaults: { tone: "default", size: "md", weight: "regular" },
 });
 
-export function Text ({ children, tone = "default", size = "md", weight = "regular", live }: TextProps ) {
+export function Text ({ children, tone = "default", size = "md", weight = "regular", live, isolate = false }: TextProps ) {
 
     return (
         <p aria-live={live} data-ui="text" {...world.states({ tone, size, weight })} className={look({ tone, size, weight })}>
-            {children}
+            {isolate ? <bdi dir="auto">{children}</bdi> : children}
         </p>
     );
 

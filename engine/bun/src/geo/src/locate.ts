@@ -1,16 +1,8 @@
 import type * as device from "engine-device";
 import * as error from "engine-error";
+import type { Locate, Near, Point } from "./arch.ts";
 import { meters } from "./path.ts";
-import { distance, earthRadius, isPoint, type Point, rad } from "./point.ts";
-
-export type Locate = device.Follow & {
-    within?: number | undefined;
-    radius?: number | undefined;
-    minMeters?: number | undefined;
-    minMs?: number | undefined;
-    signal?: AbortSignal | undefined;
-};
-export type Near<T extends Point> = { item: T; distance: number };
+import { distance, earthRadius, isPoint, rad } from "./point.ts";
 
 const patience = 15_000;
 
@@ -48,7 +40,17 @@ export function locate ( unit: Pick<device.Device, "position" | "follow">, optio
             done = true;
             clearTimeout(timer);
             signal?.removeEventListener("abort", abort);
-            stop();
+            try {
+
+                stop();
+
+            } catch ( cause ) {
+
+                reject(cause);
+
+                return false;
+
+            }
 
             return true;
 
@@ -70,10 +72,26 @@ export function locate ( unit: Pick<device.Device, "position" | "follow">, optio
 
             try {
 
-                const stopper = unit.follow(wanted, settle);
+                let acquiring = true;
+                let pending: device.Position | undefined;
+                const stopper = unit.follow(wanted, ( found ) => {
+
+                    if ( !fine(found, radius) ) return;
+                    if ( acquiring ) pending ??= found;
+                    else settle(found);
+
+                });
+
+                acquiring = false;
 
                 if ( done ) stopper();
-                else stop = stopper;
+                else {
+
+                    stop = stopper;
+
+                    if ( pending ) settle(pending);
+
+                }
 
             } catch ( cause ) {
 
@@ -89,7 +107,7 @@ export function locate ( unit: Pick<device.Device, "position" | "follow">, optio
         signal?.addEventListener("abort", abort, { once: true });
 
         Promise.resolve()
-            .then(() => unit.position(wanted))
+            .then(() => done ? undefined : unit.position(wanted))
             .then(( known ) => (fine(known, radius) ? settle(known) : watch()), watch)
             .catch(fail);
 
@@ -99,11 +117,13 @@ export function locate ( unit: Pick<device.Device, "position" | "follow">, optio
 export function follow ( unit: Pick<device.Device, "follow">, options: Locate, listener: ( position: device.Position ) => void ): () => void {
 
     const { minMeters = 0, minMs = 0, radius, signal, wanted } = split(options);
+    if ( signal?.aborted ) return idle;
+
     let last: device.Position | undefined;
     let ended = false;
     const stop = unit.follow(wanted, ( next ) => {
 
-        if ( ended || !fine(next, radius) ) return;
+        if ( ended || signal?.aborted || !fine(next, radius) ) return;
         if ( last && minMs > 0 && next.at >= last.at && next.at - last.at < minMs ) return;
         if ( last && minMeters > 0 && distance(last, next) < minMeters ) return;
 
@@ -130,17 +150,15 @@ export function follow ( unit: Pick<device.Device, "follow">, options: Locate, l
 export function near<T extends Point> ( from: Point, candidates: readonly T[], radius: number, limit?: number ): Near<T>[] {
 
     const reach = meters(radius);
-    const lat = from.lat * rad;
-    const lng = from.lng * rad;
-    const cos = Math.cos(lat);
+    const cos = Math.cos(from.lat * rad);
     const bend = Math.sin(Math.min(Math.PI / 2, reach / (2 * earthRadius)));
     const edge = bend * bend * (1 + 1e-9);
     const found: Near<T>[] = [];
 
     for ( const item of candidates ) {
 
-        const half = Math.sin((item.lat * rad - lat) * 0.5);
-        const turn = Math.sin((item.lng * rad - lng) * 0.5);
+        const half = Math.sin((item.lat - from.lat) * rad * 0.5);
+        const turn = Math.sin((item.lng - from.lng) * rad * 0.5);
 
         if ( !(half * half + cos * Math.cos(item.lat * rad) * turn * turn <= edge) ) continue;
 

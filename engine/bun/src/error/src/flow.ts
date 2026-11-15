@@ -1,8 +1,6 @@
 import * as json from "engine-json";
-import { type Code, type Errors, Fault, is, isFault, of, poison } from "./fault.ts";
-
-export type Result<T> = { ok: true; value: T } | { ok: false; fault: Fault };
-export type Arms<R> = { readonly [K in Code]?: ( fault: Fault ) => R } & { readonly else: ( fault: Fault ) => R };
+import type { Arms, Code, Errors, Result } from "./arch.ts";
+import { Fault, is, isFault, of, poison } from "./fault.ts";
 
 export function unreachable ( value: unknown ): boolean {
 

@@ -59,7 +59,7 @@ core:str:replace () {
 
     [[ -n "${from}" ]] || { core:log:print "${text}"; return 0; }
 
-    core:log:print "${text//"${from}"/${to}}"
+    core:log:print "${text//"${from}"/"${to}"}"
 
 }
 core:str:split () {

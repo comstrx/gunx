@@ -1,15 +1,14 @@
-from collections.abc import Mapping
 from typing import Any, ClassVar, Self
 
 from engine.error import Code, Fault
-from engine.validate import Shape, rules, validator
+from engine.validate import Shape, Spec, rules, validator
 from .action import Action
 from .arch import Call, CARRIED
 from .request import Request
 
 class Form(Shape):
 
-    rules   : ClassVar[Mapping[str, str]] = {}
+    rules   : ClassVar[Spec] = {}
     reason  : ClassVar[str] = "validate.rules"
     carries : ClassVar[tuple[str, ...]] = ()
 

@@ -1,4 +1,5 @@
-import type { ComponentType } from "react";
-import { Hello } from "@/features/hello/index.tsx";
+import { type ComponentType, lazy } from "react";
 
-export const registry: Readonly<Record<string, ComponentType>> = { hello: Hello };
+export const registry: Readonly<Record<string, ComponentType>> = {
+    hello: lazy(() => import("@/features/hello/index.tsx").then(( module ) => ({ default: module.Hello }))),
+};

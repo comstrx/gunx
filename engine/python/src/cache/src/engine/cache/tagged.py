@@ -2,7 +2,6 @@ from typing import Any, cast
 from .arch import Loader
 from .store import Store
 
-
 class Tagged:
 
     def __init__ ( self, store: Store, names: tuple[str, ...] ) -> None:

@@ -9,7 +9,9 @@ from engine.error import Code, Fault
 from engine.string import string
 from engine.thread import thread
 from .arch import ACCESS, BACKUP, CHUNK, Info, LOCK_TICK, MODE_FILE, NAME_MAX, STAMP, Target, UNSAFE
-import fcntl, glob, mimetypes, os, pathlib, shutil, tempfile
+import glob, mimetypes, os, pathlib, shutil, tempfile
+
+from .lock import Lock
 
 class Path:
 
@@ -427,6 +429,7 @@ class Path:
 
         handle   = await self._run_(path, opened)
         deadline = date.monotonic() + wait
+        locked   = False
 
         try:
 
@@ -434,7 +437,9 @@ class Path:
 
                 try:
 
-                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    Lock.take(handle)
+
+                    locked = True
 
                     break
 
@@ -450,8 +455,11 @@ class Path:
 
         finally:
 
-            fcntl.flock(handle, fcntl.LOCK_UN)
-            os.close(handle)
+            try:
+
+                if locked: Lock.give(handle)
+
+            finally: os.close(handle)
 
     async def _run_ [T] ( self, path: pathlib.Path, job: Callable[..., T], *args: Any ) -> T:
 

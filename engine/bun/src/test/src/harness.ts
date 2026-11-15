@@ -2,13 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import * as error from "engine-error";
-
-export type Env = { restore: () => void };
-export type Temp = { path: string; file: ( name: string ) => string; write: ( name: string, content: string | Uint8Array ) => string; remove: () => void };
-export type Spy<A extends unknown[], R> = (( ...args: A ) => R) & { calls: A[]; results: R[]; failures: unknown[]; reset: () => void };
-
-type Layer = { value: unknown };
-type Stack<T> = { base: T; layers: Layer[] };
+import type { Env, Layer, Spy, Stack, Temp } from "./arch.ts";
 
 const unsafe = /[^A-Za-z0-9._-]/g;
 const variable = /^[^=\0]+$/;

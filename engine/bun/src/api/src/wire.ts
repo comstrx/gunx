@@ -1,23 +1,7 @@
 import * as error from "engine-error";
 import * as json from "engine-json";
 import * as validate from "engine-validate";
-import type { Method } from "./contract.ts";
-
-export type Header = { name: string; prefix?: string | undefined };
-export type Headers = { accept: string; contentType: string; language: string; currency: string; tenant: string; client: string; auth: Header; requestId: string; idempotency: string };
-export type Paths = { data: string; message: string; errors: string; code: string; reason: string; requestId: string; retryAfter: string; page: string; limit: string; total: string; pages: string };
-export type Wire = { headers: Headers; envelope: Paths; idempotent: readonly Method[]; retries: { read: number; write: number }; timeout: number; cache: number; ok: string };
-export type Overrides = {
-    headers?: Partial<Omit<Headers, "auth">> & { auth?: Header | string | undefined } | undefined;
-    envelope?: Partial<Paths> | undefined;
-    idempotent?: readonly Method[] | undefined;
-    retries?: Partial<Wire["retries"]> | undefined;
-    timeout?: number | undefined;
-    cache?: number | undefined;
-    ok?: string | undefined;
-};
-
-type Names = Omit<Headers, "auth">;
+import type { Header, Headers, Names, Overrides, Paths, Wire } from "./arch.ts";
 
 const headerName = validate.string().check(validate.maxLength(64), validate.regex(/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/));
 const path = validate.string().check(validate.maxLength(128), validate.regex(/^[a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*$/), validate.refine(( value: string ) => value.split(".").every(json.safeKey)));

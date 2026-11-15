@@ -688,7 +688,7 @@ describe("fs", () => {
         expect(() => fs.slices(new Blob([new Uint8Array(10_001)]), 1)).toThrow(new RangeError("not a size"));
         expect([(await fs.head(new Blob([new Uint8Array(5000)]))).length, (await fs.head(whole, 2)).length, (await fs.head(new Blob([]))).length, [...(await fs.head(whole, 3))]]).toEqual([4100, 2, 0, [97, 98, 99]]);
         expect([[...(await fs.bytes(new Blob(["hi"])))], await fs.blobText(new Blob(["é"])), (await fs.bytes(new Blob([]))).length]).toEqual([[104, 105], "é", 0]);
-        expect([0, 1, 1023, 1024, 1536, 1_048_576, 10_485_760, 1_073_741_824].map(( size ) => fs.human(size))).toEqual(["0 B", "1 B", "1023 B", "1 KB", "1.5 KB", "1 MB", "10 MB", "1 GB"]);
+        expect([0, 1, 1023, 1024, 1536, 1_048_576, 10_485_760, 1_073_741_824].map(( size ) => fs.human(size))).toEqual(["0 B", "1 B", "1023 B", "1 KiB", "1.5 KiB", "1 MiB", "10 MiB", "1 GiB"]);
         expect([{ uri: "u", name: "n", type: "t" }, { uri: "u", name: "n", type: "t", size: 0 }, Object.assign(Object.create(null), { uri: "u", name: "n", type: "t" }), { uri: "u", name: "n", type: "t", size: -1 }, { uri: "u", name: "n", type: "t", size: Number.NaN }, { uri: "u", name: "n", type: "t", size: "1" }, { uri: "u", name: "n" }, { uri: 1, name: "n", type: "t" }, null, "x", [], new Blob([])].map(( one ) => fs.isRef(one))).toEqual([true, true, true, false, false, false, false, false, false, false, false, false]);
 
     });
@@ -1147,7 +1147,7 @@ describe("fs", () => {
 
             }
 
-            expect([...new Set(touched)]).toEqual(["stat"]);
+            expect(touched).toEqual([]);
 
         });
 

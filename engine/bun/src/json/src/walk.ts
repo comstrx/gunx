@@ -1,9 +1,5 @@
-import { type Dictionary, isIndex, isPlain, isRecord, pathGet, pathKeys, pathSet, poison, safeKey } from "./object.ts";
-
-export type Visit = ( value: unknown, path: string[] ) => void;
-export type Change = { path: string; kind: "added" | "removed" | "changed"; from: unknown; to: unknown };
-
-type Pairs = Map<object, Set<object>>;
+import type { Change, Dictionary, Pairs, Visit } from "./arch.ts";
+import { isIndex, isPlain, isRecord, pathGet, pathKeys, pathSet, poison, safeKey } from "./object.ts";
 
 const deep = 32;
 

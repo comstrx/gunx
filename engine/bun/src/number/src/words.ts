@@ -1,7 +1,6 @@
+import type { Unit } from "./arch.ts";
 import { finite, precision } from "./math.ts";
 import { languageOf } from "./plural.ts";
-
-export type Unit = { one: string; two: string; few: string; many: string };
 
 const englishOnes = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
 const englishTens = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
@@ -102,10 +101,14 @@ function arabic ( value: number ): string {
 }
 export function words ( value: number, locale = "en" ): string {
 
+    const language = languageOf(locale);
+
+    if ( language !== "ar" && language !== "en" ) throw new RangeError("unsupported words locale");
+
     const amount = Math.min(precision(Math.abs(finite(value)), 2), 999_999_999_999_999);
     const whole = Math.trunc(amount);
     const cents = Math.round((amount - whole) * 100);
-    const arab = languageOf(locale) === "ar";
+    const arab = language === "ar";
     const spoken = arab ? arabic(whole) : english(whole);
     const negative = value < 0 && amount > 0 ? (arab ? "سالب " : "minus ") : "";
 

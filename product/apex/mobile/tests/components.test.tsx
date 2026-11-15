@@ -48,8 +48,8 @@ describe("components", () => {
 
         const failed = renderToStaticMarkup(<Greeting status="failed" message={undefined} onRefresh={noop} />);
 
-        expect(failed).toContain("The service is unreachable");
-        expect(failed).toContain("Make sure the gateway is running, then try again.");
+        expect(failed).toContain("The request could not be completed");
+        expect(failed).toContain("Try again. If the problem continues, contact support.");
         expect(failed).toContain('data-testid="button-solid-md"');
         expect(failed).toContain("Try again");
         expect(failed).not.toContain('aria-busy="true"');

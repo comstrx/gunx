@@ -1,3 +1,6 @@
+from typing import Any
+from decimal import Decimal
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from engine.array import Page, array
@@ -161,3 +164,97 @@ def test_laravel_collection_examples_behave_the_same () -> None:
     assert array.splice([1, 2, 3, 4, 5], 2) == ([1, 2], [3, 4, 5]) and array.splice([1, 2, 3, 4, 5], 2, 1, [10, 11]) == ([1, 2, 10, 11, 4, 5], [3])
     assert array.unique([1, 1, 2, 2, 3, 4, 2]) == [1, 2, 3, 4] and array.flat_map([1, 2], lambda n: [n] * n) == [1, 2, 2]
     assert array.after([1, 2, 3, 4], 3) == 4 and array.before([1, 2, 3, 4], 3) == 2 and array.after([1, 2, 3], 3) is None
+
+def test_first_where_stops_when_the_first_match_is_known () -> None:
+
+    def source () -> Iterator[dict[str, int]]:
+
+        yield { "id": 1 }
+
+        raise AssertionError("first_where exhausted its input")
+
+    assert array.first_where(source(), "id", 1) == { "id": 1 }
+    assert array.first_where([], "id", 1) is None
+
+    with pytest.raises(Fault): array.first_where([], "id", "invalid", 1)
+
+def test_neighbors_keep_sequence_boundaries_and_duplicate_order () -> None:
+
+    values = (1, 2, 1, 3)
+
+    assert array.after(values, 1) == 2 and array.before(values, 1) is None
+    assert array.after(values, 3) is None and array.before(values, 3) == 1
+    assert array.after(values, 9) is None and array.before(values, 9) is None
+    assert array.omit({ "a": 1, "b": 2 }, "a", "a") == { "b": 2 }
+
+def test_sole_preserves_none_counts_and_single_pass () -> None:
+
+    assert array.sole(iter([None])) is None
+    assert array.sole(iter(range(10)), lambda value: value == 3) == 3
+
+    with pytest.raises(Fault) as many: array.sole(iter(range(10000)))
+
+    assert many.value.code is Code.CONFLICT
+    assert many.value.errors == { "count": ["10000"] }
+
+    with pytest.raises(Fault) as empty: array.sole(iter(()))
+
+    assert empty.value.code is Code.NOT_FOUND
+
+def test_streamed_aggregates_and_batches_consume_once () -> None:
+
+    assert array.sum(iter([None, 1, 2, 3])) == 6
+    assert array.sum(iter([Decimal("0.1"), Decimal("0.2")])) == Decimal("0.3")
+    assert array.min(iter([None, 2, 1])) == 1
+    assert array.max(iter([None, 2, 1])) == 2
+    assert list(array.batch(iter(range(5)), 2)) == [[0, 1], [2, 3], [4]]
+    assert array.map(iter([1, 2]), lambda x: x * 2) == [2, 4]
+
+def test_sole_sequence_reports_exact_count () -> None:
+
+    with pytest.raises(Fault) as caught: array.sole(range(10**12))
+
+    assert caught.value.errors == {"count": ["1000000000000"]}
+
+def test_splice_normalizes_negative_offsets_without_duplicate_suffixes () -> None:
+
+    assert array.splice([1, 2, 3, 4], -1, 5, [9]) == ([1, 2, 3, 9], [4])
+    assert array.splice([1, 2, 3], -20, 1) == ([2, 3], [1])
+    assert array.splice([1, 2], 20, 3, [9]) == ([1, 2, 9], [])
+    assert array.splice([1, 2], 1, -2, [9]) == ([1, 9, 2], [])
+
+def test_flatten_is_iterative_and_rejects_actual_cycles () -> None:
+
+    nested: list[Any] = [1]
+    for _ in range(1500): nested = [nested]
+    assert array.flatten(nested, -1) == [1]
+    repeated = [1, 2]
+    assert array.flatten([repeated, repeated], -1) == [1, 2, 1, 2]
+    cycle: list[Any] = []
+    cycle.append(cycle)
+    with pytest.raises(Fault): array.flatten(cycle, -1)
+
+def test_membership_and_set_backends_preserve_values () -> None:
+
+    assert array.where_in([{"x": 1}, {"x": 2}], "x", iter([2])) == [{"x": 2}]
+    assert array.where_in([{"x": [1]}, {"x": [2]}], "x", [[2]]) == [{"x": [2]}]
+    assert array.union(iter(["a"]), iter(["b"])) == ["a", "b"]
+    assert array.union([False, True], []) == [False, True]
+    assert all(type(v) is bool for v in array.union([False, True], []))
+    assert array.union([1.5, 2.5], []) == [1.5, 2.5]
+    assert array.page(10**30 + 1, limit=10).pages() == 10**29 + 1
+
+def test_membership_fallback_preserves_negative_and_mixed_queries () -> None:
+
+    rows = [{"id": []}, {"id": [1]}, {"id": 1}, {"id": None}]
+    assert array.where_in(rows, "id", frozenset({1})) == rows[2:3]
+    assert array.where_not_in(rows, "id", frozenset({1})) == [rows[0], rows[1], rows[3]]
+    assert array.where_in(rows, "id", [[1]]) == rows[1:2]
+    assert array.where_not_in(rows, "id", [[1]]) == [rows[0], rows[2], rows[3]]
+
+def test_order_statistics_consume_one_pass_and_skip_none () -> None:
+
+    assert array.median(iter([None, Decimal("0.1"), Decimal("0.3")])) == Decimal("0.2")
+    assert array.mode(iter([None, 3, 2, 3, 2])) == 3
+    assert array.median(iter(())) is None
+    assert array.mode(iter(())) is None

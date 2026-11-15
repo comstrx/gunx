@@ -1,14 +1,5 @@
 import * as number from "engine-number";
-
-export type Rgb = { r: number; g: number; b: number; a: number };
-export type Hsl = { h: number; s: number; l: number; a: number };
-export type Oklch = { l: number; c: number; h: number; a: number };
-export type ColorFormat = "hex" | "rgb" | "hsl" | "oklch";
-export type ContrastLevel = "AA" | "AAA";
-export type Shade = 50 | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900 | 950;
-export type Shades = Record<Shade, Rgb>;
-
-type Triple = [number, number, number];
+import type { ColorFormat, ContrastLevel, Hsl, Oklch, Rgb, Shade, Shades, Triple } from "./arch.ts";
 
 const steps: readonly Shade[] = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
 const numeric = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/;

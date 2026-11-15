@@ -51,13 +51,15 @@ class Turn:
 
         while start > 0 and rest[start].role == "tool": start -= 1
 
-        tail = rest[start:]
+        while start < len(rest) and rest[start].role == "tool": start += 1
 
-        while tail and tail[0].role == "tool": tail.pop(0)
+        tail = rest[start:]
 
         if tail and tail[0].role != "user":
 
-            head += [message for message in reversed(rest[:start]) if message.role == "user"][:1]
+            user = next((rest[index] for index in range(start - 1, -1, -1) if rest[index].role == "user"), None)
+
+            if user is not None: head.append(user)
 
         self.messages[:] = [self._loose_(message) for message in head + tail]
 

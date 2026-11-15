@@ -1,5 +1,8 @@
-from engine.context import context, Deferral
+from engine.context import context, Deferral, Trace
 from engine.test import Bench
+from engine.error import Code, Fault
+from engine.json import json
+import tracemalloc
 
 bench = Bench()
 actor = { "id": 7, "role": "admin", "active": True }
@@ -28,6 +31,12 @@ def locale () -> None: context.locale()
 def dump () -> None: context.dump()
 
 def snapshot () -> None: context.snapshot()
+
+def facts () -> None: context.facts()
+
+def headers () -> None: context.headers()
+
+def empty () -> None: Deferral()
 
 def load () -> None: context.load(wire)
 
@@ -65,6 +74,9 @@ async def skipped () -> None:
 bench.measure("context.put", put)
 bench.measure("context.open", opened)
 bench.measure("context.get", get)
+bench.measure("context.facts", facts)
+bench.measure("context.headers", headers)
+bench.measure("context.deferral", empty)
 bench.measure("context.has", has)
 bench.measure("context.need", need)
 bench.measure("context.request_id", request)
@@ -81,3 +93,46 @@ inner = context.open()
 
 bench.measure("context.load", load)
 context.close(inner)
+
+for name, work in (("empty", empty), ("open", opened), ("load", load)):
+
+    tracemalloc.start()
+
+    try:
+
+        work()
+
+        retained, peak = tracemalloc.get_traced_memory()
+
+    finally: tracemalloc.stop()
+
+    print(f"context.{name} retained_bytes={retained} peak_bytes={peak}")
+
+context.clear()
+
+wide = context.open(**{ f"field{index}": index for index in range(64) })
+
+def unchanged () -> None: context.reset(context.put())
+
+def forget () -> None:
+
+    token = context.put(field0=0)
+    context.forget("field0")
+    context.reset(token)
+
+def exchange () -> None:
+
+    with context.scope(request_id="r1", tenant=7):
+
+        fault = Fault(Code.UNAVAILABLE, reason="upstream.busy", retry_after=0.5, unknown=True)
+        packet = json.decode(json.encode({ "context": context.dump(), "error": fault }))
+        Fault.load(packet["error"])
+
+bench.measure("context.put.empty", unchanged)
+bench.measure("context.forget.missing", lambda: context.forget("missing"))
+bench.measure("context.forget.present", forget)
+bench.measure("context.error.json.exchange", exchange)
+bench.measure("context.facts.json", lambda: json.encode(context.facts()))
+bench.measure("context.trace.valid", lambda: Trace.clean("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"))
+
+context.close(wide)

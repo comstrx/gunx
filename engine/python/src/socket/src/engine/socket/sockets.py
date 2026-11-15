@@ -72,9 +72,9 @@ class Sockets:
 
         self.hub.add(socket)
 
-        await socket.send("connected", { "id": socket.id })
-
         try:
+
+            await socket.send("connected", { "id": socket.id })
 
             while not socket.closed:
 
@@ -128,12 +128,17 @@ class Sockets:
 
     def _builtin_ ( self, frame: Frame ) -> Handler | None:
 
-        table: dict[str, Handler] = { "ping": self._ping_, "whisper": self._whisper_ }
-        roomed: dict[str, Handler] = { "join": self._join_, "leave": self._leave_, "presence": self._presence_ }
+        event = frame.event
 
-        if frame.event in roomed and frame.channel: return roomed[frame.event]
+        if event == "ping": return self._ping_
+        if event == "whisper": return self._whisper_
+        if frame.channel:
 
-        return table.get(frame.event)
+            if event == "join": return self._join_
+            if event == "leave": return self._leave_
+            if event == "presence": return self._presence_
+
+        return None
 
     async def _join_ ( self, socket: Socket, frame: Frame ) -> None:
 

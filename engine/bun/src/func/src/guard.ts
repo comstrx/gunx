@@ -1,27 +1,7 @@
 import * as date from "engine-date";
 import * as error from "engine-error";
+import type { Breaker, BreakerOptions, BreakerState, Lane, LaneOptions } from "./arch.ts";
 import { whole } from "./flow.ts";
-
-export type BreakerState = "closed" | "open" | "half";
-export type BreakerOptions = {
-    failures?: number | undefined;
-    cooldown?: number | undefined;
-    when?: (( failure: unknown ) => boolean) | undefined;
-    onChange?: (( state: BreakerState ) => void) | undefined;
-};
-export type Breaker = {
-    run: <T>( work: () => Promise<T> ) => Promise<T>;
-    state: () => BreakerState;
-    reset: () => void;
-    failures: () => number;
-};
-export type Lane = {
-    run: <T>( work: () => Promise<T>, signal?: AbortSignal ) => Promise<T>;
-    size: () => number;
-    active: () => number;
-    waiting: () => number;
-    idle: () => Promise<void>;
-};
 
 const crowded = 1024;
 
@@ -133,15 +113,36 @@ export function breaker ( options: BreakerOptions = {} ): Breaker {
     };
 
 }
-export function lane ( width = 1 ): Lane {
+export function lane ( width = 1, options: LaneOptions = {} ): Lane {
 
     const slots = whole(width, 1, 1);
+    const limit = options.pending ?? 4096;
+
+    if ( !Number.isSafeInteger(slots) ) throw new RangeError("not a lane width");
+
+    if ( !Number.isSafeInteger(limit) || limit < 0 ) throw new RangeError("not a pending limit");
     const queue: ((() => void) | undefined)[] = [];
     const watched = new Map<() => void, () => void>();
-    const idle: (() => void)[] = [];
+    let idle: PromiseWithResolvers<void> | undefined;
     let head = 0;
     let parked = 0;
     let active = 0;
+    const compact = (): void => {
+
+        let kept = 0;
+
+        for ( let at = head; at < queue.length; at += 1 ) {
+
+            const next = queue[at];
+
+            if ( next !== undefined ) queue[kept++] = next;
+
+        }
+
+        queue.length = kept;
+        head = 0;
+
+    };
     const release = (): void => {
 
         let next: (() => void) | undefined;
@@ -161,7 +162,14 @@ export function lane ( width = 1 ): Lane {
             head = 0;
             active -= 1;
 
-            if ( active === 0 && idle.length > 0 ) for ( const done of idle.splice(0) ) done();
+            if ( active === 0 && idle ) {
+
+                const done = idle;
+
+                idle = undefined;
+                done.resolve();
+
+            }
 
             return;
 
@@ -196,6 +204,14 @@ export function lane ( width = 1 ): Lane {
 
             watched.delete(resolve);
             parked -= 1;
+
+            if ( parked === 0 ) {
+
+                queue.length = 0;
+                head = 0;
+
+            } else if ( queue.length - head > parked * 2 + crowded ) compact();
+
             reject(stopped(signal));
 
         };
@@ -214,15 +230,31 @@ export function lane ( width = 1 ): Lane {
         size: () => active + parked,
         active: () => active,
         waiting: () => parked,
-        idle: () => (active === 0 ? Promise.resolve() : new Promise(( resolve ) => idle.push(resolve))),
+        idle: () => {
+
+            if ( active === 0 ) return Promise.resolve();
+
+            idle ??= Promise.withResolvers<void>();
+
+            return idle.promise;
+
+        },
         run: async ( work, signal ) => {
 
             if ( signal?.aborted ) throw stopped(signal);
 
             if ( active < slots ) active += 1;
-            else await park(signal);
+            else {
+
+                if ( parked >= limit ) throw error.fault("too_many_requests", "lane.full");
+
+                await park(signal);
+
+            }
 
             try {
+
+                if ( signal?.aborted ) throw stopped(signal);
 
                 return await work();
 

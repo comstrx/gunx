@@ -96,17 +96,17 @@ class Stream:
         wanted = size or self._chunk
         held   = bytearray()
 
+        if type(wanted) is not int or wanted < 1: raise Fault(Code.INTERNAL, reason="stream.chunk")
+
         async for piece in source:
 
             held.extend(piece)
 
             while len(held) >= wanted:
 
-                yield bytes(held[:wanted])
+                yield held.take_bytes(wanted)
 
-                del held[:wanted]
-
-        if held: yield bytes(held)
+        if held: yield held.take_bytes()
 
     async def lines ( self, source: AsyncIterator[object] ) -> AsyncIterator[bytes]:
 

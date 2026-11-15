@@ -1,11 +1,6 @@
 import * as date from "engine-date";
+import type { Budget, Entry, Memo, MemoOptions } from "./arch.ts";
 import { whole } from "./flow.ts";
-
-type Budget = { left: number };
-type Entry = { value: unknown; at: number };
-
-export type MemoOptions = { ttl?: number | undefined; size?: number | undefined; key?: (( ...args: unknown[] ) => string) | undefined };
-export type Memo<F extends ( ...args: never[] ) => unknown> = F & { clear: () => void; size: () => number; forget: ( ...args: Parameters<F> ) => boolean };
 
 const deepest = 8;
 const widest = 512;
@@ -215,9 +210,20 @@ export function single<A extends unknown[], T> ( work: ( ...args: A ) => Promise
 
         if ( flying ) return flying;
 
-        const flight = (async () => work(...args))().finally(() => flights.delete(name));
+        const { promise, resolve, reject } = Promise.withResolvers<T>();
+        const flight = promise.finally(() => flights.delete(name));
 
         flights.set(name, flight);
+
+        try {
+
+            resolve(work(...args));
+
+        } catch ( cause ) {
+
+            reject(cause);
+
+        }
 
         return flight;
 

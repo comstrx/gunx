@@ -10,13 +10,16 @@
   "dependencies": {
     "engine-date": "workspace:*",
     "engine-error": "workspace:*",
+    "engine-event": "workspace:*",
     "engine-fake": "workspace:*",
+    "engine-func": "workspace:*",
     "engine-json": "workspace:*",
     "engine-list": "workspace:*",
     "engine-net": "workspace:*",
     "engine-parse": "workspace:*",
     "engine-rand": "workspace:*",
     "engine-socket": "workspace:*",
+    "engine-string": "workspace:*",
     "engine-validate": "workspace:*"
   }
 }

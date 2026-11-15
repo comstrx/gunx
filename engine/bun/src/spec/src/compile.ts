@@ -6,83 +6,21 @@ import * as list from "engine-list";
 import * as parse from "engine-parse";
 import * as string from "engine-string";
 import * as validate from "engine-validate";
+import type { Binding, Block, Catalogue, Compiled, CompiledFeature, CompiledScreen, Edge, Effect, Feature, Issue, Manifest, Options, Ranked, Scope, Screen, Shared, Surface, Trigger, Value, When } from "./arch.ts";
+import { maxDepth as deepest, namespaces, pathPattern } from "./arch.ts";
+import { named, screenOf } from "./compiled.ts";
 import { isBuilt } from "./define.ts";
-import type { Binding, Block, Catalogue, Effect, Feature, Manifest, Screen, Surface, Trigger, Value, When } from "./shapes.ts";
-import { blockShapeOf, featureShapeOf, namePattern, namespaces, pathPattern, screenShapeOf, surfaceShape } from "./shapes.ts";
+import { blockShapeOf, featureShapeOf, screenShapeOf, surfaceShape } from "./shapes.ts";
 import { isReference, pathsOf, referencePath } from "./when.ts";
-
-export type Issue = { path: string; rule: string; message: string; near?: string | undefined; fix?: string | undefined };
-export type Edge = { from: string; to: string };
-export type CompiledFeature = Feature & { id: string; manifest: Manifest | undefined };
-export type CompiledScreen = Omit<Screen, "features"> & { features: CompiledFeature[]; params: string[]; kinds: string[]; depth: number; ids: string[]; watches: Edge[]; emits: string[]; listens: string[] };
-export type Compiled = {
-    surface: Surface;
-    screens: CompiledScreen[];
-    byName: Record<string, CompiledScreen>;
-    features: string[];
-    kinds: string[];
-    topics: { emitted: string[]; consumed: string[] };
-    issues: Issue[];
-};
-export type Options = {
-    kinds?: readonly string[] | undefined;
-    blocks?: Readonly<Record<string, validate.Schema>> | undefined;
-    features?: readonly string[] | Readonly<Record<string, Manifest>> | undefined;
-    catalogue?: Catalogue | undefined;
-    topics?: readonly string[] | undefined;
-    texts?: readonly string[] | undefined;
-    grants?: readonly string[] | undefined;
-    maxDepth?: number | undefined;
-};
-
-type Shared = {
-    surface: Surface;
-    options: Options;
-    issues: Issue[];
-    manifests: Readonly<Record<string, Manifest>> | undefined;
-    paths: ReadonlySet<string>;
-    texts: ReadonlySet<string> | undefined;
-    kinds: readonly string[] | undefined;
-};
-type Scope = {
-    at: string;
-    issues: Issue[];
-    shared: Shared;
-    params: Set<string>;
-    query: Set<string>;
-    signals: Set<string>;
-    fields: Set<string>;
-    ids: Set<string>;
-    actions: Set<string>;
-    features: Set<string>;
-    emitted: Set<string>;
-    listened: Set<string>;
-    watches: Edge[];
-    inTrigger: boolean;
-    steps: Set<string>;
-    forms: Map<string, readonly string[]>;
-};
-type Ranked = { screen: CompiledScreen; fixed: boolean; pieces: string[] };
 
 const roots: ReadonlySet<string> = new Set(namespaces);
 const writable: ReadonlySet<string> = new Set(["form", "signals", "query"]);
 const flowing: readonly string[] = ["step", "index", "first", "last", "done"];
 const slotted = /\{([a-z][a-z0-9_]*)\}/g;
-const deepest = 64;
 
 function own<T> ( held: Readonly<Record<string, T>> | undefined, key: string ): T | undefined {
 
     return held !== undefined && Object.hasOwn(held, key) ? held[key] : undefined;
-
-}
-function named ( value: unknown ): value is string {
-
-    return typeof value === "string" && value.length <= 64 && namePattern.test(value) && value.split(".").every(json.safeKey);
-
-}
-function texts ( value: unknown ): value is string[] {
-
-    return Array.isArray(value) && value.every(( item ) => typeof item === "string");
 
 }
 function manifestsOf ( given: Options["features"] ): Readonly<Record<string, Manifest>> | undefined {
@@ -626,6 +564,12 @@ function compileScreen ( found: Screen, shared: Shared ): CompiledScreen {
 
         if ( shared.manifests && !feature.manifest ) told(issues, here, "feature.unknown", `unknown feature: ${feature.name}`, nearest(feature.name, Object.keys(shared.manifests)), "register the feature in features/index.ts and api/index.ts");
 
+        for ( const catalog of feature.manifest?.world ?? [] ) {
+
+            if ( !shared.surface.world.includes(catalog) ) told(issues, here, "feature.world", `${catalog}: required by ${feature.name} but absent from surface.world`);
+
+        }
+
         for ( const wanted of feature.access ) grantIssue(scope, wanted, here, "access.grant");
 
         for ( const field of Object.keys(feature.form) ) {
@@ -751,25 +695,6 @@ function ahead ( left: Ranked, right: Ranked ): number {
     return 0;
 
 }
-function blocksFit ( value: unknown, level: number ): boolean {
-
-    return Array.isArray(value) && level <= deepest && value.every(( block ) => json.isRecord(block) && typeof block.kind === "string" && json.isRecord(block.props) && blocksFit(block.children, level + 1));
-
-}
-function featureFits ( value: unknown ): boolean {
-
-    return json.isRecord(value) && named(value.name) && named(value.id) && json.isRecord(value.settings) && json.isRecord(value.ports) && json.isRecord(value.watch) && json.isRecord(value.on) && Array.isArray(value.triggers) && texts(value.access) && json.isRecord(value.form);
-
-}
-function screenFits ( value: unknown ): boolean {
-
-    if ( !json.isRecord(value) || !named(value.name) || typeof value.path !== "string" || !json.isRecord(value.title) || typeof value.role !== "string" ) return false;
-    if ( typeof value.menu !== "boolean" || typeof value.auth !== "boolean" || !texts(value.access) || !texts(value.query) || !texts(value.signals) || !texts(value.flow) ) return false;
-    if ( !Array.isArray(value.features) || !value.features.every(featureFits) || !blocksFit(value.blocks, 0) || !json.isRecord(value.on) || !Array.isArray(value.triggers) ) return false;
-
-    return texts(value.params) && texts(value.kinds) && typeof value.depth === "number" && texts(value.ids) && Array.isArray(value.watches) && texts(value.emits) && texts(value.listens);
-
-}
 function lines ( label: string, items: readonly string[] ): string[] {
 
     return items.length ? [`${label}: ${items.join(", ")}`] : [];
@@ -805,11 +730,6 @@ function blockLines ( blocks: readonly Block[], depth: number, out: string[] ): 
 export function nearest ( given: string, known: Iterable<string> ): string | undefined {
 
     return string.closest([...known], given, ( item ) => item, 0.5)?.item;
-
-}
-export function screenOf ( compiled: Compiled, name: string ): CompiledScreen | undefined {
-
-    return typeof name === "string" ? own(compiled.byName, name) : undefined;
 
 }
 export function compile ( given: Surface, options: Options = {} ): Compiled {
@@ -872,42 +792,6 @@ export function compile ( given: Surface, options: Options = {} ): Compiled {
         kinds: list.unique(ordered.flatMap(( found ) => found.kinds)).sort(),
         topics: { emitted, consumed },
         issues,
-    };
-
-}
-export function serialize ( compiled: Compiled ): json.Dictionary {
-
-    return {
-        surface: json.omit(compiled.surface, ["screens"]),
-        screens: compiled.screens.map(( found ) => ({ ...found, features: found.features.map(( feature ) => json.omit(feature, ["manifest"])) })),
-        features: compiled.features,
-        kinds: compiled.kinds,
-        topics: compiled.topics,
-    };
-
-}
-export function revive ( given: unknown ): Compiled {
-
-    const surface = json.isRecord(given) ? given.surface : undefined;
-    const screens = json.isRecord(given) ? given.screens : undefined;
-    const topics = json.isRecord(given) && json.isRecord(given.topics) ? given.topics : {};
-
-    if ( !json.isRecord(given) || !json.isRecord(surface) || !named(surface.name) || typeof surface.role !== "string" || typeof surface.locale !== "string" || !texts(surface.locales) ) throw error.fault("internal", "spec.revive", { message: "spec: not a serialized surface" });
-    if ( !Array.isArray(screens) || !screens.every(screenFits) ) throw error.fault("internal", "spec.revive", { message: "spec: a serialized screen is malformed" });
-
-    const byName: Record<string, CompiledScreen> = {};
-    const found = (screens as CompiledScreen[]).map(( screen ) => ({ ...screen, features: screen.features.map(( feature ) => ({ ...feature, manifest: undefined })) }));
-
-    for ( const screen of found ) byName[screen.name] = screen;
-
-    return {
-        surface: { ...(surface as unknown as Surface), world: Array.isArray(surface.world) ? surface.world as Surface["world"] : [], signals: texts(surface.signals) ? surface.signals : [], screens: found },
-        screens: found,
-        byName,
-        features: texts(given.features) ? given.features : [],
-        kinds: texts(given.kinds) ? given.kinds : [],
-        topics: { emitted: texts(topics.emitted) ? topics.emitted : [], consumed: texts(topics.consumed) ? topics.consumed : [] },
-        issues: [],
     };
 
 }

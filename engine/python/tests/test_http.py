@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from engine.cache import Memory, cache
 from engine.context import context
@@ -6,15 +6,20 @@ from engine.crypto import crypto
 from engine.error import Code, Fault
 from engine.exception import exception
 from engine.fs import file
+from engine.json import json
 from engine.http import Action, Answer, App, Channel, Form, Group, Layer, Limits, Next, Request, Response, Route, Router, Throttle
 from engine.socket import Sockets
 from engine.test import stage
 from engine.translate import translate
 from engine.token import token
-from engine.validate import Shape
-from typing import Any, ClassVar, cast, override
+from engine.validate import Spec, Shape
+from typing import Any, ClassVar, Literal, cast, override
+from enum import StrEnum
+from http import HTTPStatus
+from uuid import UUID
 from pathlib import Path
-import aiohttp, asyncio, pytest
+from sanic import Sanic
+import aiohttp, asyncio, multiprocessing, pytest
 
 class Signup(Shape):
 
@@ -473,7 +478,7 @@ async def test_the_lifecycle_wraps_renders_refuses_and_drains ( tmp_path: Path )
 class Greeting(Form):
 
     carries : ClassVar[tuple[str, ...]] = ("locale",)
-    rules   : ClassVar[Mapping[str, str]] = { "name": "required|max:5", "tone": "in:plain,warm" }
+    rules   : ClassVar[Spec] = { "name": "required|max:5", "tone": "in:plain,warm" }
     reason  : ClassVar[str] = "greeting.name"
 
     name : str
@@ -587,7 +592,7 @@ async def test_request_helpers_and_cached_downloads ( served: tuple[App, str] ) 
 
         assert data["input"] == "body" and data["has"] and not data["filled"] and data["only"] == { "name": "body", "n": "7" }
         assert data["flag"] and data["cookie"] == "s1" and data["agent"] == "tester" and data["referer"] == "http://ref"
-        assert data["secure"] and data["fresh"]
+        assert not data["secure"] and data["fresh"]
 
         async with http.get(url + "/v1/export") as reply:
 
@@ -888,3 +893,626 @@ async def test_a_handler_with_spread_parameters_is_still_bound () -> None:
     async with app.listen() as url, aiohttp.ClientSession() as http, http.get(f"{url}/item/3?x=1") as reply:
 
         assert reply.status == 200 and (await reply.json())["data"] == { "key": 3, "rest": [], "extra": {} }
+
+class Mode(StrEnum):
+
+    FAST = "fast"
+    SAFE = "safe"
+
+async def test_optional_typed_queries_and_mixed_shape_routes () -> None:
+
+    async def query ( page: int = 1, enabled: bool = False, mode: Mode = Mode.SAFE,
+            order: Literal["asc", "desc"] = "asc", key: UUID | None = None ) -> Any:
+
+        return { "page": page, "enabled": enabled, "mode": mode, "order": order, "key": str(key) if key else None }
+
+    async def shaped ( body: Signup ) -> Any:
+
+        return body.dump()
+
+    app = App("Typed queries")
+
+    app.mount(Route.get("/query", query, "query"), Route.match(("GET", "POST"), "/shape", shaped, "shape"))
+
+    async with app.listen() as url, aiohttp.ClientSession() as http:
+
+        async with http.get(f"{url}/query") as reply:
+
+            assert (await reply.json())["data"] == { "page": 1, "enabled": False, "mode": "safe", "order": "asc", "key": None }
+
+        key = "c4960ac0-9b1e-4bdb-862d-88dc571066b9"
+
+        async with http.get(f"{url}/query?page=7&enabled=yes&mode=fast&order=desc&key={key}") as reply:
+
+            assert reply.status == 200
+            assert (await reply.json())["data"] == { "page": 7, "enabled": True, "mode": "fast", "order": "desc", "key": key }
+
+        for query_string, field in (("page=no", "page"), ("mode=other", "mode"), ("order=wrong", "order"), ("key=bad", "key")):
+
+            async with http.get(f"{url}/query?{query_string}") as reply:
+
+                body = await reply.json()
+
+                assert reply.status == 422 and body["reason"] == "http.param" and field in body["errors"]
+
+        async with http.get(f"{url}/shape?email=a@b.co&age=30") as reply:
+
+            assert reply.status == 200 and (await reply.json())["data"] == { "email": "a@b.co", "age": 30 }
+
+        async with http.post(f"{url}/shape", json={ "email": "c@d.co", "age": 40 }) as reply:
+
+            assert reply.status == 200 and (await reply.json())["data"]["age"] == 40
+
+        async with http.get(f"{url}/shape?email=a&unknown=1") as reply:
+
+            assert reply.status == 422 and "unknown" in (await reply.json())["errors"]
+
+        async with http.get(f"{url}/openapi.json") as reply:
+
+            spec = await reply.json()
+            parameters = { item["name"]: item for item in spec["paths"]["/query"]["get"]["parameters"] }
+
+            assert parameters["page"]["schema"]["type"] == "integer" and not parameters["page"]["required"]
+            assert parameters["order"]["schema"]["enum"] == ["asc", "desc"]
+            assert parameters["mode"]["schema"]["$ref"] == "#/components/schemas/Mode"
+            assert spec["components"]["schemas"]["Mode"]["enum"] == ["fast", "safe"]
+            assert { item["name"] for item in spec["paths"]["/shape"]["get"]["parameters"] } == { "email", "age" }
+            assert "requestBody" in spec["paths"]["/shape"]["post"] and "requestBody" not in spec["paths"]["/shape"]["get"]
+
+async def test_inputs_preserve_precedence_nulls_and_malformed_body ( served: tuple[App, str] ) -> None:
+
+    _, url = served
+
+    async with aiohttp.ClientSession() as http:
+
+        async with http.post(f"{url}/v1/inspect/7?name=query&n=8", json={ "name": None, "n": 9, "flag": False, "zz": 0 }) as reply:
+
+            data = (await reply.json())["data"]
+
+            assert data["input"] is None and data["has"] and not data["filled"] and not data["flag"]
+            assert data["only"] == { "name": None, "n": "7", "zz": 0 }
+
+        async with http.post(f"{url}/v1/inspect/7", data="{", headers={ "Content-Type": "application/json" }) as reply:
+
+            assert reply.status == 400
+
+async def test_cors_preserves_all_vary_headers () -> None:
+
+    async def varied ( kind: str = "normal" ) -> Answer:
+
+        result = Response.text("body")
+
+        result.headers.add("Vary", "Accept-Encoding")
+        result.headers.add("Vary", "*" if kind == "wild" else "Accept-Language")
+
+        return result
+
+    app = App("Vary", origins=["https://allowed.test"], docs=False)
+
+    app.mount(Route.get("/", varied))
+
+    async with app.listen() as url, aiohttp.ClientSession() as http:
+
+        for headers in ({}, { "Origin": "https://allowed.test" }, { "Origin": "https://denied.test" }):
+
+            async with http.get(url, headers=headers) as reply:
+
+                keys = { key.strip().lower() for item in reply.headers.getall("Vary") for key in item.split(",") }
+
+                assert keys == { "accept-encoding", "accept-language", "origin" }
+
+        async with http.get(f"{url}?kind=wild", headers={ "Origin": "https://allowed.test" }) as reply:
+
+            assert reply.headers.getall("Vary") == ["Accept-Encoding", "*"]
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_stream_closes_source_after_failed_write ( cancel: bool ) -> None:
+
+    closed: list[str] = []
+
+    async def source () -> AsyncIterator[bytes]:
+
+        try:
+
+            yield b"first"
+            yield b"second"
+
+        finally: closed.append("closed")
+
+    class Broken:
+
+        async def write ( self, _: bytes ) -> None:
+
+            if cancel: raise asyncio.CancelledError
+
+            raise ConnectionResetError
+
+    response = Response.stream(source())
+
+    with pytest.raises(asyncio.CancelledError if cancel else ConnectionResetError):
+
+        await response.streaming_fn(cast("Any", Broken()))
+
+    assert closed == ["closed"]
+
+async def test_sse_refuses_injected_frames_and_closes_source () -> None:
+
+    closed: list[bool] = []
+    sent: list[bytes] = []
+
+    async def source () -> AsyncIterator[tuple[str, object]]:
+
+        try: yield "tick\ndata: forged", { "ok": True }
+        finally: closed.append(True)
+
+    class Sink:
+
+        async def write ( self, chunk: bytes ) -> None:
+
+            sent.append(chunk)
+
+    response = Response.sse(source())
+
+    with pytest.raises(Fault) as caught: await response.streaming_fn(cast("Any", Sink()))
+
+    assert caught.value.reason == "http.sse" and closed == [True] and sent == [b"retry: 3000\n\n"]
+
+    for retry in (-1, True, 1.5):
+
+        with pytest.raises(Fault) as caught: _ = Response.sse(source(), retry=cast("Any", retry))
+
+        assert caught.value.reason == "http.sse"
+
+async def test_proxy_preparation_tracks_configuration_changes ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    async def peer ( request: Request ) -> str:
+
+        return request.client()
+
+    app = App("Proxy configuration", docs=False)
+
+    app.mount(Route.get("/", peer))
+
+    async with app.listen() as url, aiohttp.ClientSession() as http:
+
+        monkeypatch.setattr(Request, "proxies", ("127.0.0.0/8",))
+
+        async with http.get(url, headers={ "X-Forwarded-For": "203.0.113.7" }) as reply:
+
+            assert (await reply.json())["data"] == "203.0.113.7"
+
+        monkeypatch.setattr(Request, "proxies", ())
+
+        async with http.get(url, headers={ "X-Forwarded-For": "203.0.113.7" }) as reply:
+
+            assert (await reply.json())["data"] == "127.0.0.1"
+
+async def test_cancelled_handler_cleans_context_and_runs_only_always_deferrals () -> None:
+
+    done = asyncio.Event()
+    ran: list[str] = []
+
+    async def interrupted ( request: Request ) -> Any:
+
+        context.defer(lambda: ran.append("success"))
+
+        async def cleanup () -> None:
+
+            ran.append("cleanup")
+            done.set()
+
+        context.defer(cleanup, always=True)
+
+        raise asyncio.CancelledError
+
+    app = App("Cancelled handler", docs=False)
+
+    app.mount(Route.get("/", interrupted))
+
+    async with app.listen() as url, aiohttp.ClientSession() as http:
+
+        async with http.get(url) as reply:
+
+            assert reply.status == 500
+
+            await reply.read()
+
+        await asyncio.wait_for(done.wait(), 2)
+        await app.edge.later.drain()
+
+        assert ran and set(ran) == { "cleanup" }
+
+async def test_request_payload_and_shape_reject_nonstandard_json_numbers () -> None:
+
+    class Value(Shape):
+
+        number: float
+
+    async def payload ( request: Request ) -> Any:
+
+        return request.payload()
+
+    async def shaped ( request: Request, body: Value ) -> Any:
+
+        return body.dump()
+
+    app = App("Strict request JSON", docs=False)
+
+    app.mount(Route.post("/payload", payload), Route.post("/shape", shaped))
+
+    async with app.listen() as url, aiohttp.ClientSession() as client:
+
+        for route in ("/payload", "/shape"):
+
+            for raw in (b'{"number":NaN}', b'{"number":Infinity}', b'{"number":-Infinity}'):
+
+                async with client.post(url + route, data=raw, headers={ "Content-Type": "application/json" }) as response:
+
+                    assert response.status in (400, 422)
+
+            async with client.post(url + route, json={ "number": 1.5 }) as response:
+
+                assert response.status == 200 and (await response.json())["data"] == { "number": 1.5 }
+
+
+def test_redirect_encodes_unsafe_uri_characters_without_double_encoding () -> None:
+
+    assert Response.redirect('/a"b').headers["Location"] == "/a%22b"
+    assert Response.redirect("/a%22b").headers["Location"] == "/a%22b"
+
+
+async def test_proxy_headers_need_explicit_trust_and_valid_hops ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    async def peer ( request: Request ) -> dict[str, Any]:
+
+        return { "ip": request.client(), "secure": request.secure() }
+
+    app = App("Proxy trust", docs=False)
+
+    app.mount(Route.get("/", peer))
+
+    assert Request.proxies == ()
+
+    async with app.listen() as url, aiohttp.ClientSession() as http:
+
+        async with http.get(url, headers={ "X-Forwarded-For": "203.0.113.7", "X-Forwarded-Proto": "https" }) as reply:
+
+            assert (await reply.json())["data"] == { "ip": "127.0.0.1", "secure": False }
+
+        monkeypatch.setattr(Request, "proxies", ("127.0.0.0/8",))
+
+        async with http.get(url, headers={ "X-Forwarded-For": "unknown, 127.0.0.1" }) as reply:
+
+            assert reply.status == 400
+
+        async with http.get(url, headers={ "X-Forwarded-For": "spoofed, 203.0.113.7, 127.0.0.1" }) as reply:
+
+            assert (await reply.json())["data"]["ip"] == "203.0.113.7"
+
+        async with http.get(url, headers=[("X-Forwarded-For", "203.0.113.7"), ("X-Forwarded-For", "198.51.100.1")]) as reply:
+
+            assert reply.status == 400
+
+async def test_csv_stream_is_lazy_and_closes_source_on_disconnect () -> None:
+
+    visited: list[int] = []
+    closed: list[bool] = []
+
+    async def rows () -> AsyncIterator[list[object]]:
+
+        try:
+
+            for value in range(1000):
+
+                visited.append(value)
+
+                yield [value, "a,b"]
+
+        finally: closed.append(True)
+
+    class Sink:
+
+        async def write ( self, data: bytes ) -> None:
+
+            assert data == b'0,"a,b"\r\n'
+
+            raise ConnectionError("disconnected")
+
+    response = Response.csv_stream(rows(), name="تقرير.csv")
+
+    assert visited == [] and "filename*=UTF-8" in response.headers["Content-Disposition"]
+
+    with pytest.raises(ConnectionError): await response.streaming_fn(cast("Any", Sink()))
+
+    assert visited == [0] and closed == [True]
+
+def test_download_retains_unicode_name_without_header_injection () -> None:
+
+    response = Response.download(b"file", "تقرير.pdf")
+
+    assert "%D8%AA" in response.headers["Content-Disposition"]
+    assert "\n" not in Response.download(b"file", "تقرير\n.pdf").headers["Content-Disposition"]
+
+async def test_form_rule_sequences_keep_regex_alternation_and_trace_isolation () -> None:
+
+    class Choice(Form):
+
+        rules: ClassVar[Spec] = { "choice": ["required", "regex:^(first|second)$"] }
+        choice: str
+
+    async def choose ( body: Choice ) -> Any:
+
+        return { "choice": body.choice, "parent": context.get("traceparent") }
+
+    parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+    app = App("Correlation", docs=False)
+    app.mount(Route.post("/choice", choose, "choice"))
+
+    async with app.listen() as url, aiohttp.ClientSession() as http:
+
+        async with http.post(f"{url}/choice", json={ "choice": "second" }, headers={ "traceparent": parent }) as reply:
+
+            assert reply.status == 200 and (await reply.json())["data"]["parent"] == parent
+
+        async with http.post(f"{url}/choice", json={ "choice": "first" }, headers={ "traceparent": parent + "-bad" }) as reply:
+
+            assert reply.status == 200 and (await reply.json())["data"]["parent"] is None
+
+        async with http.post(f"{url}/choice", json={ "choice": "third" }) as reply:
+
+            assert reply.status == 422
+
+def test_worker_start_policy_can_be_selected_without_changing_defaults ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[dict[str, Any]] = []
+
+    def run ( self: Sanic[Any, Any], **options: Any ) -> None: calls.append(options)
+
+    def serve ( _kind: type[Sanic[Any, Any]], /, **options: Any ) -> None:
+
+        assert options["factory"]() is options["primary"]
+
+    monkeypatch.setattr(Sanic, "prepare", run)
+    monkeypatch.setattr(Sanic, "serve", classmethod(serve))
+    monkeypatch.setattr(Sanic, "start_method", Sanic.start_method)
+
+    for start in multiprocessing.get_all_start_methods():
+
+        App(f"worker-{start}", docs=False).serve(workers=2, start=start)
+
+        assert Sanic.start_method == start and calls[-1]["workers"] == 2
+
+    with pytest.raises(Fault): App("bad-start").serve(start="invalid")
+    with pytest.raises(Fault): App("bad-workers").serve(workers=0)
+
+async def test_multiple_throttle_policies_have_independent_budgets_and_custom_keys () -> None:
+
+    cache.use(Memory())
+    app = App("Limits")
+    app.throttles(
+        short=Throttle(2, 3600, by=lambda request: request.header("x-unit") or "none", mode="bucket"),
+        long=Throttle(4, 7200, by=lambda request: request.header("x-unit") or "none"),
+    )
+    app.mount(Route.get("/limited", hello, "limited").throttled("short", "long"))
+
+    async with app.listen() as url, aiohttp.ClientSession() as client:
+
+        for _ in range(2):
+
+            async with client.get(url + "/limited", headers={ "x-unit": "first" }) as reply:
+
+                assert reply.status == 200
+                assert reply.headers["X-RateLimit-Limit"] == "2"
+
+        async with client.get(url + "/limited", headers={ "x-unit": "first" }) as reply:
+
+            assert reply.status == 429 and float(reply.headers["Retry-After"]) > 0
+
+        async with client.get(url + "/limited", headers={ "x-unit": "second" }) as reply:
+
+            assert reply.status == 200
+
+    assert app.openapi()["paths"]["/limited"]["get"]["x-throttle"] == ("short", "long")
+
+@pytest.mark.parametrize(("limit", "window", "by", "mode"), [
+    (True, 1, "ip", "fixed"), (0, 1, "ip", "fixed"), (1, float("inf"), "ip", "fixed"),
+    (1, float("nan"), "ip", "fixed"), (1, 0, "ip", "fixed"), (1, 1, "unknown", "fixed"),
+    (1, 1, "ip", "unknown"), (10 ** 1000, 1, "ip", "fixed"),
+])
+def test_throttle_constructor_refuses_invalid_budgets ( limit: int, window: float, by: str, mode: str ) -> None:
+
+    with pytest.raises(Fault) as refused: Throttle(limit, window, by, mode)
+
+    assert refused.value.reason == "throttle.policy"
+
+def test_throttle_rejects_unrepresentable_window () -> None:
+
+    with pytest.raises(Fault) as caught: Throttle(1, 10 ** 1000)
+
+    assert caught.value.reason == "throttle.policy"
+
+async def test_sse_keeps_unicode_framing_and_closes_source_when_sink_fails () -> None:
+
+    closed: list[bool] = []
+    sent: list[bytes] = []
+    payload = { "text": "\u00e9\u4e2d" * 1000, "lines": "\n\r" }
+
+    async def source () -> AsyncIterator[tuple[str, object]]:
+
+        try: yield "\u00e9vent", payload
+        finally: closed.append(True)
+
+    class Receiver:
+
+        async def write ( self, chunk: bytes ) -> None:
+
+            sent.append(chunk)
+
+    stream = Response.sse(source(), retry=7)
+
+    await stream.streaming_fn(cast("Any", Receiver()))
+
+    assert sent == [b"retry: 7\n\n", ("event: \u00e9vent\ndata: " + json.dumps(payload) + "\n\n").encode()]
+    assert closed == [True]
+
+    class Broken:
+
+        async def write ( self, chunk: bytes ) -> None:
+
+            if chunk.startswith(b"event:"): raise ConnectionError("closed")
+
+    with pytest.raises(ConnectionError): await Response.sse(source()).streaming_fn(cast("Any", Broken()))
+
+    assert closed == [True, True]
+
+@pytest.mark.parametrize("rows", [[], [None], [{"text": "لغة", "line": "\\n"}, [1, 2], True, 3.5]])
+async def test_json_stream_is_incremental_and_equivalent ( rows: list[object] ) -> None:
+
+    seen: list[object] = []
+    sent: list[bytes] = []
+    closed: list[bool] = []
+
+    async def source () -> AsyncIterator[object]:
+
+        try:
+
+            for row in rows:
+
+                seen.append(row)
+
+                yield row
+
+        finally: closed.append(True)
+
+    class Sink:
+
+        async def write ( self, chunk: bytes ) -> None:
+
+            if not sent: assert not seen
+            sent.append(chunk)
+
+    response = Response.json_stream(source(), status=202, headers={ "X-Export": "yes" })
+
+    await response.streaming_fn(cast("Any", Sink()))
+
+    assert json.decode(b"".join(sent)) == rows
+    assert seen == rows and closed == [True]
+    assert response.status == 202 and response.headers["X-Export"] == "yes"
+
+@pytest.mark.parametrize("failure", [ConnectionError, asyncio.CancelledError])
+async def test_json_stream_closes_source_on_sink_failure ( failure: type[BaseException] ) -> None:
+
+    closed: list[bool] = []
+
+    async def source () -> AsyncIterator[object]:
+
+        try:
+
+            yield { "row": 1 }
+            raise AssertionError("read beyond failed write")
+
+        finally: closed.append(True)
+
+    class Sink:
+
+        async def write ( self, chunk: bytes ) -> None:
+
+            if chunk != b"[": raise failure()
+
+    with pytest.raises(failure): await Response.json_stream(source()).streaming_fn(cast("Any", Sink()))
+
+    assert closed == [True]
+
+async def test_json_stream_refuses_unencodable_item_and_closes_source () -> None:
+
+    closed: list[bool] = []
+
+    async def source () -> AsyncIterator[object]:
+
+        try: yield object()
+        finally: closed.append(True)
+
+    class Sink:
+
+        async def write ( self, chunk: bytes ) -> None: pass
+
+    with pytest.raises(Fault): await Response.json_stream(source()).streaming_fn(cast("Any", Sink()))
+
+    assert closed == [True]
+
+async def test_json_stream_over_http () -> None:
+
+    async def source () -> AsyncIterator[object]:
+
+        for value in range(30): yield { "n": value, "name": "لغة" }
+
+    async def export_rows ( request: Request ) -> Any:
+
+        return Response.json_stream(source())
+
+    app = App("json-stream-test", docs=False).routing(Route.get("/export", export_rows))
+
+    async with app.listen() as url, aiohttp.ClientSession() as client, client.get(f"{url}/export") as response:
+
+        assert response.status == 200
+        assert response.content_type == "application/json"
+        assert await response.json() == [{ "n": value, "name": "لغة" } for value in range(30)]
+
+async def test_header_names_remain_case_insensitive_and_duplicates_are_rejected () -> None:
+
+    async def read_headers ( request: Request ) -> Any:
+
+        request.unique("x-cHeCk")
+
+        return { "value": request.header("X-CHECK"), "default": request.header("X-Missing", "none") }
+
+    app = App("header-case-test", docs=False).routing(Route.get("/headers", read_headers))
+
+    async with app.listen() as url, aiohttp.ClientSession() as client:
+
+        async with client.get(f"{url}/headers", headers={ "x-Check": "one" }) as response:
+
+            assert response.status == 200
+            assert (await response.json())["data"] == { "value": "one", "default": "none" }
+
+        host, _, port = url.removeprefix("http://").partition(":")
+        reader, writer = await asyncio.open_connection(host, int(port))
+
+        try:
+
+            writer.write(b"GET /headers HTTP/1.1\r\nHost: localhost\r\nX-Check: one\r\nx-check: two\r\nConnection: close\r\n\r\n")
+
+            await writer.drain()
+
+            reply = await reader.read()
+
+            assert reply.startswith(b"HTTP/1.1 400 ")
+            assert b'"reason":"http.header"' in reply
+
+        finally:
+
+            writer.close()
+
+            await writer.wait_closed()
+
+@pytest.mark.parametrize(("code", "status"), [
+    (Code.UNAVAILABLE, HTTPStatus.SERVICE_UNAVAILABLE),
+    (Code.INTERNAL, HTTPStatus.BAD_REQUEST),
+    (Code.VALIDATION, HTTPStatus.INTERNAL_SERVER_ERROR),
+])
+def test_transferred_fault_keeps_retry_headers_and_hides_internal_details ( code: Code, status: HTTPStatus ) -> None:
+
+    original = Fault(
+        code, "private diagnostic", "private.reason", {"field": ["private data"]}, status,
+        retry_after=1.2, unknown=True, headers={"Retry-After": "9"},
+    )
+    moved = Fault.load(original.dump()).copy()
+    response = Response.fail(moved)
+    assert response.body is not None
+
+    payload = json.decode(response.body)
+
+    assert response.status == status and response.headers["Retry-After"] == "2"
+    assert payload["message"] != "private diagnostic" and payload["reason"] is None and payload["errors"] is None
+    assert payload["code"] == code.value and set(payload) == {"data", "message", "errors", "code", "reason", "meta"}
+    assert moved.headers == {"Retry-After": "9"} and moved.unknown and not moved.safe()

@@ -1,39 +1,8 @@
 import type * as cache from "engine-cache";
 import * as error from "engine-error";
 import * as json from "engine-json";
+import type { Defined, Definition, Keeper, Persist, Saved, Setter, State, Verdict } from "./arch.ts";
 import { createStore, type StoreApi } from "./zustand.ts";
-
-export type Setter<S> = ( patch: Partial<S> | (( state: S ) => Partial<S>) ) => void;
-export type Getter<S> = () => S;
-export type Actions<S, A> = ( set: Setter<S>, get: Getter<S> ) => A;
-export type Guard = "exclusive" | "local";
-export type Persist<S> = {
-    box: cache.Box;
-    keys?: readonly (keyof S & string)[] | undefined;
-    version?: number | undefined;
-    migrate?: (( saved: unknown, version: number ) => Partial<S> | undefined) | undefined;
-    accept?: (( saved: Partial<S> ) => Partial<S> | undefined) | undefined;
-    sync?: boolean | undefined;
-    guard?: Guard | undefined;
-    fail?: (( fault: error.Fault ) => void) | undefined;
-};
-export type Definition<S extends object, A extends object> = { name: string; initial: S; actions: Actions<S, A>; persist?: Persist<S> | undefined };
-export type State<S, A> = S & A & { ready: boolean; kept: boolean };
-export type Instance<S extends object, A extends object> = StoreApi<State<S, A>> & {
-    name: string;
-    key: string;
-    hydrate: () => Promise<void>;
-    reload: () => Promise<void>;
-    flush: () => Promise<void>;
-    forget: () => Promise<void>;
-    stop: () => void;
-    reset: () => void;
-};
-export type Defined<S extends object, A extends object> = { name: string; create: () => Instance<S, A> };
-
-type Saved<S> = { version: number; state: Partial<S>; by?: string | undefined };
-type Verdict = "empty" | "corrupt" | "older" | "same" | "newer";
-type Keeper = { hydrate: () => Promise<void>; reload: () => Promise<void>; flush: () => Promise<void>; forget: () => Promise<void>; stop: () => void; reset: () => void };
 
 const scheme = 2;
 const reserved = ["ready", "kept"];
@@ -451,6 +420,11 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
 
         },
     };
+
+}
+export function inspect<S extends object> ( saved: unknown, version = 1 ): Partial<S> | undefined {
+
+    return judge(saved, versionOf(version)) === "same" ? (saved as Saved<S>).state : undefined;
 
 }
 export function keyOf ( name: string ): string {

@@ -3,9 +3,10 @@ from typing import Any, get_type_hints
 
 from engine.error import Code, Fault
 from engine.parse import parse
-from engine.validate import Shape
+from engine.validate import Shape, validator
 from .action import Action
 from .arch import Answer, ANSWERS, BODIES, Bound, Handler, Plan, Resolver, SKIP, SPREAD
+from .form import Form
 from .request import Request
 from .response import Response
 import inspect
@@ -21,7 +22,7 @@ class Binder:
         bodied    = bool(BODIES.intersection(methods))
         names     = list(signature.parameters)
         plan      = [
-            (name, self.resolver(name, hints.get(name, str), parameter, bodied))
+            (name, self.resolver(name, hints.get(name, Any), parameter, bodied))
             for name, parameter in signature.parameters.items() if parameter.kind not in SPREAD
         ]
 
@@ -52,10 +53,11 @@ class Binder:
 
                 return value if type(value) is kind else coerce(kind, value, name)
 
-            if shaped: return shape(request, kind, bodied)
-            if required: return coerce(kind, request.query(name), name)
+            if shaped: return shape(request, kind, bodied and request.method in BODIES)
 
-            return SKIP
+            value = request.query(name)
+
+            return coerce(kind, value, name) if required or value is not None else SKIP
 
         return resolve
 
@@ -74,11 +76,13 @@ class Binder:
     @staticmethod
     def shape [T: Shape] ( request: Request, kind: type[T], bodied: bool ) -> T:
 
+        if issubclass(kind, Form): return kind.read(request)
+
         if bodied and request.body and not request.json_body():
 
             raise Fault(Code.UNSUPPORTED_MEDIA, reason="http.media", errors={ "content-type": ["must be JSON"] })
 
-        return request.shape(kind)
+        return request.shape(kind) if bodied else validator.shape(kind, request.queries())
 
     def _bare_ ( self, handler: Handler ) -> Bound:
 
@@ -121,19 +125,20 @@ class Binder:
     def coerce ( self, kind: Any, value: Any, name: str ) -> Any:
 
         if value is None: raise Fault(Code.VALIDATION, reason="http.param", errors={ name: ["is required"] })
-        if kind is str or (kind in (int, float) and type(value) is kind): return value
+        if kind is Any or type(value) is kind: return value
 
         try:
 
             if kind is int: return parse.integer(value)
             if kind is float: return parse.number(value)
             if kind is bool: return parse.boolean(value)
+            if kind is str: return str(value)
+
+            return validator.convert(kind, value)
 
         except Fault as fault:
 
             raise Fault(Code.VALIDATION, reason="http.param", errors={ name: [fault.message] }) from fault
-
-        return value
 
     def _carried_ ( self, request: Request, _: Mapping[str, Any] ) -> Request:
 

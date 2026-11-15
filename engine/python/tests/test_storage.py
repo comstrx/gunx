@@ -1,11 +1,12 @@
+from engine.storage import Drive
 from aiohttp import web
 from engine.error import Code, Fault
 from pathlib import Path
 from engine.net import Egress, Remote, net
 from engine.storage import Disk, Policy, Storage, storage
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any, Self, cast
-import pytest
+import asyncio, pytest
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 
@@ -127,7 +128,14 @@ class DriveFake:
             name  = query.split("name = '", 1)[1].split("'", 1)[0].replace("\\'", "'")
             found = [item for item in found if item["name"] == name]
 
-        return web.json_response({ "files": found })
+        offset = int(request.query.get("pageToken", "0"))
+        reply: dict[str, Any] = { "files": found[offset:offset + 2] }
+
+        assert "nextPageToken" in request.query["fields"]
+
+        if offset + 2 < len(found): reply["nextPageToken"] = str(offset + 2)
+
+        return web.json_response(reply)
 
     async def upload ( self, request: web.Request ) -> web.Response:
 
@@ -204,7 +212,11 @@ async def test_google_drive_speaks_the_files_api () -> None:
 
         await disk.copy(stored.key, "copies/report.pdf")
 
-        assert await disk.get("copies/report.pdf") == b"%PDF-1.7 longer body" and (await disk.sign(stored.key)).startswith("https://drive.google.com/uc?id=")
+        assert await disk.get("copies/report.pdf") == b"%PDF-1.7 longer body"
+
+        with pytest.raises(Fault) as unsigned: await disk.sign(stored.key)
+
+        assert unsigned.value.code is Code.NOT_IMPLEMENTED and unsigned.value.reason == "storage.sign"
         assert await disk.delete("copies/report.pdf") and not await disk.delete("copies/report.pdf") and not await disk.exists("copies/report.pdf")
 
         with pytest.raises(Fault) as missing: await disk.get("nothing.pdf")
@@ -312,3 +324,76 @@ async def test_keys_names_and_policies_are_validated ( tmp_path: Path ) -> None:
     assert chunk.value.errors == { "setting": ["chunk"] }
 
     await local.close()
+
+async def test_google_drive_lists_every_page () -> None:
+
+    async with DriveFake() as fake:
+
+        for index in range(7): fake.files[str(index)] = { "id": str(index), "name": f"file-{index}", "size": "1" }
+
+        remote = Remote(
+            net, f"http://127.0.0.1:{fake.port}", egress=Egress(allow_private=True, ports=frozenset()), name="drive",
+        ).bearer("tok-1")
+        disk = Drive("drive", remote, "folder-1")
+
+        assert await disk.list() == [f"file-{index}" for index in range(7)]
+        assert len(fake.seen) == 4
+
+async def test_streaming_upload_is_atomic_on_source_failure_and_cancellation ( tmp_path: Path ) -> None:
+
+    disk = storage.local("streamed", tmp_path / "streamed")
+    closed: list[str] = []
+
+    async def source () -> AsyncIterator[bytes]:
+
+        try:
+
+            for _ in range(12): yield b"x" * (1024 * 1024)
+
+        finally: closed.append("success")
+
+    result = await disk.upload("large.bin", source())
+
+    assert result.size == 12 * 1024 * 1024 and await disk.size("large.bin") == result.size
+    assert closed == ["success"]
+    assert [name async for name in disk.scan("large")] == ["large.bin"]
+
+    await disk.put("stable.bin", b"old")
+
+    async def broken () -> AsyncIterator[bytes]:
+
+        try:
+
+            yield b"x" * (1024 * 1024)
+
+            raise ValueError("broken source")
+
+        finally: closed.append("failure")
+
+    with pytest.raises(Fault): await disk.upload("stable.bin", broken())
+
+    assert await disk.get("stable.bin") == b"old" and "failure" in closed
+
+    entered = asyncio.Event()
+
+    async def blocked () -> AsyncIterator[bytes]:
+
+        try:
+
+            yield b"x" * (1024 * 1024)
+
+            entered.set()
+
+            await asyncio.Event().wait()
+
+        finally: closed.append("cancelled")
+
+    task = asyncio.create_task(disk.upload("stable.bin", blocked()))
+
+    await asyncio.wait_for(entered.wait(), 5)
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError): await task
+
+    assert await disk.get("stable.bin") == b"old" and "cancelled" in closed

@@ -1,5 +1,4 @@
-export type Key = { key: string; code: string; ctrl: boolean; meta: boolean; shift: boolean; alt: boolean; repeat: boolean; typing?: boolean | undefined };
-export type Combo = { key: string; ctrl: boolean; meta: boolean; shift: boolean; alt: boolean };
+import type { Combo, Key } from "./arch.ts";
 
 const aliases = new Map<string, string>([
     ["esc", "escape"], ["return", "enter"], ["space", " "], ["spacebar", " "], ["up", "arrowup"], ["down", "arrowdown"], ["left", "arrowleft"], ["right", "arrowright"],

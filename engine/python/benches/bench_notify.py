@@ -2,7 +2,7 @@ from engine.log import log
 from engine.notify import Log, Notice, Notify
 from engine.test import Bench
 from pathlib import Path
-import asyncio
+import asyncio, os
 
 bench   = Bench()
 loop    = asyncio.new_event_loop()
@@ -10,7 +10,7 @@ service = Notify()
 logger  = Log()
 tokens  = tuple(f"token-{at:04d}" for at in range(100))
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 service.setup(logger)
 
 def building () -> None: Notice(("t1", "t2"), "Hello", "Body", { "k": "v" }, 1, "ping", urgent=True)

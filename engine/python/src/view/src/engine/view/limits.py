@@ -3,7 +3,7 @@ from string import Formatter
 from typing import Any
 import functools
 
-from .arch import Check, DIGITS, ELEMENT, MOST, PADS, RUN, SHORT, SPEC, SPECS, TABS
+from .arch import DIGITS, ELEMENT, MOST, PADS, RUN, SHORT, SPEC, SPECS, TABS
 
 class Limits:
 
@@ -159,9 +159,3 @@ class Limits:
 
     percent = staticmethod(functools.lru_cache(SPECS)(scanned))
     braces  = staticmethod(functools.lru_cache(SPECS)(parsed))
-
-CHECKS: dict[str, Check] = {
-    "center": Limits.padded, "indent": Limits.indented, "replace": Limits.replaced, "join": Limits.joined,
-    "format": Limits.formatted, "wordwrap": Limits.wrapped, "slice": Limits.sliced, "batch": Limits.batched,
-    "tojson": Limits.dumped, "mask": Limits.masked,
-}

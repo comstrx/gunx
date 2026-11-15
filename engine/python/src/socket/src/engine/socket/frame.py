@@ -22,4 +22,13 @@ class Frame(Shape, kw_only=True):
 
         if len(raw) > limit: raise Fault(Code.TOO_LARGE, reason="socket.frame")
 
-        return validator.shape(cls, raw if isinstance(raw, bytes) else raw.encode())
+        if isinstance(raw, str):
+
+            try: raw = raw.encode()
+            except UnicodeError as error:
+
+                raise Fault(Code.BAD_REQUEST, reason="socket.encoding") from error
+
+            if len(raw) > limit: raise Fault(Code.TOO_LARGE, reason="socket.frame")
+
+        return validator.shape(cls, raw)

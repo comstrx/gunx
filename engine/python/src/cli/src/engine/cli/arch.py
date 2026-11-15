@@ -2,7 +2,7 @@ from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum
 from types import NoneType
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from engine.string import string
 import re
@@ -82,3 +82,9 @@ def nearest ( name: str, choices: Iterable[str] ) -> list[str]:
     ranked = sorted(scored, key=lambda pair: (-pair[0], pair[1]))
 
     return [choice for score, choice in ranked if score >= CLOSE][:NEAR]
+
+if TYPE_CHECKING:
+
+    from .command import Command
+
+type Routed = int | tuple[Command, dict[str, Any]]

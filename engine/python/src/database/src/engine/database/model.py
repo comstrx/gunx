@@ -9,14 +9,24 @@ from .table import Table
 class Model(Shape, kw_only=True):
 
     table: ClassVar[Table]
+    _columns: ClassVar[tuple[Table | None, dict[str, str | None]] | None] = None
     sortable: ClassVar[frozenset[str]] = frozenset({ "created_at", "updated_at", "id" })
 
     @classmethod
     def from_row ( cls, row: Record ) -> Self:
 
-        kinds  = cls.table.kinds() if hasattr(cls, "table") else {}
-        fields = cls.fields()
-        plain  = { key: cls._coerce_(kinds.get(key), value) for key, value in row.items() if key in fields }
+        table = getattr(cls, "table", None)
+        held  = cls.__dict__.get("_columns")
+
+        if held is None or held[0] is not table:
+
+            kinds = table.kinds() if table is not None else {}
+            held  = (table, { key: kinds.get(key) for key in cls.fields() })
+
+            cls._columns = held
+
+        columns = held[1]
+        plain   = { key: cls._coerce_(columns[key], value) for key, value in row.items() if key in columns }
 
         return validator.shape(cls, plain)
 

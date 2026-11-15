@@ -1180,7 +1180,19 @@ async def test_close_reaches_every_model_and_survives_a_failing_one () -> None:
 
     await made.close()
 
-    assert shut == ["plain"] and made.ready()
+    assert shut == ["plain"] and not made.ready() and made.names() == ()
+
+    async def recovered () -> None: shut.append("scripted")
+
+    cast("Any", first).close = recovered
+
+    await made.close()
+
+    assert shut == ["plain", "scripted"]
+
+    await made.close()
+
+    assert shut == ["plain", "scripted"]
 
 def heads ( seen: Seen ) -> dict[str, str]:
 
@@ -2347,3 +2359,17 @@ async def test_the_facade_drives_a_hosted_model_end_to_end ( fake: Fake ) -> Non
     assert throttled.errors == { "provider": ["throttled"] } and rejected.errors == { "provider": ["remote.bad_request"] }
 
     await made.close()
+
+def test_large_turn_drops_orphan_prefix_and_keeps_latest_user () -> None:
+
+    tools = [Message("tool", str(at), call_id="c") for at in range(10000)]
+
+    assert Turn(tools, window=4).messages == []
+
+    history = [Message("user", str(at)) for at in range(1000)]
+    history += [Message("assistant", str(at)) for at in range(20)]
+    turn = Turn(history, window=4)
+
+    assert turn.messages[0].role == "user" and turn.messages[0].content == "999"
+    assert [message.content for message in turn.messages[1:]] == ["17", "18", "19"]
+    assert len(history) == 1020

@@ -12,6 +12,28 @@ const rows: Row[] = [
 
 describe("search", () => {
 
+    it("ranking keeps full precision when displayed scores round to the same value", () => {
+
+        const made = search.index<{ id: string; title: string; body: string; tags: string[] }>({
+            fields: ["title", "body", "tags"],
+            key: ( one ) => one.id,
+            weights: { title: 2, body: 1, tags: 1.5 },
+        });
+
+        made.addAll([
+            { id: "1", title: "run runner red red", body: "", tags: ["runner", "run"] },
+            { id: "2", title: "runner red runner run", body: "red", tags: ["run", "red"] },
+        ]);
+
+        const hits = made.query("runner run tent", { prefix: false });
+
+        expect(hits.map(( hit ) => hit.score)).toEqual([0.602, 0.602]);
+        expect(hits.map(( hit ) => hit.key)).toEqual(["2", "1"]);
+        expect(made.query("runner run tent", { prefix: false, limit: 1 }).map(( hit ) => hit.key)).toEqual(["2"]);
+
+    });
+
+
     it("an index ranks by bm25 with prefixes, fuzzy terms, all-terms and removals", () => {
 
         const made = search.index<Row>({ fields: ["name", "tags", "meta.city"], key: ( row ) => row.id, weights: { name: 2 } });

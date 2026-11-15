@@ -1,3 +1,4 @@
+import * as translate from "engine/translate";
 import { useEffect } from "react";
 import { bound, instance } from "@/stores/preferences.ts";
 import type { Direction, Locale } from "@/types/index.ts";
@@ -6,7 +7,7 @@ export type Preferred = { locale: Locale; direction: Direction; ready: boolean; 
 
 export function directionOf ( locale: Locale ): Direction {
 
-    return locale === "ar" ? "rtl" : "ltr";
+    return translate.direction(locale);
 
 }
 export function usePreferences (): Preferred {

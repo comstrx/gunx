@@ -1,11 +1,15 @@
 from collections.abc import Callable
-from typing import Any, override
+from typing import TYPE_CHECKING, Any, overload, override
+
+if TYPE_CHECKING:
+
+    from .string import String
 
 class Fluent:
 
     __slots__ = ("_owner", "_text")
 
-    def __init__ ( self, text: str, owner: Any ) -> None:
+    def __init__ ( self, text: str, owner: String ) -> None:
 
         self._text  = text
         self._owner = owner
@@ -32,21 +36,27 @@ class Fluent:
 
         return self._text
 
-    def pipe ( self, step: Callable[[str], Any] ) -> Any:
+    @overload
+    def pipe ( self, step: Callable[[str], str] ) -> Fluent: ...
+
+    @overload
+    def pipe [T] ( self, step: Callable[[str], T] ) -> T | Fluent: ...
+
+    def pipe [T] ( self, step: Callable[[str], T] ) -> T | Fluent:
 
         result = step(self._text)
 
         return Fluent(result, self._owner) if isinstance(result, str) else result
 
-    def when ( self, condition: bool, step: Callable[[Fluent], Any] ) -> Any:
+    def when [T] ( self, condition: bool, step: Callable[[Fluent], T] ) -> T | Fluent:
 
         return step(self) if condition else self
 
-    def unless ( self, condition: bool, step: Callable[[Fluent], Any] ) -> Any:
+    def unless [T] ( self, condition: bool, step: Callable[[Fluent], T] ) -> T | Fluent:
 
         return self if condition else step(self)
 
-    def tap ( self, step: Callable[[str], Any] ) -> Fluent:
+    def tap ( self, step: Callable[[str], object] ) -> Fluent:
 
         step(self._text)
 

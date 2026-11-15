@@ -8,7 +8,7 @@ from engine.number import Money
 from hypothesis import HealthCheck, given, settings, strategies as st
 from pathlib import Path
 from typing import Any
-import asyncio
+import asyncio, os
 
 EXAMPLES = 1000
 WORDS    = st.one_of(st.text(max_size=12), st.sampled_from(["ch_1", "", "a\nb", "x" * 129]), st.none(), st.integers())
@@ -22,7 +22,7 @@ loop = asyncio.new_event_loop()
 pay  = Gateway()
 mock = Mock("fuzz-secret-0123456789", fail_over=50_000)
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 crypto.setup([crypto.key("k1")])
 pay.use(mock)
 

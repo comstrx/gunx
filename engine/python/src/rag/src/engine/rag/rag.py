@@ -44,7 +44,11 @@ class Rag:
         dimensions: int | None = None, search: Search | None = None, index: str = "rag",
     ) -> None:
 
-        if overlap >= size: raise Fault(Code.INTERNAL, reason="rag.overlap")
+        if type(size) is not int or size < 1: raise Fault(Code.INTERNAL, reason="rag.size")
+        if type(overlap) is not int or not 0 <= overlap < size: raise Fault(Code.INTERNAL, reason="rag.overlap")
+        if dimensions is not None and (type(dimensions) is not int or dimensions < 1):
+
+            raise Fault(Code.INTERNAL, reason="rag.dimensions")
 
         self._ai      = ai or shared
         self._store   = Memory() if store is None else store
@@ -60,7 +64,7 @@ class Rag:
 
     def chunk ( self, scope: str, source: str, text: str, **facts: Any ) -> list[Chunk]:
 
-        pieces = [piece.strip() for piece in self.pieces(string.squish(text))]
+        pieces = (piece.strip() for piece in self.pieces(string.squish(text)))
         chunks: list[Chunk] = []
         held: list[str] = []
         size   = 0
@@ -73,21 +77,22 @@ class Rag:
 
                 kept: list[str] = []
                 back = 0
+                room = min(self._overlap, self._size - len(piece) - 1)
 
                 for earlier in reversed(held):
 
-                    if back + len(earlier) > self._overlap: break
+                    length = back + len(earlier) + bool(kept)
 
-                    kept.insert(0, earlier)
+                    if length > room: break
 
-                    back += len(earlier) + 1
+                    kept.append(earlier)
+                    back = length
 
-                held = kept
-                size = sum(len(item) + 1 for item in held)
+                held = list(reversed(kept))
+                size = back
 
+            size += len(piece) + bool(held)
             held.append(piece)
-
-            size += len(piece) + 1
 
         if held: chunks.append(Chunk(scope, source, len(chunks), " ".join(held), dict(facts)))
 

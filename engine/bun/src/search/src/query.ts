@@ -1,19 +1,8 @@
 import * as json from "engine-json";
 import * as list from "engine-list";
 import * as string from "engine-string";
+import type { Facet, Filter, Folded, Operator, Parsed, Piece, Scalar, Scope, Segment, Wanted } from "./arch.ts";
 import { count, ordered } from "./index_.ts";
-
-export type Operator = ":" | "=" | "!=" | ">" | ">=" | "<" | "<=";
-export type Filter = { field: string; operator: Operator; value: string; negated: boolean };
-export type Parsed = { terms: string[]; filters: Filter[]; text: string };
-export type Scope = { fields?: readonly string[] | undefined };
-export type Segment = { text: string; hit: boolean };
-export type Facet = { value: string; count: number };
-
-type Piece = { text: string; head: string; literal: boolean };
-type Wanted = { text: string; number: number | undefined };
-type Scalar = number | string;
-type Folded = { text: string; from: number[]; to: number[] };
 
 const filterPattern = /^(-?)([a-zA-Z_][a-zA-Z0-9_.]*)(>=|<=|!=|:|=|>|<)/;
 const decimal = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;

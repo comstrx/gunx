@@ -1,4 +1,4 @@
-from .arch import Place, Point
+lazy from .arch import Place, Point
 from .geo import Geo
 
 geo = Geo()

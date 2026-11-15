@@ -1,9 +1,21 @@
 from collections.abc import Mapping, MutableMapping
 from types import NoneType
+from contextvars import ContextVar
+from dataclasses import dataclass
+from structlog.typing import EventDict
 
 import logging, re
 
 type Fields = MutableMapping[str, object]
+
+@dataclass(slots=True)
+class Capture:
+
+    owner: object
+    events: list[EventDict]
+    active: bool = True
+
+CAPTURES: ContextVar[tuple[Capture, ...]] = ContextVar("log.captures", default=())
 
 LEVELS   = ("debug", "info", "warning", "error", "critical")
 NUMBERS  = { name: logging.getLevelNamesMapping()[name.upper()] for name in LEVELS }
@@ -28,7 +40,7 @@ QUOTE    = re.compile(r"""[bBrRuU]{0,2}(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')""
 BARE     = re.compile(r"[^\s&]+")
 REST     = re.compile(r"[^\r\n]+")
 WHOLE    = re.compile(r"authorization|cookie", re.IGNORECASE)
-BEARER   = re.compile(r"(?<![A-Za-z])(?P<scheme>[Bb]earer)\s+[A-Za-z0-9._~+/=-]{16,}")
+BEARER   = re.compile(r"(?<![A-Za-z])(?P<scheme>[bB][eE][aA][rR][eE][rR])\s+[A-Za-z0-9._~+/=-]{16,}")
 PEM      = re.compile(
     r"-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----|\Z)", re.DOTALL,
 )
@@ -41,5 +53,6 @@ MASKED   = f"{MASK}@"
 QUOTED   = { '"': f'"{MASK}"', "'": f"'{MASK}'" }
 SHORT    = 15
 DEPTH    = 8
+PREFIX   = 11
 LONG     = 256
 KNOWN    = 2048

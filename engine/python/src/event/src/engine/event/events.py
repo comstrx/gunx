@@ -125,9 +125,11 @@ class Events:
 
         except TimeoutError as error:
 
-            self._waiters = [(kept, held) for kept, held in self._waiters if held is not future]
-
             raise Fault(Code.TIMEOUT, reason="event.wait", errors={ "pattern": [pattern] }) from error
+
+        finally:
+
+            if future.cancelled(): self._waiters = [(kept, held) for kept, held in self._waiters if held is not future]
 
     def listeners ( self, name: str ) -> list[Listener]:
 

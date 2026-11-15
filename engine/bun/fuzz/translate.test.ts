@@ -114,7 +114,7 @@ describe("fuzz translate", () => {
     it("names, lists and formats answer text for any locale", () => {
 
         fc.assert(
-            fc.property(fc.string({ maxLength: 24 }), fc.string({ maxLength: 24 }), fc.double(), ( text, locale, amount ) => {
+            fc.property(fc.string({ maxLength: 24 }), fc.string({ maxLength: 24 }), fc.double({ noNaN: true, noDefaultInfinity: true }), ( text, locale, amount ) => {
 
                 expect(typeof translate.languageName(text, locale)).toBe("string");
                 expect(typeof translate.localeName(text, locale)).toBe("string");
@@ -146,5 +146,16 @@ describe("fuzz translate", () => {
         );
 
     });
+
+});
+
+it("non-finite amounts are refused by localized numeric formatters", () => {
+
+    fc.assert(fc.property(fc.constantFrom(Number.NaN, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY), fc.string({ maxLength: 24 }), ( amount, locale ) => {
+
+        expect(() => translate.formatNumber(amount, locale)).toThrow("not an amount");
+        expect(() => translate.formatPercent(amount, locale)).toThrow("not an amount");
+
+    }), { numRuns: 1000 });
 
 });

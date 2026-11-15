@@ -1,17 +1,17 @@
-from engine.context import context, Deferral, Report
+from engine.context import context, Deferral, Report, Trace
 from engine.error import Code, Fault
 from collections.abc import Awaitable, Callable, Mapping
 from functools import partial
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import given, settings, strategies as st
 from typing import Any
-import asyncio
+import asyncio, math
 
 type Spec = tuple[int, bool, list[Spec]]
 type Step = tuple[int, dict[str, Any], list[Step]]
 type Path = tuple[int, ...]
 
-EXAMPLES = 1000
-SHARED   = ("request_id", "actor", "tenant", "locale", "trace")
+EXAMPLES = 3000
+SHARED   = ("request_id", "actor", "tenant", "locale", "trace", "traceparent")
 LIMIT    = 1024
 WIDE     = 256
 NAME     = 64
@@ -47,7 +47,7 @@ def plain ( value: object ) -> bool:
 
     if isinstance(value, str): return len(value) <= WIDE
 
-    return isinstance(value, int | float)
+    return isinstance(value, int) or (isinstance(value, float) and math.isfinite(value))
 
 def sound ( value: object ) -> bool:
 
@@ -64,7 +64,7 @@ def check ( facts: dict[str, Any], deferral: Deferral | None ) -> None:
 
     assert context.snapshot() == facts
     assert context.facts() == facts
-    assert context.dump() == { key: value for key, value in facts.items() if key in SHARED }
+    assert context.dump() == { key: value for key, value in facts.items() if key in SHARED and value is not None and sound(value) }
     assert context.deferred() is deferral
     assert context.defer(nothing) is (deferral is not None)
     assert context.request_id() == (str(facts["request_id"]) if facts.get("request_id") else None)
@@ -192,7 +192,7 @@ def chain ( deferral: Deferral, left: list[int] ) -> None:
 
     if left[0] > 0: deferral.add(partial(chain, deferral, left), always=True)
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(FACTS)
 def wire_facts_load_bounded ( facts: dict[str, Any] ) -> None:
 
@@ -219,7 +219,7 @@ def wire_facts_load_bounded ( facts: dict[str, Any] ) -> None:
     assert context.snapshot() == {}
     assert context.deferred() is None
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(STEPS)
 def nested_facts_restore_exactly ( steps: list[Step] ) -> None:
 
@@ -233,7 +233,7 @@ def nested_facts_restore_exactly ( steps: list[Step] ) -> None:
     assert context.snapshot() == {}
     assert context.deferred() is None
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(SPECS, st.booleans(), st.booleans())
 def deferred_work_runs_like_the_model ( specs: list[Spec], failed: bool, told: bool ) -> None:
 
@@ -257,7 +257,7 @@ def deferred_work_runs_like_the_model ( specs: list[Spec], failed: bool, told: b
     assert all(isinstance(error, ValueError) for error in errors)
     assert settle(deferral, None, failed) == 0
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(FLATS, st.integers(0, 99), st.booleans())
 def a_cancelled_flush_keeps_the_rest ( items: list[tuple[bool, bool]], at: int, failed: bool ) -> None:
 
@@ -284,7 +284,7 @@ def a_cancelled_flush_keeps_the_rest ( items: list[tuple[bool, bool]], at: int, 
     assert deferral.pending() == 0
     assert len(errors) == sum(1 for index in runs if items[index][0] and index != stop)
 
-@settings(max_examples=EXAMPLES // 10, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES // 10, deadline=None, database=None)
 @given(st.integers(LIMIT - 24, LIMIT + 24), st.integers(LIMIT - 8, LIMIT + 8))
 def the_bounds_hold ( length: int, width: int ) -> None:
 
@@ -310,11 +310,104 @@ def the_bounds_hold ( length: int, width: int ) -> None:
     assert all(found.reason == "context.full" for found in refused)
     assert deferral.clear() == min(width, LIMIT)
 
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.lists(st.tuples(st.booleans(), st.booleans()), min_size=1, max_size=32))
+def reporter_failures_preserve_every_work_item ( items: list[tuple[bool, bool]] ) -> None:
+
+    deferral = Deferral()
+    trace: list[int] = []
+    told: list[int] = []
+
+    def report ( error: Exception ) -> None:
+
+        index = int(error.args[0])
+
+        if items[index][1]: raise RuntimeError(index)
+
+        told.append(index)
+
+    for index, (boom, _) in enumerate(items): deferral.add(partial(step, trace, index, boom, stop=False))
+
+    result = settle(deferral, report, failed=False)
+    rejected = [index for index, (boom, failed) in enumerate(items) if boom and failed]
+
+    assert trace == list(range(len(items))) and deferral.pending() == 0
+    assert told == [index for index, (boom, failed) in enumerate(items) if boom and not failed]
+
+    if rejected:
+
+        assert isinstance(result, ExceptionGroup)
+        assert [type(error) for error in result.exceptions] == [kind for _ in rejected for kind in (ValueError, RuntimeError)]
+        assert [error.args[0] for error in result.exceptions] == [index for index in rejected for _ in range(2)]
+
+    else: assert result == len(items)
+
+@settings(max_examples=EXAMPLES // 10, deadline=None, database=None)
+@given(st.one_of(st.just(LIMIT), st.integers(2, LIMIT)))
+def a_wide_followup_cannot_exceed_the_execution_budget ( width: int ) -> None:
+
+    deferral = Deferral()
+    trace: list[int] = []
+    errors: list[Exception] = []
+
+    def expand () -> None:
+
+        trace.append(-1)
+
+        for index in range(width): deferral.add(partial(trace.append, index))
+
+    deferral.add(expand)
+
+    assert settle(deferral, errors.append, failed=False) == min(width + 1, LIMIT)
+    assert trace == [-1, *range(min(width, LIMIT - 1))] and deferral.pending() == 0
+    assert len(errors) == int(width == LIMIT)
+
+    for error in errors:
+
+        assert isinstance(error, Fault) and error.reason == "context.loop"
+
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.dictionaries(st.text(max_size=20), st.integers(), max_size=20), st.lists(st.text(max_size=20), max_size=20))
+def forgetting_preserves_snapshot_and_counts_distinct_keys ( values: dict[str, int], names: list[str] ) -> None:
+
+    context.clear()
+
+    with context.scope(**values):
+
+        held = context.facts()
+        expected = { key: value for key, value in values.items() if key not in names }
+        removed = context.forget(*names)
+
+        assert removed == len(values) - len(expected)
+        assert context.snapshot() == expected and dict(held) == values
+
+        if not removed: assert context.facts() is held
+
+
+@settings(max_examples=2000, deadline=None, database=None)
+@given(st.binary(min_size=16, max_size=16), st.binary(min_size=8, max_size=8), st.integers(min_value=0, max_value=255))
+def trace_ids_match_the_numeric_reference ( trace: bytes, span: bytes, flags: int ) -> None:
+
+    parent = f"00-{trace.hex()}-{span.hex()}-{flags:02x}"
+    expected = parent if int.from_bytes(trace) and int.from_bytes(span) else None
+
+    assert Trace.clean(parent) == expected
+    assert Trace.clean(parent + "0") is None
+    assert Trace.clean("01" + parent[2:]) is None
+    assert Trace.clean(parent.encode()) is None
+
+
 wire_facts_load_bounded()
 nested_facts_restore_exactly()
 deferred_work_runs_like_the_model()
 a_cancelled_flush_keeps_the_rest()
 the_bounds_hold()
+reporter_failures_preserve_every_work_item()
+a_wide_followup_cannot_exceed_the_execution_budget()
+forgetting_preserves_snapshot_and_counts_distinct_keys()
+trace_ids_match_the_numeric_reference()
 loop.close()
 
-print(f"fuzz context  examples={EXAMPLES * 4 + EXAMPLES // 10}  ok")
+print("fuzz context  properties=9  max_examples=per-property settings  ok")

@@ -112,3 +112,26 @@ async def test_hybrid_search_answers_and_reranks ( brain: Ai ) -> None:
 
     assert await rag.forget("kb", "dogs.txt") >= 1 and await finder.count("test_rag") == 2
     assert await rag.forget("kb") >= 1 and await finder.count("test_rag") == 0
+
+def test_overlap_never_pushes_the_next_piece_past_its_budget () -> None:
+
+    rag = Rag()
+
+    rag.setup(size=4, overlap=1, dimensions=8)
+
+    assert [chunk.text for chunk in rag.chunk("s", "a", "0 000")] == ["0", "000"]
+
+    rag.setup(size=4, overlap=3, dimensions=8)
+
+    for text in ("a bb ccc dddd", "abcd efgh", "a. b. c. d.", "abcdefghijk"):
+
+        chunks = rag.chunk("s", "a", text)
+
+        assert all(0 < len(chunk.text) <= 4 for chunk in chunks)
+
+@pytest.mark.parametrize(("size", "overlap", "dimensions"), [
+    (0, 0, 8), (-1, -2, 8), (4, -1, 8), (True, 0, 8), (20, 5, 0), (20, 5, -1),
+])
+def test_invalid_chunk_budgets_are_rejected_before_processing ( size: int, overlap: int, dimensions: int ) -> None:
+
+    with pytest.raises(Fault): Rag().setup(size=size, overlap=overlap, dimensions=dimensions)

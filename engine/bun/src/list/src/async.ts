@@ -1,5 +1,4 @@
-export type Lanes = { lanes?: number | undefined; signal?: AbortSignal | undefined };
-export type Settled<T> = { done: T[]; failed: unknown[] };
+import type { Lanes, Settled } from "./arch.ts";
 
 function stopped ( signal: AbortSignal ): Error {
 
@@ -7,33 +6,29 @@ function stopped ( signal: AbortSignal ): Error {
 
 }
 
-export async function mapAsync<T, R> ( items: readonly T[], work: ( item: T, index: number ) => Promise<R>, options: Lanes = {} ): Promise<R[]> {
+async function visit<T> ( items: readonly T[], work: ( item: T, index: number ) => Promise<void>, options: Lanes ): Promise<void> {
 
     const { lanes = 4, signal } = options;
     const width = lanes >= 1 ? Math.min(Math.floor(lanes), items.length) : 1;
-    const out = new Array<R>(items.length);
     let cursor = 0;
-    let halted = false;
+    let failed: { cause: unknown } | undefined;
 
     const lane = async (): Promise<void> => {
 
-        while ( cursor < items.length && !halted ) {
-
-            if ( signal?.aborted ) throw stopped(signal);
-
-            const index = cursor;
-
-            cursor += 1;
+        while ( cursor < items.length && failed === undefined ) {
 
             try {
 
-                out[index] = await work(items[index] as T, index);
+                if ( signal?.aborted ) throw stopped(signal);
 
-            } catch ( caught ) {
+                const index = cursor;
 
-                halted = true;
+                cursor += 1;
+                await work(items[index] as T, index);
 
-                throw caught;
+            } catch ( cause ) {
+
+                failed ??= { cause };
 
             }
 
@@ -42,6 +37,15 @@ export async function mapAsync<T, R> ( items: readonly T[], work: ( item: T, ind
     };
 
     await Promise.all(Array.from({ length: width }, lane));
+
+    if ( failed !== undefined ) throw failed.cause;
+
+}
+export async function mapAsync<T, R> ( items: readonly T[], work: ( item: T, index: number ) => Promise<R>, options: Lanes = {} ): Promise<R[]> {
+
+    const out = new Array<R>(items.length);
+
+    await visit(items, async ( item, index ) => { out[index] = await work(item, index); }, options);
 
     return out;
 
@@ -55,7 +59,7 @@ export async function filterAsync<T> ( items: readonly T[], test: ( item: T, ind
 }
 export async function eachAsync<T> ( items: readonly T[], work: ( item: T, index: number ) => Promise<void>, options: Lanes = {} ): Promise<void> {
 
-    await mapAsync(items, work, options);
+    await visit(items, work, options);
 
 }
 export async function reduceAsync<T, R> ( items: readonly T[], work: ( total: R, item: T, index: number ) => Promise<R>, initial: R ): Promise<R> {

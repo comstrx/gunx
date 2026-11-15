@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 from PIL import Image as Pil
 from typing import Any
-import asyncio, tempfile
+import asyncio, tempfile, os
 
 bench  = Bench()
 loop   = asyncio.new_event_loop()
@@ -18,7 +18,7 @@ Pil.new("RGB", (800, 600), (200, 30, 30)).save(raster, format="PNG")
 
 png = raster.getvalue()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 crypto.setup([crypto.key("k1")])
 
 def run ( work: Any ) -> Any:

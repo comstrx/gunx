@@ -333,3 +333,200 @@ async def test_the_hub_contains_a_crashing_handler_or_gate_and_refuses_bad_setti
     sockets.setup(capacity=1, limit=64, idle=1.0, rate=2, span=60.0, channels=1, history=2)
 
     assert sockets.describe()["rate"] == 2 and sockets.describe()["rooms"] == 1
+
+async def test_fanout_encodes_once_and_keeps_slow_peer_failure_local ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    encoded: list[bool] = []
+    received: list[str] = []
+    original = Frame.encode
+
+    def encode ( self: Frame ) -> bytes:
+
+        encoded.append(True)
+
+        return original(self)
+
+    class Receiver:
+
+        async def send ( self, data: str ) -> None:
+
+            received.append(data)
+
+    class Broken:
+
+        async def send ( self, data: str ) -> None:
+
+            raise ConnectionError("closed")
+
+    hub = Hub()
+    good = Socket("good", Receiver(), "u")
+    bad = Socket("bad", Broken(), "u")
+
+    hub.add(good)
+    hub.add(bad)
+    monkeypatch.setattr(Frame, "encode", encode)
+
+    assert await hub.broadcast("news", { "text": "payload" }) == 2
+    assert encoded == [True] and len(received) == 1
+    assert good.sent == 1 and not good.closed and bad.closed
+
+def test_frame_limit_counts_utf8_bytes_and_contains_invalid_text () -> None:
+
+    raw = '{"event":"tick","data":{"text":"' + "\u00e9" * 20 + '"}}'
+    size = len(raw.encode())
+
+    assert Frame.decode(raw, size).event == "tick"
+
+    for value in (raw, raw.encode()):
+
+        with pytest.raises(Fault) as refused: Frame.decode(value, size - 1)
+
+        assert refused.value.code is Code.TOO_LARGE and refused.value.reason == "socket.frame"
+
+    with pytest.raises(Fault) as malformed: Frame.decode('{"event":"\ud800"}')
+
+    assert malformed.value.code is Code.BAD_REQUEST
+
+async def test_send_failure_closes_transport_and_stops_queued_writer () -> None:
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    sent: list[str] = []
+    closed: list[int] = []
+
+    class Broken:
+
+        async def send ( self, text: str ) -> None:
+
+            sent.append(text)
+            entered.set()
+            await release.wait()
+
+            raise ConnectionError("failed")
+
+        async def close ( self, code: int, reason: str ) -> None:
+
+            closed.append(code)
+
+    socket = Socket("broken", Broken(), None)
+    first = asyncio.create_task(socket.write("first"))
+
+    await entered.wait()
+
+    second = asyncio.create_task(socket.write("second"))
+
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.gather(first, second)
+    await socket.close()
+
+    assert sent == ["first"] and closed == [1011] and socket.closed and socket.sent == 0
+
+async def test_cancelled_socket_write_propagates_and_releases_serialization_lock () -> None:
+
+    entered = asyncio.Event()
+
+    class Pending:
+
+        async def send ( self, text: str ) -> None:
+
+            entered.set()
+            await asyncio.Future[None]()
+
+        async def close ( self, code: int, reason: str ) -> None: pass
+
+    socket = Socket("cancelled", Pending(), None)
+    task = asyncio.create_task(socket.write("message"))
+
+    await entered.wait()
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError): await task
+
+    assert not socket.lock.locked() and socket.sent == 0
+
+    await socket.close()
+
+    assert socket.closed
+
+
+async def test_history_remains_bounded_without_recipients () -> None:
+
+    hub = Hub(history=2)
+
+    for value in range(5): assert await hub.emit("room", "tick", { "value": value }) == 0
+
+    assert hub.history("room") == [("tick", { "value": 3 }), ("tick", { "value": 4 })]
+    assert hub.history("other") == []
+
+async def test_cancelled_greeting_releases_hub_capacity () -> None:
+
+    entered = asyncio.Event()
+
+    class Pending:
+
+        async def send ( self, data: str ) -> None:
+
+            entered.set()
+            await asyncio.Future[None]()
+
+    sockets = Sockets()
+
+    sockets.setup(capacity=1)
+
+    for _ in range(8):
+
+        entered.clear()
+        task = asyncio.create_task(sockets.serve(Pending()))
+
+        await asyncio.wait_for(entered.wait(), 1)
+
+        assert sockets.hub.count() == 1
+
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await task
+
+        assert sockets.hub.count() == 0 and sockets.hub.channels() == ()
+
+@pytest.mark.parametrize(("event", "room", "expected"), [
+    ("ping", None, "_ping_"), ("whisper", None, "_whisper_"), ("join", "room", "_join_"),
+    ("leave", "room", "_leave_"), ("presence", "room", "_presence_"), ("join", None, None),
+    ("leave", "", None), ("presence", None, None), ("custom", "room", None),
+])
+def test_builtin_routing_preserves_room_requirements ( event: str, room: str | None, expected: str | None ) -> None:
+
+    handler = Sockets()._builtin_(Frame(event=event, channel=room))
+
+    assert (handler.__name__ if handler is not None else None) == expected
+
+async def test_room_fanout_preserves_exclusion_and_member_snapshot () -> None:
+
+    received: list[str] = []
+    hub = Hub()
+
+    class Receiver:
+
+        def __init__ ( self, name: str ) -> None: self.name = name
+
+        async def send ( self, data: str ) -> None:
+
+            received.append(self.name)
+
+            if self.name == "first": hub.leave(second, "room")
+
+    first = Socket("first", Receiver("first"), None)
+    second = Socket("second", Receiver("second"), None)
+
+    for socket in (first, second):
+
+        hub.add(socket)
+        hub.join(socket, "room")
+
+    assert await hub.emit("room", "tick", skip="first") == 1 and received == ["second"]
+
+    received.clear()
+
+    assert await hub.emit("room", "tick") == 2 and sorted(received) == ["first", "second"]
+    assert hub.count("room") == 1

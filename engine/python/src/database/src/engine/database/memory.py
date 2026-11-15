@@ -1,11 +1,13 @@
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from operator import attrgetter
 from typing import Any
+import heapq
 
 from engine.error import Code, Fault
 from engine.health import health
 from engine.rand import rand
+from .arch import cursor_size
 from .model import Model
 
 class Memory[M: Model]:
@@ -61,7 +63,7 @@ class Memory[M: Model]:
 
     async def first ( self, **where: Any ) -> M | None:
 
-        return next(iter(self._match_(where)), None)
+        return next(self._matches_(where), None)
 
     async def all ( self, order: str | None = None, **where: Any ) -> list[M]:
 
@@ -76,9 +78,19 @@ class Memory[M: Model]:
 
         return found[start:start + max(1, limit)], len(found)
 
+    async def cursor ( self, after: Any = None, limit: int = 100, **where: Any ) -> list[M]:
+
+        size = cursor_size(limit)
+        key  = attrgetter(self._key)
+        rows = self._matches_(where)
+
+        if after is not None: rows = (row for row in rows if key(row) > after)
+
+        return heapq.nsmallest(size, rows, key=key)
+
     async def count ( self, **where: Any ) -> int:
 
-        return len(self._match_(where))
+        return sum(1 for _ in self._matches_(where))
 
     async def exists ( self, **where: Any ) -> bool:
 
@@ -131,13 +143,17 @@ class Memory[M: Model]:
 
     def _match_ ( self, where: Mapping[str, Any] ) -> list[M]:
 
+        return list(self._matches_(where))
+
+    def _matches_ ( self, where: Mapping[str, Any] ) -> Iterator[M]:
+
         unknown = sorted(set(where) - self._fields)
 
         if unknown:
 
             raise Fault(Code.INTERNAL, reason="database.column", errors={ name: ["is unknown"] for name in unknown })
 
-        return [row for row in self._rows.values() if all(getattr(row, name) == value for name, value in where.items())]
+        return (row for row in self._rows.values() if all(getattr(row, name) == value for name, value in where.items()))
 
     def _sorted_ ( self, rows: list[M], order: str ) -> list[M]:
 

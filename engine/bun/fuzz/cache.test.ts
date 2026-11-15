@@ -364,6 +364,34 @@ describe("fuzz cache", () => {
 
     });
 
+    it("bounded limiters never forget active quota under arbitrary identity churn", () => {
+
+        faked(() => {
+
+            fc.assert(fc.property(fc.integer({ min: 1, max: 8 }), fc.integer({ min: 1, max: 5 }), fc.array(fc.nat({ max: 20 }), { maxLength: 200 }), ( size, cap, keys ) => {
+
+                const limit = cache.limiter(cap, 60_000, size);
+                const granted = new Map<string, number>();
+
+                for ( const key of keys ) {
+
+                    const name = String(key);
+                    const count = granted.get(name) ?? 0;
+                    const accepted = count < cap && (granted.has(name) || granted.size < size);
+
+                    expect(limit.take(name).allowed).toBe(accepted);
+
+                    if ( accepted ) granted.set(name, count + 1);
+
+                    expect((granted.get(name) ?? 0) <= cap).toBe(true);
+
+                }
+
+            }), { numRuns: runs });
+
+        });
+
+    });
     it("a limiter grants what a fixed window grants and never more than the limit", () => {
 
         faked(() => {
@@ -385,11 +413,11 @@ describe("fuzz cache", () => {
 
                     if ( step.run === "take" ) {
 
-                        const weight = step.cost === undefined ? 1 : step.cost >= 0 ? step.cost : step.cost < 0 ? 0 : Number.POSITIVE_INFINITY;
-                        const granted = used + weight <= cap;
+                        const weight = step.cost ?? 1;
+                        const granted = Number.isFinite(weight) && weight >= 0 && used + weight <= cap;
                         const taken = real.take(step.key, step.cost);
 
-                        if ( granted ) model.set(step.key, { used: used + weight, start: found?.start ?? now });
+                        if ( granted && weight > 0 ) model.set(step.key, { used: used + weight, start: found?.start ?? now });
 
                         expect(taken).toEqual({ allowed: granted, limit: cap, remaining: Math.max(0, cap - (granted ? used + weight : used)), retryAfter: granted ? 0 : wait });
                         expect(taken.remaining >= 0 && taken.remaining <= cap && taken.retryAfter <= Math.max(1, Math.ceil(span / 1000))).toBe(true);

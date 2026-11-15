@@ -1,10 +1,7 @@
 import * as number from "engine-number";
-import { add, daysIn, from, type Input, isSame, mod, startOf, strict, today, tomorrow, type Unit, utc, yesterday } from "./calendar.ts";
-import { type Held, held } from "./intl.ts";
-
-export type Parts = { year: number; month: number; day: number; hour: number; minute: number; second: number; millisecond: number; weekday: number };
-export type Grid = { weeks: (Date | undefined)[][]; month: number; year: number };
-export type Span = { days: number; hours: number; minutes: number; seconds: number; ms: number; negative: boolean };
+import type { Grid, Held, Input, Parts, Span, Unit } from "./arch.ts";
+import { add, daysIn, from, isSame, mod, startOf, strict, today, tomorrow, utc, yesterday } from "./calendar.ts";
+import { held } from "./intl.ts";
 
 const day = 86_400_000;
 const fields = ["year", "month", "day", "hour", "minute", "second", "millisecond"] as const;

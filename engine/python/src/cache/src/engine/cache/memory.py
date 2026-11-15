@@ -4,11 +4,12 @@ from typing import Any
 from engine.date import date
 from engine.error import Code, Fault
 from .arch import life, MAX_ITEMS, name, PAIR
-import cachebox
+import cachebox, heapq
 
 class Memory:
 
-    name = "memory"
+    name   = "memory"
+    shared = False
 
     def __init__ ( self, size: int = MAX_ITEMS ) -> None:
 
@@ -22,9 +23,18 @@ class Memory:
 
     async def many ( self, keys: Iterable[str] ) -> dict[str, Any]:
 
-        found = { key: self._items.get(key) for key in keys if type(key) is str }
+        found: dict[str, Any] = {}
 
-        return { key: value for key, value in found.items() if value is not None }
+        for key in keys:
+
+            if type(key) is not str: continue
+
+            value = self._items.get(key)
+
+            if value is None: found.pop(key, None)
+            else: found[key] = value
+
+        return found
 
     async def set ( self, key: str, value: Any, ttl: float | None = None ) -> None:
 
@@ -47,6 +57,10 @@ class Memory:
     async def delete ( self, key: str ) -> bool:
 
         return type(key) is str and self._items.pop(key, None) is not None
+
+    async def delete_many ( self, keys: Iterable[str] ) -> int:
+
+        return sum(type(key) is str and self._items.pop(key, None) is not None for key in keys)
 
     async def take ( self, key: str ) -> Any:
 
@@ -138,9 +152,9 @@ class Memory:
 
     async def keys ( self, prefix: str = "", limit: int = 1000 ) -> list[str]:
 
-        found = [key for key in list(self._items.keys()) if key.startswith(prefix)]
+        if limit <= 0: return []
 
-        return sorted(found)[:limit]
+        return heapq.nsmallest(limit, (key for key in self._items if key.startswith(prefix)))
 
     async def clear ( self, prefix: str = "" ) -> int:
 
@@ -152,7 +166,7 @@ class Memory:
 
             return count
 
-        keys = [key for key in list(self._items.keys()) if key.startswith(prefix)]
+        keys = [key for key in self._items if key.startswith(prefix)]
 
         for key in keys: self._items.pop(key, None)
 

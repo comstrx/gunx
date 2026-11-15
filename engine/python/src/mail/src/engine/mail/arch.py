@@ -122,3 +122,7 @@ class Message:
     def _wrong_ ( what: str ) -> Fault:
 
         return Fault(Code.VALIDATION, reason="mail.message", errors={ what: ["is invalid"] })
+
+RECIPIENT_RULES = {
+    "to": "required|list", "to.*": "required|email", "cc": "list", "cc.*": "email", "bcc": "list", "bcc.*": "email",
+}

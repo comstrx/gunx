@@ -8,7 +8,7 @@ from engine.rand import rand
 from engine.validate import field
 from decimal import Decimal
 from typing import Any, ClassVar
-import asyncio, os, pytest
+import asyncio, asyncpg, os, pytest, sys
 
 URL = os.environ.get("ENGINE_DATABASE_URL", "postgresql://engine:engine@127.0.0.1:5432/engine_test")
 
@@ -95,7 +95,8 @@ def test_sql_composes_safely () -> None:
     assert Sql.insert("p").rows(["a"], [{ "a": 1 }, { "a": 2 }]).conflict("a").text() == 'INSERT INTO "p" ("a") VALUES ($1), ($2) ON CONFLICT ("a") DO NOTHING'
     assert Sql.update("p").set(a=1).raw_set("n", "n + ?", 2).equals(id=5).returning().text() == 'UPDATE "p" SET "a" = $1, "n" = n + $2 WHERE "id" = $3 RETURNING *'
     assert Sql.delete("p").equals(id=1).text() == 'DELETE FROM "p" WHERE "id" = $1'
-    assert Sql.select("p").lock().text().endswith("FOR UPDATE SKIP LOCKED")
+    assert Sql.select("p").lock().text().endswith("FOR UPDATE")
+    assert Sql.select("p").lock(wait="skip").text().endswith("FOR UPDATE SKIP LOCKED")
 
     broken: tuple[Callable[[], object], ...] = (lambda: Sql.update("p").set(a=1).text(), lambda: Sql.delete("p").text(), lambda: Sql.insert("p").text(), lambda: Sql.select("p;drop"), lambda: Sql.select("p").where("a", "~", 1), lambda: Sql.select("p").order("a", "sideways"), lambda: Sql.select("p").limit(-1))
 
@@ -108,12 +109,14 @@ def test_sql_composes_safely () -> None:
 def test_sql_speaks_every_dialect () -> None:
 
     assert Sql.select("people", "id").where("name", "ILIKE", "a%").page(2, 10).text(SQLITE) == 'SELECT "id" FROM "people" WHERE "name" LIKE ? LIMIT 10 OFFSET 10'
-    assert Sql.select("p").lock().text(SQLITE) == 'SELECT * FROM "p"'
+    with pytest.raises(Fault) as unsupported: Sql.select("p").lock().text(SQLITE)
+
+    assert unsupported.value.reason == "sql.capability"
     assert Sql.update("p").set(a=1).equals(id=5).text(MYSQL) == "UPDATE `p` SET `a` = %s WHERE `id` = %s"
     assert Sql.insert("p").values(a=1, b=2).conflict("a", update=["b"]).text(MYSQL) == "INSERT INTO `p` (`a`, `b`) VALUES (%s, %s) AS new ON DUPLICATE KEY UPDATE `b` = new.`b`"
     assert Sql.insert("p").values(a=1).conflict("a").text(MYSQL).endswith("ON DUPLICATE KEY UPDATE `a` = `a`")
     assert Sql.select("p").raw_where("x % 2 = ?", 1).pair(MYSQL) == ("SELECT * FROM `p` WHERE (x %% 2 = %s)", [1])
-    assert Sql.select("p").lock().text(MYSQL).endswith("FOR UPDATE SKIP LOCKED")
+    assert Sql.select("p").lock(wait="skip").text(MYSQL).endswith("FOR UPDATE SKIP LOCKED")
     assert Sql.update("p").set(a=1).equals(id=5).text(CLICKHOUSE) == "ALTER TABLE `p` UPDATE `a` = %s WHERE `id` = %s"
     assert Sql.delete("p").equals(id=1).text(CLICKHOUSE) == "DELETE FROM `p` WHERE `id` = %s"
 
@@ -138,7 +141,7 @@ def test_tables_declare_their_ddl () -> None:
 
     assert PEOPLE.primary() == "id" and "deleted_at" in PEOPLE.names() and PEOPLE.column("email").unique and PEOPLE.has("age")
     assert len(PEOPLE.every_index()) == 2 and NOTES.every_index()[0].columns == ("person_id",)
-    assert PEOPLE.create()[0].startswith('CREATE TABLE IF NOT EXISTS "test_people"') and '"role" text NOT NULL DEFAULT \'user\' CHECK (role IN (\'admin\', \'user\'))' in PEOPLE.create()[0]
+    assert PEOPLE.create()[0].startswith('CREATE TABLE IF NOT EXISTS "test_people"') and '"role" text NOT NULL DEFAULT \'user\' CHECK ("role" IN (\'admin\', \'user\'))' in PEOPLE.create()[0]
     assert '"id" uuid PRIMARY KEY NOT NULL DEFAULT gen_random_uuid()' in PEOPLE.create()[0] and '"score" numeric(18, 2)' in PEOPLE.create()[0]
     assert NOTES.create()[0].count('REFERENCES "test_people" ("id") ON DELETE CASCADE') == 1
     assert PEOPLE.indexes[1].ddl("test_people") == 'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "test_people_email_role_key" ON "test_people" ("email", "role") WHERE deleted_at IS NULL'
@@ -995,3 +998,734 @@ def test_sql_refuses_a_hostile_identifier_and_operator () -> None:
     with pytest.raises(Fault) as oper: Sql.select("u").where("a", "= 1 OR 1", 1)
 
     assert oper.value.reason == "sql.operator"
+
+
+async def test_postgres_release_resets_session_state_and_temporary_objects () -> None:
+
+    driver = PostgresDriver(URL, min_size=1, max_size=1, ssl="disable")
+
+    await driver.connect()
+
+    first = await driver.acquire()
+
+    await first.execute("SET application_name = 'leaked'; CREATE TEMP TABLE leaked_session (id int)")
+    await first.execute("SELECT pg_advisory_lock(123456789)")
+    await driver.release(first)
+
+    second = await driver.acquire()
+
+    assert second is first
+    assert await second.fetchval("SHOW application_name") == "engine"
+    assert await second.fetchval("SELECT to_regclass('pg_temp.leaked_session')") is None
+    assert await second.fetchval("SELECT count(*) FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory'") == 0
+
+    await driver.fetch(second, "SELECT $1::int AS number", (1,))
+
+    assert driver.describe()["handles"] == 1
+
+    second.terminate()
+
+    await asyncio.sleep(0)
+
+    assert driver.describe()["handles"] == 0
+
+    await driver.release(second)
+    await driver.close()
+
+
+async def test_reopening_postgres_never_adopts_a_lease_from_the_closed_pool () -> None:
+
+    driver = PostgresDriver(URL, min_size=1, max_size=1, ssl="disable")
+
+    await driver.connect()
+
+    old = await driver.acquire()
+
+    await driver.close()
+    await driver.connect()
+
+    fresh = await driver.acquire()
+
+    assert fresh is not old and not driver.give(old)
+
+    await driver.release(old)
+    await driver.release(fresh)
+
+    assert old.is_closed()
+    assert driver.describe()["size"] == driver.describe()["idle"] == 1
+
+    await driver.close()
+
+
+async def test_a_returned_session_cannot_be_reused_by_an_inherited_child_context () -> None:
+
+    local = Database()
+    gate = asyncio.Event()
+
+    await local.connect(URL, min_size=1, max_size=1, ssl="disable")
+
+    async def delayed () -> None:
+
+        await gate.wait()
+
+        with pytest.raises(Fault) as expired: await local.value("SELECT 42")
+
+        assert expired.value.reason == "database.session.closed"
+
+    async with local.session() as session:
+
+        child = asyncio.create_task(delayed())
+
+        assert await session.value("SELECT 1") == 1
+
+    gate.set()
+
+    await child
+
+    with pytest.raises(Fault) as expired: await session.value("SELECT 2")
+
+    assert expired.value.reason == "database.session.closed"
+    assert await local.value("SELECT 3") == 3
+
+    await local.close()
+
+def test_model_row_metadata_tracks_subclasses_and_replaced_tables () -> None:
+
+    class Entry(Model):
+
+        table: ClassVar[Table] = Table.define("entry", Column.id(), Column.text("data"), timestamps=False)
+        id: str
+        data: Any
+
+    class Child(Entry):
+
+        table: ClassVar[Table] = Table.define("child", Column.id(), Column.jsonb("data"), Column.boolean("flag"), timestamps=False)
+        flag: bool
+
+    raw = { "id": NOBODY, "data": '{"n":1}', "extra": "ignored" }
+
+    assert Entry.from_row(raw).data == '{"n":1}'
+    assert Child.from_row({ **raw, "flag": 1 }).dump() == { "id": NOBODY, "data": { "n": 1 }, "flag": True }
+
+    Entry.table = Table.define("entry", Column.id(), Column.jsonb("data"), timestamps=False)
+
+    assert Entry.from_row(raw).data == { "n": 1 }
+
+@pytest.mark.parametrize("suffix", ["\n", "\r", "\x00", "\t", " "])
+def test_sql_identifiers_reject_trailing_control_and_whitespace ( suffix: str ) -> None:
+
+    for dialect in (POSTGRES, MYSQL, SQLITE, CLICKHOUSE):
+
+        with pytest.raises(Fault) as caught: dialect.ident("users" + suffix)
+
+        assert caught.value.reason == "sql.identifier"
+
+    with pytest.raises(Fault) as caught: Sql.select("users" + suffix)
+
+    assert caught.value.reason == "sql.identifier"
+
+def test_sql_join_kind_is_validated_and_normalized () -> None:
+
+    with pytest.raises(Fault) as caught: Sql.select("a").join("b", "a.id", "b.id", "LEFT; DROP TABLE a; --")
+
+    assert caught.value.reason == "sql.join"
+    assert "LEFT JOIN" in Sql.select("a").join("b", "a.id", "b.id", "left").text()
+
+async def test_active_session_rejects_inherited_child_tasks_before_driver_use () -> None:
+
+    async with database.transaction() as session:
+
+        results = await asyncio.gather(*(database.value("SELECT 42") for _ in range(3)), return_exceptions=True)
+
+        assert all(isinstance(result, Fault) and result.reason == "database.session.task" for result in results)
+        assert await session.value("SELECT 7") == 7
+
+async def test_transaction_advisory_lock_requires_transaction_and_releases_on_exit () -> None:
+
+    with pytest.raises(Fault) as caught: await database.advisory(987654321)
+
+    assert caught.value.reason == "database.advisory.transaction"
+
+    other = Database()
+
+    await other.connect(URL, ssl="disable")
+
+    try:
+
+        async with database.transaction():
+
+            assert await database.advisory(987654321)
+
+            async with other.transaction(): assert not await other.advisory(987654321)
+
+        async with other.transaction(): assert await other.advisory(987654321)
+
+    finally: await other.close()
+
+
+async def test_outbox_attempt_ceiling_and_stale_owner_cannot_complete_successor ( db: Database, schema: Migrator ) -> None:
+
+    box = Outbox(db, table=OUTBOX)
+    seen: list[int] = []
+
+    async def receive ( payload: Mapping[str, Any] ) -> None: seen.append(int(payload["n"]))
+
+    box.kind("receive", receive)
+
+    id_ = await box.put("receive", { "n": 1 })
+    old = (await box.claim())[0]
+
+    await db.execute(Sql.update(OUTBOX.name).set(locked_until=date.before(1)).equals(id=id_))
+
+    fresh = (await box.claim())[0]
+
+    assert old["lease"] != fresh["lease"]
+    assert not await box.deliver(old) and seen == []
+    assert await box.deliver(fresh) and seen == [1]
+    assert not await box.deliver(old)
+
+    dead = await box.park("receive", { "n": 2 }, "terminal")
+
+    assert await box.claim() == []
+    assert [str(row["id"]) for row in await box.dead("receive")] == [dead]
+    assert await box.retry(dead)
+    assert await box.relay() == 1 and seen == [1, 2]
+    assert await box.dead() == []
+
+async def test_outbox_renews_during_slow_handler_and_finishes_only_owned_row (
+    db: Database, schema: Migrator, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+
+    monkeypatch.setattr(sys.modules["engine.database.outbox"], "LEASE", 0.15)
+
+    box = Outbox(db, table=OUTBOX)
+    entered = asyncio.Event()
+    finish = asyncio.Event()
+
+    async def slow ( payload: Mapping[str, Any] ) -> None:
+
+        entered.set()
+
+        await finish.wait()
+
+    box.kind("slow", slow)
+
+    await box.put("slow", {})
+    row = (await box.claim())[0]
+    task = asyncio.create_task(box.deliver(row))
+
+    try:
+
+        await entered.wait()
+        await asyncio.sleep(0.35)
+
+        assert await box.claim() == []
+
+        finish.set()
+
+        assert await task and await box.pending() == 0
+
+    finally:
+
+        task.cancel()
+
+        await asyncio.gather(task, return_exceptions=True)
+
+def test_row_lock_modes_are_explicit_and_unsupported_backends_refuse () -> None:
+
+    assert Sql.select("x").lock("share", "nowait").text().endswith("FOR SHARE NOWAIT")
+    assert Sql.select("x").lock("no_key", "skip").text().endswith("FOR NO KEY UPDATE SKIP LOCKED")
+
+    for dialect in (SQLITE, CLICKHOUSE):
+
+        with pytest.raises(Fault) as refused: Sql.select("x").lock().text(dialect)
+
+        assert refused.value.reason == "sql.capability"
+
+    with pytest.raises(Fault): Sql.select("x").lock("no_key").text(MYSQL)
+    with pytest.raises(Fault): Sql.select("x").lock(wait="unsafe")
+
+
+async def test_outbox_relay_claims_only_work_that_can_start (
+    db: Database, schema: Migrator, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+
+    monkeypatch.setattr(sys.modules["engine.database.outbox"], "LEASE", 0.15)
+
+    box = Outbox(db, table=OUTBOX)
+    seen: list[int] = []
+
+    async def slow ( payload: Mapping[str, Any] ) -> None:
+
+        if payload["n"] == 0: await asyncio.sleep(0.35)
+
+        seen.append(int(payload["n"]))
+
+    box.kind("slow", slow)
+
+    ids = [await box.put("slow", { "n": value }) for value in range(3)]
+
+    assert await box.relay(3) == 3 and seen == [0, 1, 2]
+    assert await box.pending() == 0
+
+    rows = await db.fetch(Sql.select(OUTBOX.name).where("id", "IN", ids))
+
+    assert all(row["attempts"] == 1 for row in rows)
+
+async def test_outbox_parallel_relay_is_bounded ( db: Database, schema: Migrator ) -> None:
+
+    box = Outbox(db, table=OUTBOX)
+    live, peak = 0, 0
+
+    async def receive ( payload: Mapping[str, Any] ) -> None:
+
+        nonlocal live, peak
+
+        live += 1
+        peak = max(peak, live)
+
+        try: await asyncio.sleep(0.02)
+        finally: live -= 1
+
+    box.kind("receive", receive)
+
+    for _ in range(7): await box.put("receive", {})
+
+    assert await box.relay(7, concurrency=2) == 7
+    assert peak == 2 and live == 0 and await box.pending() == 0
+
+    with pytest.raises(Fault): await box.relay(concurrency=0)
+
+async def test_cursor_pages_are_count_free_and_survive_deletion ( db: Database, schema: Migrator ) -> None:
+
+    stored = Repository(db, Person)
+    memory = Memory(Person)
+    keys   = [f"00000000-0000-4000-8000-{n:012d}" for n in range(1, 10)]
+
+    for n, key in enumerate(reversed(keys)):
+
+        values = { "id": key, "email": f"cursor-{n}@example.test", "name": "kept" if n % 2 == 0 else "other" }
+
+        await stored.create(**values)
+        await memory.create(**values)
+
+    for target in (stored, memory):
+
+        seen: list[str] = []
+        after = None
+
+        while page := await target.cursor(after, 2, name="kept"):
+
+            seen.extend(row.id for row in page)
+            after = page[-1].id
+
+        assert seen == keys[::2]
+        assert [row.id for row in await target.cursor(keys[3], 2, id=keys[4])] == [keys[4]]
+        assert await target.cursor(keys[-1], 2) == []
+
+        for limit in (0, -1, True):
+
+            with pytest.raises(Fault) as refused: await target.cursor(limit=limit)
+
+            assert refused.value.reason == "database.cursor.limit"
+
+    first = await stored.cursor(limit=3)
+
+    await db.execute(Sql.delete(PEOPLE.name).equals(id=first[0].id))
+
+    assert [row.id for row in await stored.cursor(first[-1].id, 3)] == keys[3:6]
+
+async def test_scope_metadata_follows_savepoints_and_transaction_exit () -> None:
+
+    async with database.session() as session:
+
+        with pytest.raises(Fault) as refused: await session.scope(scope="outside")
+
+        assert refused.value.reason == "database.scope.transaction"
+
+        async with session.transaction():
+
+            await session.scope(scope="outer")
+
+            with pytest.raises(Fault) as rolled:
+
+                async with session.transaction():
+
+                    await session.scope(scope="inner")
+
+                    raise Fault(Code.CONFLICT, reason="scope.rollback")
+
+            assert rolled.value.reason == "scope.rollback"
+            assert session.scoped() == { "scope": "outer" }
+            assert await session.value("SELECT current_setting('app.scope')") == "outer"
+
+            async with session.transaction(): await session.scope(scope="committed")
+
+            assert session.scoped() == { "scope": "committed" }
+            assert await session.value("SELECT current_setting('app.scope')") == "committed"
+
+        assert session.scoped() == {}
+
+async def test_insert_rows_keep_column_identity_across_keyword_order ( db: Database ) -> None:
+
+    await db.execute('DROP TABLE IF EXISTS "test_row_order"')
+    await db.execute('CREATE TABLE "test_row_order" ("a" integer, "b" integer)')
+
+    try:
+
+        statement = Sql.insert("test_row_order").values(a=1, b=10).values(b=20, a=2)
+        before = statement.params()
+
+        for values in ({ "a": 3 }, { "a": 3, "b": 30, "c": 300 }):
+
+            with pytest.raises(Fault) as caught: statement.values(**values)
+
+            assert caught.value.reason == "sql.columns" and statement.params() == before
+
+        with pytest.raises(Fault): statement.columns("b", "a")
+        with pytest.raises(Fault): statement.rows(["b", "a"], [{ "a": 3, "b": 30 }])
+
+        await db.execute(statement)
+        await db.execute(Sql.insert("test_row_order").columns("b", "a").values(a=3, b=30))
+
+        assert await db.fetch('SELECT "a", "b" FROM "test_row_order" ORDER BY "a"') == [
+            { "a": 1, "b": 10 }, { "a": 2, "b": 20 }, { "a": 3, "b": 30 },
+        ]
+
+    finally: await db.execute('DROP TABLE IF EXISTS "test_row_order"')
+
+@pytest.mark.parametrize("action", ["CASCADE; SELECT 1", "SET NULL --", "CASCADE\n", "unknown"])
+def test_foreign_actions_refuse_sql_fragments ( action: str ) -> None:
+
+    with pytest.raises(Fault) as caught: Column.reference("owner", "owners", on_delete=action)
+
+    assert caught.value.reason == "table.action"
+
+async def test_enum_values_round_trip_as_data_in_schema_and_default ( db: Database ) -> None:
+
+    values = ["", "owner's", "x\\y", "'); DROP TABLE ignored; --", "عربي"]
+    column = Column.enum("select", values, default="")
+
+    await db.execute('DROP TABLE IF EXISTS "test_enum_data"')
+
+    try:
+
+        await db.execute(f'CREATE TABLE "test_enum_data" ({column.ddl(db.dialect())})')
+        await db.execute('INSERT INTO "test_enum_data" DEFAULT VALUES')
+
+        for value in values: await db.execute(Sql.insert("test_enum_data").values(select=value))
+
+        assert sorted(row["select"] for row in await db.fetch('SELECT "select" FROM "test_enum_data"')) == sorted(["", *values])
+
+        with pytest.raises(Fault): await db.execute(Sql.insert("test_enum_data").values(select="missing"))
+
+    finally: await db.execute('DROP TABLE IF EXISTS "test_enum_data"')
+
+def test_enum_schema_rejects_empty_choices_nul_and_unlisted_default () -> None:
+
+    for values, default in (([], None), (["x"], "y"), (["x\x00"], None)):
+
+        with pytest.raises(Fault): Column.enum("state", values, default)
+
+async def test_postgres_release_discards_sequence_state_without_invalidating_prepared_queries () -> None:
+
+    local = Database()
+
+    await local.connect(URL, min_size=1, max_size=1, ssl="disable")
+
+    try:
+
+        async with local.session() as first:
+
+            connection = first.raw()
+
+            await first.execute("CREATE SEQUENCE test_lease_sequence")
+            await first.fetch("SELECT $1::int AS value", 7)
+
+            assert await connection.fetchval("SELECT nextval('test_lease_sequence')") == 1
+
+        assert local.describe()["handles"] == 1
+
+        async with local.session() as second:
+
+            assert second.raw() is connection
+            assert await second.fetch("SELECT $1::int AS value", 8) == [{"value": 8}]
+
+            for sql in ("SELECT currval('test_lease_sequence')", "SELECT lastval()"):
+
+                with pytest.raises(asyncpg.ObjectNotInPrerequisiteStateError) as missing:
+
+                    await second.raw().fetchval(sql)
+
+                assert missing.value.sqlstate == "55000"
+
+            assert await second.raw().fetchval("SELECT nextval('test_lease_sequence')") == 2
+
+    finally:
+
+        try: await local.execute("DROP SEQUENCE IF EXISTS test_lease_sequence")
+        finally: await local.close()
+
+async def test_postgres_release_restores_every_session_field_before_reuse () -> None:
+
+    driver = PostgresDriver(URL, min_size=1, max_size=1, ssl="disable")
+
+    await driver.connect()
+
+    try:
+
+        first = await driver.acquire()
+
+        await first.execute(
+            "SET application_name = 'private'; CREATE TEMP TABLE deferred_private (id int); "
+            "CREATE TEMP SEQUENCE deferred_sequence; SELECT nextval('deferred_sequence'); "
+            "SELECT pg_advisory_lock(876543219); LISTEN deferred_channel;"
+        )
+
+        await driver.release(first)
+
+        assert driver.describe()["idle"] == 1
+
+        second = await driver.acquire()
+
+        assert second is first
+        assert await second.fetchval("SHOW application_name") == "engine"
+        assert await second.fetchval("SELECT to_regclass('pg_temp.deferred_private')") is None
+        assert await second.fetchval("SELECT to_regclass('pg_temp.deferred_sequence')") is None
+        assert await second.fetchval(
+            "SELECT count(*) FROM pg_locks WHERE pid=pg_backend_pid() AND locktype='advisory'"
+        ) == 0
+        assert await second.fetchval("SELECT count(*) FROM pg_listening_channels()") == 0
+
+        with pytest.raises(asyncpg.ObjectNotInPrerequisiteStateError): await second.fetchval("SELECT lastval()")
+
+        await driver.release(second)
+
+        assert driver.describe()["idle"] == 1
+
+    finally: await driver.close()
+
+async def test_cancelled_database_fetch_never_exposes_its_session_to_a_waiter () -> None:
+
+    local = Database()
+
+    await local.connect(URL, min_size=1, max_size=1, application="engine-cancel", ssl="disable")
+
+    observer = await asyncpg.connect(URL)
+
+    try:
+
+        running = asyncio.create_task(local.fetch("SELECT set_config('application_name', 'cancel-private', false), pg_sleep(10)"))
+
+        async with asyncio.timeout(5):
+
+            for _ in range(500):
+
+                if await observer.fetchval(
+                    "SELECT EXISTS(SELECT FROM pg_stat_activity WHERE application_name=$1 AND state='active' AND query LIKE '%pg_sleep%')",
+                    "cancel-private",
+                ): break
+
+                await asyncio.sleep(0.005)
+
+            else: raise AssertionError("The query never reached Postgres")
+
+        waiting = asyncio.create_task(local.value("SELECT current_setting('application_name')"))
+
+        running.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await running
+
+        assert await waiting == "engine-cancel"
+
+        async with local.session() as session:
+
+            assert await session.value("SELECT 42") == 42
+            assert not session.raw().is_in_transaction()
+
+    finally:
+
+        await observer.close()
+        await local.close()
+
+async def test_cleanup_is_bounded_under_concurrent_queries_and_cancellation () -> None:
+
+    local = Database()
+
+    await local.connect(URL, min_size=2, max_size=4, application="engine-clean", ssl="disable")
+
+    completed = 0
+
+    async def worker ( number: int ) -> None:
+
+        nonlocal completed
+
+        for index in range(10):
+
+            value = f"{number}-{index}"
+            rows = await local.fetch(
+                "SELECT current_setting('application_name') AS previous, set_config('application_name', $1, false) AS changed",
+                value,
+            )
+
+            assert rows[0] == { "previous": "engine-clean", "changed": value }
+
+            state = local.describe()
+
+            assert 0 <= state["idle"] <= state["size"] <= 4
+
+        completed += 1
+
+    tasks = [asyncio.create_task(worker(number)) for number in range(40)]
+
+    try:
+
+        await asyncio.sleep(0.02)
+
+        for task in tasks[::7]: task.cancel()
+
+        ended = await asyncio.gather(*tasks, return_exceptions=True)
+
+        assert all(item is None or isinstance(item, asyncio.CancelledError) for item in ended)
+        assert completed >= 30
+
+        async with local.session() as session:
+
+            assert await session.value("SHOW application_name") == "engine-clean"
+
+    finally: await local.close()
+
+async def test_explicit_session_exit_waits_for_cleanup_of_session_locks () -> None:
+
+    local = Database()
+
+    await local.connect(URL, min_size=1, max_size=1, ssl="disable")
+
+    observer = await asyncpg.connect(URL)
+
+    try:
+
+        async with local.session() as session:
+
+            pid = await session.value("SELECT pg_backend_pid()")
+
+            await session.execute("SELECT pg_advisory_lock(891234567)")
+
+        assert await observer.fetchval(
+            "SELECT count(*) FROM pg_locks WHERE pid=$1 AND locktype='advisory'", pid,
+        ) == 0
+        assert local.describe()["idle"] == 1
+
+    finally:
+
+        await observer.close()
+        await local.close()
+
+async def test_pool_close_refuses_a_connection_already_handed_to_a_waiter () -> None:
+
+    works = Works()
+    lane = Lane(works.opener, works.closer, 1, 1)
+
+    await lane.open()
+
+    held = await lane.acquire(0.1)
+    waiting = asyncio.create_task(lane.acquire(1.0))
+
+    await asyncio.sleep(0)
+    await lane.release(held)
+    await lane.close()
+
+    with pytest.raises(Fault) as caught: await waiting
+
+    assert caught.value.reason == "database.closed"
+    assert lane.size() == works.live() == 0
+
+async def test_reset_restores_both_database_identities () -> None:
+
+    driver = PostgresDriver(URL, min_size=1, max_size=1, ssl="disable")
+    role = "test_reset_" + str(rand.uuid()).replace("-", "")
+    control = await asyncpg.connect(URL)
+
+    await control.execute(f'CREATE ROLE "{role}" NOLOGIN')
+    await driver.connect()
+
+    try:
+
+        for command in ("SET ROLE", "SET SESSION AUTHORIZATION"):
+
+            connection = await driver.acquire()
+            original = await connection.fetchrow("SELECT session_user, current_user")
+
+            await connection.execute(f'{command} "{role}"')
+
+            assert await connection.fetchval("SELECT current_user") == role
+
+            await driver.release(connection)
+
+            restored = await driver.acquire()
+
+            assert restored is connection
+            assert await restored.fetchrow("SELECT session_user, current_user") == original
+
+            await driver.release(restored)
+
+    finally:
+
+        await driver.close()
+
+        try: await control.execute(f'DROP ROLE "{role}"')
+        finally: await control.close()
+
+async def test_postgres_json_codecs_cover_values_arrays_copy_and_reuse () -> None:
+
+    driver = PostgresDriver(URL, min_size=1, max_size=1, ssl="disable")
+    values: list[Any] = [None, True, False, 0, 42, 1.25, "", "\u00e9\u4e2d", [], {}, { "a": [1, None, { "b": "\u00e9" }] }]
+
+    await driver.connect()
+
+    try:
+
+        connection = await driver.acquire()
+
+        try:
+
+            for value in values:
+
+                row = await driver.fetch(connection, "SELECT $1::json AS plain, $2::jsonb AS binary", (value, value))
+
+                assert row == [{ "plain": value, "binary": value }]
+
+            array = [None, { "name": "\u00e9" }, { "numbers": [1, 2] }]
+            rows = await driver.fetch(connection, "SELECT $1::json[] AS plain, $2::jsonb[] AS binary", (array, array))
+
+            assert rows == [{ "plain": array, "binary": array }]
+
+            await connection.execute("CREATE TEMP TABLE codec_copy (plain json, document jsonb)")
+            await connection.copy_records_to_table("codec_copy", records=[(value, value) for value in values])
+
+            assert [dict(row.items()) for row in await connection.fetch("SELECT plain, document AS binary FROM codec_copy")] == [
+                { "plain": value, "binary": value } for value in values
+            ]
+
+        finally: await driver.release(connection)
+
+        reused = await driver.acquire()
+
+        try:
+
+            assert reused is connection
+            assert await reused.fetchval("SELECT to_regclass('pg_temp.codec_copy')") is None
+            assert await reused.fetchval("SELECT $1::jsonb", values[-1]) == values[-1]
+
+        finally:
+
+            await driver.release(reused)
+
+    finally: await driver.close()
+
+@pytest.mark.parametrize("raw", [b"", b"\x00{}", b"\x02{}", b"{}"])
+def test_postgres_jsonb_refuses_unknown_wire_format ( raw: bytes ) -> None:
+
+    with pytest.raises(Fault) as refused: PostgresDriver._decode_jsonb_(raw)
+
+    assert refused.value.code is Code.UNAVAILABLE and refused.value.reason == "database.jsonb"

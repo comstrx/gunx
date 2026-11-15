@@ -1,5 +1,7 @@
 from engine.error import Fault
-from engine.stream import Range
+from engine.stream import Range, stream
+from collections.abc import AsyncIterator
+import asyncio
 from hypothesis import HealthCheck, given, settings, strategies as st
 from contextlib import suppress
 
@@ -46,3 +48,33 @@ every_header_is_parsed_or_refused_with_416()
 well_formed_ranges_stay_inside_the_body()
 
 print(f"fuzz stream  examples={EXAMPLES * 2}  ok")
+
+@settings(max_examples=500, deadline=None, database=None)
+@given(st.lists(st.binary(max_size=256), max_size=12), st.integers(-10, 64))
+def chunks_preserve_bytes_or_refuse_invalid_size ( blocks: list[bytes], size: int ) -> None:
+
+    async def source () -> AsyncIterator[bytes]:
+
+        for block in blocks: yield block
+
+    async def check () -> None:
+
+        if size < 0:
+
+            refused: Fault | None = None
+
+            try: await anext(stream.chunks(source(), size))
+            except Fault as fault: refused = fault
+
+            assert refused is not None and refused.reason == "stream.chunk"
+
+            return
+
+        pieces = [piece async for piece in stream.chunks(source(), size)]
+
+        assert b"".join(pieces) == b"".join(blocks)
+        assert all(len(piece) == (size or stream.describe()["chunk"]) for piece in pieces[:-1])
+
+    asyncio.run(check())
+
+chunks_preserve_bytes_or_refuse_invalid_size()

@@ -11,7 +11,7 @@ from engine.rand import rand
 from engine.thread import thread
 from .arch import (
     BACKOFF, CEILING, Core, DEPTH, DOUBLES, Flush, Handler, Info, Keyed, LONG, LOOSE, MISSING, MODES, ORDERED, PART,
-    PATH, PLAIN, SWITCH, TAGGED, Target, TRIES, Work,
+    PATH, PLAIN, SWITCH, TAGGED, Target, TRIES, Work, count, span,
 )
 from .batch import Batch
 from .breaker import Breaker
@@ -26,6 +26,7 @@ class Func:
         self._cores: dict[str, Core] = {}
         self._forced: str | None = None
         self._pending: set[asyncio.Task[Any]] = set()
+        self._timers: dict[asyncio.TimerHandle, asyncio.AbstractEventLoop] = {}
         self._signs: WeakKeyDictionary[Target, inspect.Signature] = WeakKeyDictionary()
         self._hints: WeakKeyDictionary[Target, dict[str, Any]] = WeakKeyDictionary()
 
@@ -207,10 +208,18 @@ class Func:
 
     def info ( self, target: Target ) -> Info:
 
+        params = self.signature(target).parameters
+        spread = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        placed = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        empty  = inspect.Parameter.empty
+
         return Info(
             self.name(target), self.module(target), self.file(target), self.line(target), self.doc(target),
-            self.params(target), self.required(target), self.defaults(target), self.returns(target),
-            self.arity(target), self.is_async(target), self.is_generator(target),
+            tuple(params),
+            tuple(name for name, found in params.items() if found.default is empty and found.kind not in spread),
+            { name: found.default for name, found in params.items() if found.default is not empty },
+            self.returns(target), sum(found.kind in placed for found in params.values()),
+            self.is_async(target), self.is_generator(target),
         )
 
     def resolve ( self, path: str, roots: Sequence[str] = () ) -> Any:
@@ -348,11 +357,11 @@ class Func:
             mark   = named(*args, **kwargs)
             flight = flights.get(mark)
 
-            if flight is None:
+            if flight is None or flight.done():
 
                 def landed ( done: asyncio.Task[Any] ) -> None:
 
-                    flights.pop(mark, None)
+                    if flights.get(mark) is done: flights.pop(mark, None)
 
                     if not done.cancelled(): done.exception()
 
@@ -370,7 +379,11 @@ class Func:
         jitter: bool = True, idempotent: bool = False,
     ) -> T:
 
-        if tries < 1 or not 0 <= backoff < math.inf or not 0 <= ceiling < math.inf:
+        count(tries, "func.retry")
+        backoff = span(backoff, "func.retry")
+        ceiling = span(ceiling, "func.retry")
+
+        if (type(jitter), type(idempotent)) != (bool, bool):
 
             raise Fault(Code.INTERNAL, reason="func.retry")
 
@@ -387,7 +400,7 @@ class Func:
 
                 if attempt >= tries or asked > ceiling or not fault.safe(idempotent): raise
 
-                wait = min(ceiling, math.ldexp(backoff, min(attempt - 1, DOUBLES)))
+                wait = min(ceiling, backoff * (1 << min(attempt - 1, DOUBLES)))
 
                 if jitter: wait = wait * (0.5 + rand.number() / 2)
 
@@ -399,17 +412,26 @@ class Func:
 
     async def timeout [T] ( self, seconds: float, work: Work[T], reason: str = "timeout" ) -> T:
 
-        if not seconds < math.inf: raise Fault(Code.INTERNAL, reason="func.timeout")
+        if type(seconds) not in (int, float) or not -sys.float_info.max <= seconds <= sys.float_info.max:
+
+            raise Fault(Code.INTERNAL, reason="func.timeout")
+
+        scope = asyncio.timeout(seconds)
 
         try:
 
-            async with asyncio.timeout(seconds): return await work()
+            async with scope: return await work()
 
-        except TimeoutError as error: raise Fault(Code.TIMEOUT, reason=reason, unknown=True) from error
+        except TimeoutError as error:
+
+            if not scope.expired(): raise
+
+            raise Fault(Code.TIMEOUT, reason=reason, unknown=True) from error
 
     async def hedge [T] ( self, work: Work[T], delay: float, copies: int = 2 ) -> T:
 
-        if copies < 1 or not 0 <= delay < math.inf: raise Fault(Code.INTERNAL, reason="func.hedge")
+        count(copies, "func.hedge")
+        delay = span(delay, "func.hedge")
 
         flying  : set[asyncio.Future[T]] = set()
         started = 0
@@ -428,6 +450,14 @@ class Func:
                 done, flying = await asyncio.wait(
                     flying, timeout=delay if started < copies else None, return_when=asyncio.FIRST_COMPLETED,
                 )
+                if any(landed.cancelled() for landed in done):
+
+                    for landed in done:
+
+                        if not landed.cancelled(): landed.exception()
+
+                    raise asyncio.CancelledError
+
                 errors = { landed: landed.exception() for landed in done }
                 won    = next((landed for landed, error in errors.items() if error is None), None)
                 odd    = next((error for error in errors.values() if error and not isinstance(error, Fault)), None)
@@ -474,9 +504,11 @@ class Func:
 
         return Limiter(rate, burst)
 
-    def batch [T, R] ( self, flush: Flush[T, R], size: int = 64, delay: float = 0.0 ) -> Batch[T, R]:
+    def batch [T, R] (
+        self, flush: Flush[T, R], size: int = 64, delay: float = 0.0, *, workers: int = 1,
+    ) -> Batch[T, R]:
 
-        return Batch(flush, size, delay)
+        return Batch(flush, size, delay, workers=workers)
 
     async def settle [T] ( self, works: list[Work[T]] ) -> list[T | Fault]:
 
@@ -551,23 +583,38 @@ class Func:
         reason: str = "poll",
     ) -> None:
 
-        if not 0 <= every < math.inf or not 0 <= timeout < math.inf: raise Fault(Code.INTERNAL, reason="func.poll")
-
+        every   = span(every, "func.poll")
+        timeout = span(timeout, "func.poll")
         deadline = time.monotonic() + timeout
 
         while True:
 
-            found = check()
-            ready = await found if isinstance(found, Awaitable) else found
+            scope = asyncio.timeout(max(0.0, deadline - time.monotonic()))
+
+            try:
+
+                async with scope:
+
+                    found = check()
+                    ready = await found if inspect.isawaitable(found) else found
+
+            except TimeoutError as error:
+
+                if not scope.expired(): raise
+
+                raise Fault(Code.TIMEOUT, reason=reason, unknown=True) from error
 
             if ready: return
-            if time.monotonic() >= deadline: raise Fault(Code.TIMEOUT, reason=reason, unknown=True)
 
-            await asyncio.sleep(every)
+            left = deadline - time.monotonic()
+
+            if left <= 0: raise Fault(Code.TIMEOUT, reason=reason, unknown=True)
+
+            await asyncio.sleep(min(every, left))
 
     def debounce ( self, seconds: float ) -> Callable[[Handler], Callable[..., Awaitable[None]]]:
 
-        if not 0 <= seconds < math.inf: raise Fault(Code.INTERNAL, reason="func.debounce")
+        seconds = span(seconds, "func.debounce")
 
         def decorator ( handler: Handler ) -> Callable[..., Awaitable[None]]:
 
@@ -577,11 +624,16 @@ class Func:
 
                 loop = asyncio.get_running_loop()
 
-                for timer in timers: timer.cancel()
+                for timer in timers:
+
+                    timer.cancel()
+                    self._timers.pop(timer, None)
 
                 timers.clear()
 
                 def fire () -> None:
+
+                    for timer in timers: self._timers.pop(timer, None)
 
                     timers.clear()
 
@@ -590,7 +642,11 @@ class Func:
                     fired.add_done_callback(self._reaped_)
                     self._track_(fired)
 
-                timers.append(loop.call_later(seconds, fire))
+                timer = loop.call_later(seconds, fire)
+
+                timers.append(timer)
+
+                self._timers[timer] = loop
 
             return wrapper
 
@@ -620,20 +676,26 @@ class Func:
 
     def pending ( self ) -> int:
 
-        return len(self._pending)
+        return len(self._pending) + len(self._timers)
 
     async def drain ( self ) -> int:
 
+        loop = asyncio.get_running_loop()
         count = 0
 
-        while self._pending:
+        while True:
 
-            flying = tuple(self._pending)
-            count += len(flying)
+            flying = tuple(task for task in self._pending if task.get_loop() is loop)
+            timers = tuple(timer for timer, owner in self._timers.items() if owner is loop)
 
-            await asyncio.wait(flying)
+            if flying:
 
-        return count
+                count += len(flying)
+
+                await asyncio.wait(flying)
+
+            elif timers: await asyncio.sleep(max(0.0, min(timer.when() for timer in timers) - loop.time()))
+            else: return count
 
     def _track_ ( self, task: asyncio.Task[Any] ) -> None:
 

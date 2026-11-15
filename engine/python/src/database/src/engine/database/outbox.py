@@ -41,6 +41,7 @@ class Outbox:
             Column.timestamp("available_at", now=True),
             Column.integer("attempts", default="0"),
             Column.timestamp("locked_until", nullable=True),
+            Column.text("lease", nullable=True),
             Column.timestamp("done_at", nullable=True),
             Column.text("failure", nullable=True),
             indexes=[Index(("available_at",), where="done_at IS NULL")],
@@ -85,6 +86,11 @@ class Outbox:
     async def claim ( self, limit: int | None = None ) -> list[Record]:
 
         name = self.table().name
+        dialect = self._database.dialect()
+
+        dialect.ensure("transaction")
+
+        if not dialect.can("lock") and dialect.name != "sqlite": dialect.ensure("lock")
 
         async with self._database.transaction() as session:
 
@@ -92,25 +98,33 @@ class Outbox:
             pick = Sql.select(name, "id", "kind", "payload", "attempts").where("done_at", "IS", None)
 
             pick.where("available_at", "<=", now).raw_where("locked_until IS NULL OR locked_until < ?", now)
-            pick.order("available_at").limit(limit or self._batch).lock()
+            pick.where("attempts", "<", TRIES).order("available_at").limit(limit or self._batch)
+
+            if dialect.can("lock"): pick.lock(wait="skip")
 
             rows = await session.fetch(*self._pair_(pick))
 
             if not rows: return []
 
-            lease = Sql.update(name).set(locked_until=date.after(LEASE)).raw_set("attempts", "attempts + 1")
+            token = rand.hex(16)
+            lease = Sql.update(name).set(locked_until=date.after(LEASE), lease=token)
+
+            lease.raw_set("attempts", "attempts + 1")
 
             lease.where("id", "IN", [row["id"] for row in rows])
 
             await session.execute(*self._pair_(lease))
 
-        return [{ **row, "attempts": int(row["attempts"]) + 1 } for row in rows]
+        return [{ **row, "attempts": int(row["attempts"]) + 1, "lease": token } for row in rows]
 
     async def deliver ( self, row: Record ) -> bool:
 
+        if self._database.current() is not None: raise Fault(Code.CONFLICT, reason="outbox.transaction")
+        if not await self.renew(row): return False
+
         handler = self._handlers.get(str(row["kind"]))
 
-        try: await self._handle_(handler, row["payload"])
+        try: await self._leased_(handler, row)
         except Exception as error:
 
             self._failed += 1
@@ -119,20 +133,75 @@ class Outbox:
 
             return False
 
-        done = Sql.update(self.table().name).set(done_at=date.now(), locked_until=None, failure=None)
+        done = Sql.update(self.table().name).set(done_at=date.now(), locked_until=None, failure=None, lease=None)
 
-        await self._database.execute(done.equals(id=row["id"]))
+        changed = await self._database.execute(self._owned_(done, row))
+
+        if not changed: return False
 
         self._delivered += 1
 
         return True
 
-    async def relay ( self, limit: int | None = None ) -> int:
+    def _owned_ ( self, sql: Sql, row: Record ) -> Sql:
 
-        rows = await self.claim(limit)
+        token = row.get("lease")
+
+        if not token: raise Fault(Code.CONFLICT, reason="outbox.lease")
+
+        return sql.equals(id=row["id"], lease=token).where("done_at", "IS", None)
+
+    async def renew ( self, row: Record ) -> bool:
+
+        sql = Sql.update(self.table().name).set(locked_until=date.after(LEASE))
+        sql.where("locked_until", ">", date.now())
+
+        return bool(await self._database.execute(self._owned_(sql, row)))
+
+    async def _leased_ ( self, handler: Handler | None, row: Record ) -> None:
+
+        task = asyncio.create_task(self._handle_(handler, row["payload"]))
+
+        try:
+
+            while not task.done():
+
+                done, _ = await asyncio.wait((task,), timeout=LEASE / 3)
+
+                if not done and not await self.renew(row): raise Fault(Code.CONFLICT, reason="outbox.lease")
+
+            task.result()
+
+        finally:
+
+            if not task.done(): task.cancel()
+
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def relay ( self, limit: int | None = None, concurrency: int = 1 ) -> int:
+
+        if self._database.current() is not None: raise Fault(Code.CONFLICT, reason="outbox.transaction")
+
+        remaining = self._batch if limit is None else limit
+
+        if type(remaining) is not int or remaining < 1 or type(concurrency) is not int or concurrency < 1:
+
+            raise Fault(Code.INTERNAL, reason="outbox.settings")
+
         done = 0
 
-        for row in rows: done += 1 if await self.deliver(row) else 0
+        while remaining:
+
+            rows = await self.claim(min(remaining, concurrency))
+
+            if not rows: break
+
+            async with asyncio.TaskGroup() as group:
+
+                tasks = [group.create_task(self.deliver(row)) for row in rows]
+
+            done += sum(task.result() for task in tasks)
+            remaining -= len(rows)
 
         return done
 
@@ -140,11 +209,33 @@ class Outbox:
 
         return int(await self._database.value(Sql.select(self.table().name).where("done_at", "IS", None).count()) or 0)
 
-    async def dead ( self ) -> list[Record]:
+    async def dead ( self, kind: str | None = None ) -> list[Record]:
 
-        sql = Sql.select(self.table().name, "id", "kind", "attempts", "failure").where("done_at", "IS", None)
+        sql = Sql.select(self.table().name).where("done_at", "IS", None).where("attempts", ">=", TRIES)
 
-        return await self._database.fetch(sql.where("attempts", ">=", TRIES))
+        if kind is not None: sql.equals(kind=kind)
+
+        return await self._database.fetch(sql)
+
+    async def park ( self, kind: str, payload: Mapping[str, Any], failure: str ) -> str:
+
+        async with self._database.transaction():
+
+            id_ = await self.put(kind, payload)
+            sql = Sql.update(self.table().name).set(attempts=TRIES, failure=failure[:200])
+
+            await self._database.execute(sql.equals(id=id_))
+
+        return id_
+
+    async def retry ( self, id_: str, payload: Mapping[str, Any] | None = None ) -> bool:
+
+        sql = Sql.update(self.table().name).set(attempts=0, available_at=date.now(), locked_until=None, lease=None)
+        sql.equals(id=id_).where("done_at", "IS", None).where("attempts", ">=", TRIES)
+
+        if payload is not None: sql.set(payload=dict(payload))
+
+        return bool(await self._database.execute(sql))
 
     async def purge ( self, older_than: float = 7 * 86400 ) -> int:
 
@@ -167,9 +258,13 @@ class Outbox:
 
         if self._task is not None:
 
-            await asyncio.wait([self._task], timeout=5)
+            task, self._task = self._task, None
 
-            self._task = None
+            _, pending = await asyncio.wait([task], timeout=5)
+
+            for waiting in pending: waiting.cancel()
+
+            await asyncio.gather(task, return_exceptions=True)
 
     def running ( self ) -> bool:
 
@@ -214,9 +309,11 @@ class Outbox:
 
         log.warning("outbox.failed", kind=row["kind"], attempts=attempts, wait=wait, error=text)
 
-        sql = Sql.update(self.table().name).set(locked_until=None, available_at=date.after(wait), failure=text[:200])
+        sql = Sql.update(self.table().name).set(
+            locked_until=None, lease=None, available_at=date.after(wait), failure=text[:200],
+        )
 
-        await self._database.execute(sql.equals(id=row["id"]))
+        await self._database.execute(self._owned_(sql, row))
 
     def _pair_ ( self, sql: Sql ) -> tuple[Any, ...]:
 

@@ -21,6 +21,9 @@ test:config:targets:loads-the-root-table-first () {
     TOOL_ROOT="${root}" config:targets:load
     @eq "$(config:targets:list)" twox
 
+    printf '[meta]\nname = "demo"\nversion = "0.1.0"\n\n[deps]\nonex = { type = "engine", path = "../outside" }\n' > "${root}/infra.toml"
+    TOOL_ROOT="${root}" @errors 'must name a path inside the root' config:targets:load
+
 }
 test:config:targets:reads-the-table () {
 

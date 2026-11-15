@@ -371,3 +371,30 @@ describe("fuzz log", () => {
     });
 
 });
+
+it("closing batches releases queued records and timers through repeated ownership cycles", () => {
+
+    jest.useFakeTimers();
+    try {
+
+        fc.assert(fc.property(fc.integer({ min: 0, max: 50 }), ( count ) => {
+
+            let calls = 0;
+            const sink = log.batchSink(() => { calls += 1; }, { size: 100, wait: 25 });
+
+            for ( let index = 0; index < count; index += 1 ) sink({ at: 0, level: "info", name: "cycle", message: String(index), facts: {} });
+
+            sink.destroy();
+            sink.destroy();
+            jest.advanceTimersByTime(100);
+            expect([sink.size(), calls, jest.getTimerCount()]).toEqual([0, 0, 0]);
+
+        }), { numRuns: 1000 });
+
+    } finally {
+
+        jest.useRealTimers();
+
+    }
+
+});

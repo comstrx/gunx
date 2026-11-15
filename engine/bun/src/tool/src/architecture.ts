@@ -1,40 +1,8 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import * as error from "engine-error";
+import type { Analysis, Found, Issue, Resolved, Rule, Rules, Visit } from "./arch.ts";
 import { byText, walk } from "./core.ts";
-
-export type Rules = {
-    root: string;
-    source?: string | undefined;
-    alias?: string | undefined;
-    layers: readonly string[];
-    vendor?: readonly string[] | undefined;
-    engine?: string | undefined;
-    members?: readonly string[] | undefined;
-    framework?: readonly string[] | undefined;
-    frameworkLayers?: readonly string[] | undefined;
-    outside?: readonly string[] | undefined;
-    shared?: readonly string[] | undefined;
-};
-export type Resolved = {
-    root: string;
-    source: string;
-    alias: string;
-    layers: readonly string[];
-    vendor: readonly string[];
-    engine: string;
-    members: readonly string[];
-    framework: readonly string[];
-    frameworkLayers: readonly string[];
-    outside: readonly string[];
-    shared: readonly string[];
-};
-export type Rule = "layer" | "member" | "outside" | "runtime" | "vendor";
-export type Issue = { file: string; line: number; message: string; rule: Rule };
-export type Analysis = { files: number; issues: Issue[]; edges: Record<string, string[]>; cycles: string[][] };
-
-type Found = { target: string; line: number; typed: boolean };
-type Visit = { node: string; next: number };
 
 const clause = /^[ \t]*import\s+(type\s+)?(?:[\w$]+\s*,\s*)?(?:[\w$]+|\*\s*as\s+[\w$]+|\{[^}]*\})\s*from\s*["']([^"']+)["']/;
 const passed = /^[ \t]*export\s+(type\s+)?(?:\*(?:\s*as\s+[\w$]+)?|\{[^}]*\})\s*from\s*["']([^"']+)["']/;

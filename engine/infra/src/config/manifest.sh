@@ -23,7 +23,7 @@ config:manifest:load () {
     core:validate:semver "${MANIFEST[meta.version]:-}" || { core:error:fail "${file}: [meta] version must be MAJOR.MINOR.PATCH"; return; }
 
     [[ -n "${MANIFEST[meta.license]:-}" ]] || { core:error:fail "${file}: [meta] license is required"; return; }
-    [[ "${MANIFEST[meta.authors]:-0}" -ge 1 ]] || { core:error:fail "${file}: [meta] authors needs one name at least"; return; }
+    config:manifest:counted meta.authors || { core:error:fail "${file}: [meta] authors needs one name at least"; return; }
 
     for name in entrypoint source build cache tests benches fuzz; do
         core:fs:path:relative "${MANIFEST[paths.${name}]:-}" || { core:error:fail "${file}: paths.${name} must be a relative path"; return; }
@@ -41,20 +41,22 @@ config:manifest:get () {
 }
 config:manifest:list () {
 
-    local key="${1}" count=0 index=0
+    core:parse:list MANIFEST "${1}"
 
-    count="${MANIFEST[${key}]:-0}"
+}
+config:manifest:counted () {
 
-    while (( index < count )); do
-        core:log:print "${MANIFEST[${key}.${index}]}"
-        index=$(( index + 1 ))
-    done
+    local count=""
+
+    count="${MANIFEST[${1}]:-}"
+
+    core:num:natural "${count}" && (( count > 0 ))
 
 }
 config:manifest:embedded () {
 
-    declare -F bundle:asset >/dev/null || return 1
+    declare -F bundle:manifest >/dev/null || return 1
 
-    core:parse:toml MANIFEST <(bundle:asset infra.toml)
+    bundle:manifest MANIFEST
 
 }

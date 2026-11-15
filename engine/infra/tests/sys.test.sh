@@ -35,6 +35,12 @@ test:core:sys:opens-a-session () {
     dead="$(core:sys:session "${lab}")"
     [[ -d "${directory}" && -d "${dead}" ]]
 
+    mkdir -p "${lab}/run/20261115-101010-$$.born" "${lab}/run/20261115-101010-2147483646.gone"
+    core:sys:prune "${lab}/run"
+
+    [[ -d "${lab}/run/20261115-101010-$$.born" ]] || @err 'a newborn session without its pid file was pruned'
+    [[ ! -e "${lab}/run/20261115-101010-2147483646.gone" ]]
+
 }
 test:core:sys:knows-the-machine () {
 
@@ -52,5 +58,12 @@ test:core:sys:knows-the-machine () {
 
     @contains "$(core:sys:report)" $'cores\t'
     @errors 'A command is required' core:sys:sudo
+
+}
+test:core:sys:spots-a-container () {
+
+    container=podman core:sys:is:container
+    KUBERNETES_SERVICE_HOST=10.0.0.1 core:sys:is:container
+    [[ "$(core:sys:now)" != *[!0-9]* ]]
 
 }

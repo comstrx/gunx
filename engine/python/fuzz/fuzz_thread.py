@@ -1,14 +1,14 @@
 from engine.error import Code, Fault
 from engine.log import log
-from engine.thread import Gate, Outcome, Tasks, thread
-from engine.thread.arch import CEILING, MODES, RETRIES, WORKERS
-from collections.abc import Awaitable, Callable, Coroutine
+from engine.thread import Gate, Outcome, Tasks, Thread, thread
+from engine.thread.arch import LIMIT, CEILING, MODES, RETRIES, WORKERS, environment, space
+from collections.abc import Awaitable, Callable, Coroutine, Iterator
 from contextvars import ContextVar
 from functools import partial
 from hypothesis import HealthCheck, given, settings, strategies as st
 from pathlib import Path
 from typing import Any, cast, override
-import asyncio, gc, inspect, math, operator, sys, threading
+import asyncio, gc, inspect, math, operator, sys, threading, os
 
 type Act   = tuple[str, int]
 type Step  = tuple[str, Any, int]
@@ -230,14 +230,14 @@ class Trial:
         kind, fails = self.plans[item]
 
         if turn > fails: return item * 3
-        if kind == "fault": raise Fault(Code.CONFLICT, reason="fuzz.taken")
+        if kind == "fault": raise Fault(Code.UNAVAILABLE, reason="fuzz.taken")
 
         raise ValueError(item)
 
     def soured ( self, retries: int ) -> bool:
 
-        if self.sour == "result": return any(fails <= retries for _, fails in self.plans)
-        if self.sour == "error": return any(fails > retries for _, fails in self.plans)
+        if self.sour == "result": return any(fails <= (retries if kind == "fault" else 0) for kind, fails in self.plans)
+        if self.sour == "error": return any(fails > (retries if kind == "fault" else 0) for kind, fails in self.plans)
 
         return False
 
@@ -255,27 +255,18 @@ class Trial:
 
         self.lost.append(index)
 
-    def stopped ( self, outcome: Outcome, retries: int ) -> bool:
+    def checked ( self, outcome: Outcome, retries: int ) -> None:
 
         kind, fails = self.plans[outcome.index]
         error       = outcome.error
+        budget      = retries if kind == "fault" else 0
 
-        if error is not None and error.reason == "thread.stopped":
-
-            assert error.code is Code.CONFLICT
-            assert self.seen[outcome.index] == 0
-            assert outcome.value is None
-
-            return True
-
-        assert self.seen[outcome.index] == min(fails, retries) + 1
+        assert self.seen[outcome.index] == min(fails, budget) + 1
         assert outcome.ms >= 0
 
-        if fails <= retries: assert (error, outcome.value, outcome.ok()) == (None, outcome.index * 3, True)
+        if fails <= budget: assert (error, outcome.value, outcome.ok()) == (None, outcome.index * 3, True)
         elif kind == "fault": assert (reason(error), unknown(error)) == ("fuzz.taken", False)
         else: assert (reason(error), cause(error)) == ("thread.failed", ValueError)
-
-        return False
 
 class Crowd:
 
@@ -529,15 +520,15 @@ def span ( value: object ) -> bool:
     return (type(value) is float or type(value) is int) and value > 0
 
 CHECKS: tuple[tuple[str, Callable[[Order], bool]], ...] = (
-    ("thread.mode", lambda order: order["mode"] in MODES),
-    ("thread.work", lambda order: callable(order["handler"]) and (order["mode"] == "async" or order["handler"] is not echo)),
+    ("thread.mode", lambda order: order["mode"] is None or order["mode"] in MODES),
+    ("thread.work", lambda order: callable(order["handler"]) and (order["mode"] in (None, "async") or order["handler"] is not echo)),
     ("thread.hook", lambda order: all(hook is None or callable(hook) for hook in (order["on_result"], order["on_error"]))),
     ("thread.seconds", lambda order: order["timeout"] is None or span(order["timeout"])),
     ("thread.retries", lambda order: whole(order["retries"], 0, RETRIES)),
     ("thread.workers", lambda order: order["workers"] is None or whole(order["workers"], 1, CEILING)),
     ("thread.items", lambda order: isinstance(order["items"], list | tuple | range)),
-    ("thread.address", lambda order: order["mode"] != "ray" or not order["items"] or order["address"] in { None, "ray://head:1" }),
-    ("thread.ray", lambda order: order["mode"] != "ray" or not order["items"]),
+    ("thread.address", lambda order: order["mode"] not in ("ray", "remote") or not order["items"] or order["address"] in { None, "ray://head:1" }),
+    ("thread.ray", lambda order: order["mode"] not in ("ray", "remote") or not order["items"]),
 )
 WAITS: st.SearchStrategy[Any] = st.one_of(
     st.sampled_from([0, 0.5, 1, 1.5, 2, 3.0, 8, math.inf]), st.sampled_from([0.5, 1, 2, 4, math.inf]),
@@ -624,25 +615,26 @@ def ran ( plans: list[Act], lane: str, knobs: Knobs, sour: str ) -> None:
 
         return
 
-    stopped = [outcome.index for outcome in found.outcomes if trial.stopped(outcome, retries)]
-    failing = [index for index, (_, fails) in enumerate(plans) if fails > retries]
-    indexes = [outcome.index for outcome in found.outcomes]
-    faulted = [index for index in failing if index not in stopped]
+    for outcome in found.outcomes: trial.checked(outcome, retries)
 
-    assert found.mode == mode
-    assert found.workers == bound
-    assert sorted(indexes) == list(range(count))
-    assert (not ordered or indexes == list(range(count)))
-    assert trial.flying == 0
-    assert trial.peak <= min(bound, count)
-    assert (fail_fast and bool(faulted)) or not stopped
-    assert not (fail_fast and failing and min(bound, count) == 1) or stopped == list(range(failing[0] + 1, count))
-    assert found.ok() is not (faulted or stopped)
-    assert len(found.errors()) == len(faulted) + len(stopped)
+    failing = [index for index, (kind, fails) in enumerate(plans) if fails > (retries if kind == "fault" else 0)]
+    indexes = [outcome.index for outcome in found.outcomes]
+    started = sorted(indexes)
+    faulted = [index for index in failing if index in indexes]
+
+    assert found.mode == mode and found.workers == bound
+    assert started == list(range(len(started)))
+    assert not ordered or indexes == started
+    assert not any(trial.seen[index] for index in range(len(started), count))
+    assert fail_fast or started == list(range(count))
+    assert not (fail_fast and failing and bound == 1) or started == list(range(failing[0] + 1))
+    assert trial.flying == 0 and trial.peak <= min(bound, count)
+    assert found.ok() is (not faulted)
+    assert len(found.errors()) == len(faulted)
     assert found.dump() == { "mode": mode, "workers": bound, "ms": found.ms, "done": len(found.results()), "failed": len(found.errors()) }
-    assert sorted(trial.good) == [(index, index * 3) for index in range(count) if index not in failing and index not in stopped]
+    assert sorted(trial.good) == [(index, index * 3) for index in started if index not in failing]
     assert sorted(trial.lost) == faulted
-    assert len(found.results()) == count - len(found.errors())
+    assert len(found.results()) + len(found.errors()) == len(started)
 
 @settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
 @given(ORDERS)
@@ -661,9 +653,14 @@ def judged ( order: Order ) -> None:
 
     sign = 1 if order["handler"] is echo else -1
 
+    expected = [item * sign for item in order["items"]]
+
     assert found.ok()
-    assert found.results() == [item * sign for item in order["items"]]
-    assert found.mode == order["mode"]
+
+    if order["ordered"]: assert found.results() == expected
+    else: assert sorted(found.results()) == sorted(expected)
+
+    assert found.mode == (order["mode"] or "async")
 
 @settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
 @given(ACTS, LIMITS)
@@ -689,13 +686,14 @@ def mapped ( acts: list[Act], limit: Any, shape: str, stray: Any ) -> None:
     count = len(acts)
     work: Any = { "act": crowd.step, "plain": str, "junk": 5 }[shape]
     found = tried(thread.map(range(count) if stray == 0 else stray, work, limit))
+    bound = LIMIT if limit is None else limit
 
-    if not whole(limit, 1, CEILING): assert reason(found) == "thread.limit"
+    if not whole(bound, 1, CEILING): assert reason(found) == "thread.limit"
     elif shape == "junk": assert reason(found) == "thread.work"
     elif stray != 0: assert reason(found) == "thread.items"
     elif shape == "plain": assert found == [] if not count else reason(found) == "thread.work"
-    elif crowd.bad: crowd.spoiled(found, limit == 1)
-    else: crowd.done(found, limit)
+    elif crowd.bad: crowd.spoiled(found, bound == 1)
+    else: crowd.done(found, bound)
 
     assert crowd.flying == 0
 
@@ -802,12 +800,181 @@ def crossed ( words: list[str], mode: str, number: int ) -> None:
 
     assert found == divmod(7, number) if number else reason(found) == "thread.failed"
 
+
+@settings(max_examples=1000, deadline=None, database=None)
+@given(st.booleans(), st.booleans(), st.booleans(), st.integers(0, 3), st.integers(0, 4))
+def retried ( transient: bool, uncertain: bool, idempotent: bool, retries: int, failures: int ) -> None:
+
+    calls = 0
+    code = Code.UNAVAILABLE if transient else Code.VALIDATION
+
+    def work ( item: int ) -> int:
+
+        nonlocal calls
+
+        calls += 1
+
+        if calls <= failures: raise Fault(code, unknown=uncertain)
+
+        return item
+
+    made = run(thread.run([7], work, retries=retries, idempotent=idempotent))
+    budget = retries if transient and (not uncertain or idempotent) else 0
+
+    assert calls == min(failures, budget) + 1
+    assert made.results() == ([7] if failures <= budget else [])
+    assert made.ok() is (failures <= budget)
+
+@settings(max_examples=200, deadline=None, database=None)
+@given(st.integers(1, 8), st.integers(8, 1000000))
+def stopped ( workers: int, size: int ) -> None:
+
+    pulled = 0
+
+    def items () -> Iterator[int]:
+
+        nonlocal pulled
+
+        for item in range(size):
+
+            pulled += 1
+
+            assert pulled <= workers
+
+            yield item
+
+    def work ( _: int ) -> None: raise Fault(Code.CONFLICT)
+
+    made = run(thread.run(items(), work, workers=workers, fail_fast=True))
+
+    assert pulled == workers and len(made.outcomes) == 1 and not made.ok()
+
+@settings(max_examples=100, deadline=None, database=None)
+@given(st.integers(0, 3), st.sampled_from(["run", "map", "gather"]))
+def cancelled ( index: int, mode: str ) -> None:
+
+    async def work ( item: int ) -> int:
+
+        await asyncio.sleep(0)
+
+        if item == index: raise asyncio.CancelledError
+
+        return item
+
+    async def driven () -> None:
+
+        try:
+
+            if mode == "run": await thread.run(range(4), work, workers=2)
+            elif mode == "map": await thread.map(range(4), work, limit=2)
+            else: await thread.gather(*(work(item) for item in range(4)), limit=2)
+
+        except asyncio.CancelledError: return
+
+        raise AssertionError("child cancellation was lost")
+
+    run(driven())
+
+@settings(max_examples=150, deadline=None, database=None)
+@given(st.lists(st.integers(-1000, 1000), max_size=12), st.integers(1, 4), st.sampled_from(["async", "thread"]))
+def scoped ( items: list[int], workers: int, mode: str ) -> None:
+
+    async def driven () -> None:
+
+        unit = thread.mode(mode).options(workers=workers)
+
+        try:
+
+            expected = [-item for item in items]
+
+            assert await unit.map(items, operator.neg) == expected
+            assert (await unit.run(items, operator.neg)).results() == expected
+            assert await unit.gather(*(unit.submit(operator.neg, item) for item in items)) == expected
+            assert unit.describe()["mode"] == mode and unit.describe()["workers"] == workers
+
+            await unit.join()
+
+            assert unit.describe()["tasks"] == 0
+
+        finally: await unit.drop()
+
+    run(driven())
+
+async def lifecycle_step ( unit: Thread, verb: str ) -> Fault | None:
+
+    actions: dict[str, Callable[[], Awaitable[object]]] = {
+        "start": unit.start, "join": unit.join, "drop": unit.drop,
+    }
+
+    try:
+
+        if verb == "submit": assert await unit.submit(operator.neg, 7) == -7
+        elif verb == "stop": unit.stop()
+        else: await actions[verb]()
+
+    except Fault as error: return error
+
+    return None
+
+@settings(max_examples=200, deadline=None, database=None)
+@given(st.lists(st.sampled_from(["start", "stop", "submit", "join", "drop"]), min_size=1, max_size=20))
+def lifecycle ( steps: list[str] ) -> None:
+
+    async def driven () -> None:
+
+        unit = thread.mode("async").options(workers=2)
+        stopped = closed = False
+
+        try:
+
+            for verb in steps:
+
+                expected = "thread.closed" if closed and verb != "drop" else (
+                    "thread.stopped" if stopped and verb == "submit" else None
+                )
+
+                found = await lifecycle_step(unit, verb)
+
+                assert reason(found) == expected
+
+                if expected is None:
+
+                    closed = closed or verb == "drop"
+                    stopped = closed or (verb != "start" and (stopped or verb == "stop"))
+
+                assert unit.describe()["stopping"] is stopped and unit.describe()["closed"] is closed
+
+        finally: await unit.drop()
+
+    run(driven())
+
+@settings(max_examples=400, deadline=None, database=None)
+@given(st.text(max_size=60), st.dictionaries(st.text(max_size=20), st.text(max_size=40), max_size=8))
+def configured ( namespace: str, variables: dict[str, str] ) -> None:
+
+    made = attempt(partial(space, namespace))
+
+    if namespace.strip(): assert made == namespace
+    else: assert reason(made) == "thread.namespace"
+
+    value: dict[str, Any] = { "env_vars": dict(variables), "excludes": ["secret"] }
+    copied = environment(value)
+
+    assert copied == value and copied is not value
+    assert copied is not None
+
+    value["env_vars"].clear()
+    value["excludes"].append("other")
+
+    assert copied["env_vars"] == variables and copied["excludes"] == ["secret"]
+    assert reason(attempt(partial(environment, cast("Any", { 1: value })))) == "thread.runtime_env"
+
 if __name__ == "__main__":
 
     loop  = asyncio.new_event_loop()
     clock = Clock()
 
-    log.setup("debug", "json", Path("/dev/null"))
+    log.setup("debug", "json", Path(os.devnull))
     loop.set_exception_handler(stray)
     clock.set_exception_handler(stray)
 
@@ -821,6 +988,12 @@ if __name__ == "__main__":
     tracked()
     offloaded()
     crossed()
+    retried()
+    stopped()
+    cancelled()
+    scoped()
+    lifecycle()
+    configured()
 
     run(thread.close())
     gc.collect()
@@ -831,4 +1004,4 @@ if __name__ == "__main__":
     clock.close()
     log.close()
 
-    print(f"fuzz thread  examples={EXAMPLES * 9 + EXAMPLES // 4 + CROSSINGS}  ok")
+    print("fuzz thread  properties=16  max_examples=per-property settings  ok")

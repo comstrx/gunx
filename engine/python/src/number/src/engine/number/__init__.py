@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from .money import Money
+lazy from .money import Money
 from .number import Number
 
 number = Number()

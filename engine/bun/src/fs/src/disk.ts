@@ -4,29 +4,8 @@ import * as error from "engine-error";
 import * as json from "engine-json";
 import * as list from "engine-list";
 import * as string from "engine-string";
-import { basename, dirname, type Glob, glob, join, normalize, resolve, safe, segments } from "./path.ts";
-
-export type EntryKind = "file" | "dir" | "link" | "other";
-export type Entry = { name: string; path: string; kind: EntryKind };
-export type Stat = { size: number; modified: number; kind: EntryKind };
-export type Walked = Entry & { relative: string };
-export type Prune = ( entry: Entry, relative: string ) => boolean;
-export type Walk = { prune?: Prune | undefined; depth?: number | undefined };
-export type Disk = {
-    read: ( path: string ) => Promise<Uint8Array>;
-    write: ( path: string, content: Uint8Array | string, append?: boolean ) => Promise<void>;
-    list: ( path: string ) => Promise<Entry[]>;
-    stat: ( path: string ) => Promise<Stat | undefined>;
-    mkdir: ( path: string ) => Promise<void>;
-    remove: ( path: string, recursive?: boolean ) => Promise<void>;
-    rename: ( from: string, to: string ) => Promise<void>;
-    copy: ( from: string, to: string ) => Promise<void>;
-    temp: ( prefix: string ) => Promise<string>;
-};
-export type MemoryDisk = Disk & { files: Map<string, Uint8Array> };
-
-type Step = { entry: Entry; relative: string; level: number };
-type Reason = readonly [code: error.Code, reason: string];
+import type { Disk, Entry, EntryKind, Glob, MemoryDisk, Prune, Reason, Stat, Step, Walk, Walked } from "./arch.ts";
+import { basename, dirname, glob, join, normalize, resolve, safe, segments } from "./path.ts";
 
 const never: Prune = () => false;
 const deepest = 128;
@@ -96,10 +75,10 @@ function byName ( left: Entry, right: Entry ): number {
     return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
 
 }
-async function held<T> ( path: string, work: ( target: Disk, at: string ) => Promise<T> ): Promise<T> {
+async function held<T> ( path: string, work: ( target: Disk, at: string ) => Promise<T>, using?: Disk ): Promise<T> {
 
     const at = clean(path);
-    const target = disk.get();
+    const target = using ?? disk.get();
 
     try {
 
@@ -112,11 +91,11 @@ async function held<T> ( path: string, work: ( target: Disk, at: string ) => Pro
     }
 
 }
-async function below ( path: string, prefix: string, level: number, prune: Prune ): Promise<Step[]> {
+async function below ( using: Disk, path: string, prefix: string, level: number, prune: Prune ): Promise<Step[]> {
 
     const out: Step[] = [];
 
-    for ( const entry of await entries(path) ) {
+    for ( const entry of await entriesOn(using, path) ) {
 
         const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
 
@@ -288,11 +267,18 @@ export function memoryDisk (): MemoryDisk {
     };
 
 }
+function readOn ( using: Disk, path: string ): Promise<Uint8Array> {
+
+    return held(path, ( target, at ) => target.read(at), using);
+
+}
+
 export async function read ( path: string ): Promise<Uint8Array> {
 
     return held(path, ( target, at ) => target.read(at));
 
 }
+
 export async function text ( path: string ): Promise<string> {
 
     return string.utf8(await read(path));
@@ -300,7 +286,7 @@ export async function text ( path: string ): Promise<string> {
 }
 export async function lines ( path: string ): Promise<string[]> {
 
-    const found = (await text(path)).split(/\r\n|\n|\r/);
+    const found = string.lines(await text(path));
 
     if ( found[found.length - 1] === "" ) found.pop();
 
@@ -336,9 +322,9 @@ export async function append ( path: string, content: Uint8Array | string ): Pro
     });
 
 }
-export async function writeAtomic ( path: string, content: Uint8Array | string ): Promise<void> {
+function writeAtomicOn ( using: Disk, path: string, content: Uint8Array | string ): Promise<void> {
 
-    await held(path, async ( target, at ) => {
+    return held(path, async ( target, at ) => {
 
         const draft = join(dirname(at), `.${basename(at)}.${crypto.nonce(6)}.tmp`);
 
@@ -357,36 +343,70 @@ export async function writeAtomic ( path: string, content: Uint8Array | string )
 
         }
 
-    });
+    }, using);
 
 }
+
+export async function writeAtomic ( path: string, content: Uint8Array | string ): Promise<void> {
+
+    const at = clean(path);
+
+    return writeAtomicOn(disk.get(), at, content);
+
+}
+
 export async function writeJson ( path: string, value: unknown, pretty = true ): Promise<void> {
 
     await write(path, `${json.stringify(value, { pretty })}\n`);
 
 }
-export async function update ( path: string, content: Uint8Array | string ): Promise<boolean> {
+async function updateOn ( using: Disk, path: string, content: Uint8Array | string ): Promise<boolean> {
 
     const next = typeof content === "string" ? string.bytes(content) : content;
-    const found = await stat(path);
+    const found = await statOn(using, path);
 
-    if ( found?.kind === "file" && found.size === next.byteLength && alike(await read(path), next) ) return false;
+    if ( found?.kind === "file" && found.size === next.byteLength && alike(await readOn(using, path), next) ) return false;
 
-    await writeAtomic(path, next);
+    await writeAtomicOn(using, path, next);
 
     return true;
 
 }
-export async function edit ( path: string, change: ( text: string ) => string | Promise<string> ): Promise<boolean> {
 
-    return update(path, await change((await isFile(path)) ? await text(path) : ""));
+export async function update ( path: string, content: Uint8Array | string ): Promise<boolean> {
+
+    const at = clean(path);
+
+    return updateOn(disk.get(), at, content);
 
 }
+
+async function editOn ( using: Disk, path: string, change: ( text: string ) => string | Promise<string> ): Promise<boolean> {
+
+    return updateOn(using, path, await change((await statOn(using, path))?.kind === "file" ? string.utf8(await readOn(using, path)) : ""));
+
+}
+
+export async function edit ( path: string, change: ( text: string ) => string | Promise<string> ): Promise<boolean> {
+
+    const at = clean(path);
+
+    return editOn(disk.get(), at, change);
+
+}
+
+function statOn ( using: Disk, path: string ): Promise<Stat | undefined> {
+
+    return held(path, ( target, at ) => target.stat(at), using);
+
+}
+
 export async function stat ( path: string ): Promise<Stat | undefined> {
 
     return held(path, ( target, at ) => target.stat(at));
 
 }
+
 export async function exists ( path: string ): Promise<boolean> {
 
     return (await stat(path)) !== undefined;
@@ -402,22 +422,31 @@ export async function isDir ( path: string ): Promise<boolean> {
     return (await stat(path))?.kind === "dir";
 
 }
-export async function remove ( path: string ): Promise<void> {
+function removeOn ( using: Disk, path: string ): Promise<void> {
 
-    await held(path, async ( target, at ) => {
+    return held(path, async ( target, at ) => {
 
         if ( rooted(at) ) throw error.fault("forbidden", "fs.root", { message: at });
 
         await target.remove(at, true);
 
-    });
+    }, using);
 
 }
-export async function copy ( from: string, to: string ): Promise<void> {
+
+export async function remove ( path: string ): Promise<void> {
+
+    const at = clean(path);
+
+    return removeOn(disk.get(), at);
+
+}
+
+function copyOn ( using: Disk, from: string, to: string ): Promise<void> {
 
     const source = clean(from);
 
-    await held(to, async ( target, at ) => {
+    return held(to, async ( target, at ) => {
 
         const found = await target.stat(source);
 
@@ -435,7 +464,7 @@ export async function copy ( from: string, to: string ): Promise<void> {
 
         if ( holds(source, at) ) throw error.fault("conflict", "fs.inside", { message: at });
 
-        const tree = await walk(source);
+        const tree = await walkOn(using, source);
 
         await target.mkdir(at);
 
@@ -446,14 +475,24 @@ export async function copy ( from: string, to: string ): Promise<void> {
 
         }
 
-    });
+    }, using);
 
 }
-export async function move ( from: string, to: string ): Promise<void> {
+
+export async function copy ( from: string, to: string ): Promise<void> {
+
+    const source = clean(from);
+    const target = clean(to);
+
+    return copyOn(disk.get(), source, target);
+
+}
+
+function moveOn ( using: Disk, from: string, to: string ): Promise<void> {
 
     const source = clean(from);
 
-    await held(to, async ( target, at ) => {
+    return held(to, async ( target, at ) => {
 
         if ( rooted(source) ) throw error.fault("forbidden", "fs.root", { message: source });
 
@@ -472,14 +511,24 @@ export async function move ( from: string, to: string ): Promise<void> {
 
             if ( fieldOf(cause, "code") !== "EXDEV" ) throw cause;
 
-            await copy(source, at);
+            await copyOn(using, source, at);
             await target.remove(source, true);
 
         }
 
-    });
+    }, using);
 
 }
+
+export async function move ( from: string, to: string ): Promise<void> {
+
+    const source = clean(from);
+    const target = clean(to);
+
+    return moveOn(disk.get(), source, target);
+
+}
+
 export async function ensure ( path: string ): Promise<string> {
 
     return held(path, async ( target, at ) => {
@@ -506,13 +555,13 @@ export async function empty ( path: string ): Promise<void> {
     });
 
 }
-export async function temp ( prefix = "engine-" ): Promise<string> {
+async function tempOn ( using: Disk, prefix = "engine-" ): Promise<string> {
 
     const name = safe(prefix, "engine-", 64);
 
     try {
 
-        return await disk.get().temp(name);
+        return await using.temp(name);
 
     } catch ( cause ) {
 
@@ -521,50 +570,82 @@ export async function temp ( prefix = "engine-" ): Promise<string> {
     }
 
 }
-export async function withTemp<T> ( work: ( path: string ) => T | Promise<T>, prefix = "engine-" ): Promise<T> {
 
-    const path = await temp(prefix);
+export async function temp ( prefix = "engine-" ): Promise<string> {
+
+    return tempOn(disk.get(), prefix);
+
+}
+
+async function withTempOn<T> ( using: Disk, work: ( path: string ) => T | Promise<T>, prefix = "engine-" ): Promise<T> {
+
+    const path = await tempOn(using, prefix);
 
     try {
 
         const out = await work(path);
 
-        await remove(path);
+        await removeOn(using, path);
 
         return out;
 
     } catch ( cause ) {
 
-        await remove(path).catch(() => undefined);
+        await removeOn(using, path).catch(() => undefined);
 
         throw cause;
 
     }
 
 }
-export async function entries ( path: string ): Promise<Entry[]> {
 
-    return held(path, async ( target, at ) => (await target.list(at)).map(( entry ): Entry => ({ name: entry.name, path: join(at, entry.name), kind: entry.kind })).sort(byName));
+export async function withTemp<T> ( work: ( path: string ) => T | Promise<T>, prefix = "engine-" ): Promise<T> {
+
+    return withTempOn(disk.get(), work, prefix);
 
 }
-export async function walk ( path: string, options: Prune | Walk = {} ): Promise<Walked[]> {
+
+function entriesOn ( using: Disk, path: string ): Promise<Entry[]> {
+
+    return held(path, async ( target, at ) => (await target.list(at)).map(( entry ): Entry => ({ name: entry.name, path: join(at, entry.name), kind: entry.kind })).sort(byName), using);
+
+}
+
+export async function entries ( path: string ): Promise<Entry[]> {
+
+    const at = clean(path);
+
+    return entriesOn(disk.get(), at);
+
+}
+
+async function walkOn ( using: Disk, path: string, options: Prune | Walk = {} ): Promise<Walked[]> {
 
     const given: Walk = typeof options === "function" ? { prune: options } : options;
     const { prune = never, depth = deepest } = given;
     const found: Walked[] = [];
-    const stack = await below(path, "", 1, prune);
+    const stack = await below(using, path, "", 1, prune);
 
     for ( let step = stack.pop(); step; step = stack.pop() ) {
 
         found.push({ ...step.entry, relative: step.relative });
 
-        if ( step.entry.kind === "dir" && step.level < depth ) for ( const next of await below(step.entry.path, step.relative, step.level + 1, prune) ) stack.push(next);
+        if ( step.entry.kind === "dir" && step.level < depth ) for ( const next of await below(using, step.entry.path, step.relative, step.level + 1, prune) ) stack.push(next);
 
     }
 
     return found;
 
 }
+
+export async function walk ( path: string, options: Prune | Walk = {} ): Promise<Walked[]> {
+
+    const at = clean(path);
+
+    return walkOn(disk.get(), at, options);
+
+}
+
 export async function files ( path: string, options: Prune | Walk = {} ): Promise<Walked[]> {
 
     return (await walk(path, options)).filter(( entry ) => entry.kind === "file");
@@ -577,31 +658,49 @@ export async function find ( path: string, pattern: string | readonly string[], 
     return (await files(path, options)).filter(( entry ) => wanted(entry.relative));
 
 }
-export async function size ( path: string ): Promise<number> {
+async function sizeOn ( using: Disk, path: string ): Promise<number> {
 
-    const found = await stat(path);
+    const found = await statOn(using, path);
 
     if ( !found ) throw error.fault("not_found", "fs.missing", { message: path });
     if ( found.kind !== "dir" ) return found.size;
 
-    const sizes = await list.mapAsync(await files(path), async ( entry ) => (await stat(entry.path))?.size ?? 0, { lanes: 8 });
+    const sizes = await list.mapAsync((await walkOn(using, path)).filter(( entry ) => entry.kind === "file"), async ( entry ) => (await statOn(using, entry.path))?.size ?? 0, { lanes: 8 });
 
     return sizes.reduce(( total, next ) => total + next, 0);
 
 }
+
+export async function size ( path: string ): Promise<number> {
+
+    const at = clean(path);
+
+    return sizeOn(disk.get(), at);
+
+}
+
 export async function digest ( path: string, algorithm: crypto.Algorithm = "SHA-256" ): Promise<string> {
 
     return crypto.hash(await read(path), algorithm);
 
 }
-export async function same ( left: string, right: string ): Promise<boolean> {
+async function sameOn ( using: Disk, left: string, right: string ): Promise<boolean> {
 
-    const [a, b] = await Promise.all([stat(left), stat(right)]);
+    const [a, b] = await Promise.all([statOn(using, left), statOn(using, right)]);
 
     if ( !a || !b || a.kind === "dir" || b.kind === "dir" || a.size !== b.size ) return false;
 
-    const [x, y] = await Promise.all([read(left), read(right)]);
+    const [x, y] = await Promise.all([readOn(using, left), readOn(using, right)]);
 
     return alike(x, y);
+
+}
+
+export async function same ( left: string, right: string ): Promise<boolean> {
+
+    const first = clean(left);
+    const second = clean(right);
+
+    return sameOn(disk.get(), first, second);
 
 }

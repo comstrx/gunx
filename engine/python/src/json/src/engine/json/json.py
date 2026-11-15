@@ -1,31 +1,61 @@
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
 from copy import deepcopy
-from typing import Any
+from io import BytesIO
+from typing import Any, cast
+from types import MappingProxyType
 
 from engine.error import Code, Fault
-from .arch import KINDS, MISSING, UNSAFE
+from .arch import (
+    INDEX_DIGITS, KINDS, MISSING, OBJECTS, OPERATIONS, SETS, UNSAFE, MAX_DEPTH, MAX_NODES, SCALARS, Visitor,
+)
 import orjson
 
 class Json:
+
+    __slots__ = ("_default", "_hook")
 
     def __init__ ( self ) -> None:
 
         self._default: Callable[[Any], Any] | None = None
         self._hook = self._fallback_
 
-    def use ( self, default: Callable[[Any], Any] ) -> None:
+    def use ( self, default: Callable[[Any], Any] | None ) -> None:
 
         self._default = default
 
     def encode ( self, value: object, pretty: bool = False, stable: bool = False ) -> bytes:
 
-        option = orjson.OPT_NON_STR_KEYS
+        option = orjson.OPT_NON_STR_KEYS | orjson.OPT_SERIALIZE_NUMPY
 
         if pretty: option |= orjson.OPT_INDENT_2
         if stable: option |= orjson.OPT_SORT_KEYS
 
         try: return orjson.dumps(value, default=self._hook, option=option)
         except (TypeError, ValueError) as error: raise Fault(Code.INTERNAL, reason="json.encode") from error
+
+    async def encode_stream ( self, source: AsyncIterator[object] ) -> AsyncGenerator[bytes]:
+
+        first = True
+
+        try:
+
+            yield b"["
+
+            async for item in source:
+
+                encoded = self.encode(item)
+
+                yield encoded if first else b"," + encoded
+
+                first = False
+
+            yield b"]"
+
+        finally:
+
+            close = getattr(source, "aclose", None)
+
+            if close is not None: await close()
 
     def decode ( self, data: bytes | bytearray | memoryview | str ) -> Any:
 
@@ -69,7 +99,11 @@ class Json:
 
     def lines ( self, values: Iterable[object] ) -> bytes:
 
-        return b"".join(self.encode(value) + b"\n" for value in values)
+        with BytesIO() as output:
+
+            output.writelines(self.encode(value) + b"\n" for value in values)
+
+            return output.getvalue()
 
     def unlines ( self, data: bytes | str ) -> list[Any]:
 
@@ -87,9 +121,18 @@ class Json:
 
     def _fallback_ ( self, value: Any ) -> Any:
 
-        if isinstance(value, set | frozenset): return sorted(value, key=str)
-        if isinstance(value, bytes): return value.decode("utf-8", "replace")
-        if hasattr(value, "dump") and callable(value.dump): return value.dump()
+        if isinstance(value, MappingProxyType):
+
+            try: copied = value.copy()
+            except AttributeError: copied = dict(value)
+
+            return copied
+        if isinstance(value, SETS): return sorted(value, key=str)
+        if isinstance(value, bytes): return value.decode("utf-8")
+        dump = getattr(value, "dump", None)
+
+        if callable(dump): return dump()
+        if isinstance(value, OBJECTS): return dict(value)
         handled = self._default(value) if self._default is not None else None
 
         if handled is None: raise TypeError(type(value).__name__)
@@ -112,44 +155,72 @@ class Json:
 
     def put ( self, value: Any, path: str, item: Any, separator: str = "." ) -> Any:
 
+        if not path: return item
+
         copied = deepcopy(value)
-        parts  = path.split(separator) if path else []
+        self._put_(copied, self._segments_(path, separator), deepcopy(item))
 
-        if not parts: return item
+        return copied
 
-        current = copied
+    def edit (
+        self, value: Any, updates: Mapping[str, Any], *, remove: Iterable[str] = (), separator: str = ".",
+    ) -> Any:
+
+        try:
+
+            copied = deepcopy(value)
+
+            for path, item in updates.items():
+
+                if not path: copied = deepcopy(item)
+                else: self._put_(copied, self._segments_(path, separator), deepcopy(item), strict=True)
+
+            for path in remove: self._forget_(copied, path, separator)
+
+        except RecursionError as error: raise Fault(Code.BAD_REQUEST, reason="json.depth") from error
+
+        return copied
+
+    def _put_ ( self, current: Any, parts: Sequence[str], item: Any, strict: bool = False ) -> None:
 
         for part in parts[:-1]:
 
-            if isinstance(current, list) and part.isdigit() and int(part) < len(current): current = current[int(part)]
+            if isinstance(current, list) and self._indexable_(current, part): current = current[int(part)]
             else:
 
-                if not isinstance(current, dict): return copied
+                if not isinstance(current, dict):
+
+                    if strict: raise Fault(Code.BAD_REQUEST, reason="json.path")
+
+                    return
                 if not isinstance(current.get(part), dict | list): current[part] = {}
 
                 current = current[part]
 
         last = parts[-1]
 
-        if isinstance(current, list) and last.isdigit() and int(last) < len(current): current[int(last)] = item
+        if isinstance(current, list) and self._indexable_(current, last): current[int(last)] = item
         elif isinstance(current, dict): current[last] = item
-
-        return copied
+        elif strict: raise Fault(Code.BAD_REQUEST, reason="json.path")
 
     def forget ( self, value: Any, path: str, separator: str = "." ) -> Any:
 
         copied = deepcopy(value)
-        parts  = path.split(separator) if path else []
+        self._forget_(copied, path, separator)
 
-        if not parts: return copied
+        return copied
 
-        parent = self._walk_(copied, separator.join(parts[:-1]), separator)
+    def _forget_ ( self, value: Any, path: str, separator: str ) -> None:
+
+        parts = self._segments_(path, separator)
+
+        if not parts: return
+
+        parent = self._walk_(value, separator.join(parts[:-1]), separator)
         last   = parts[-1]
 
         if isinstance(parent, dict): parent.pop(last, None)
-        elif isinstance(parent, list) and last.isdigit() and int(last) < len(parent): parent.pop(int(last))
-
-        return copied
+        elif isinstance(parent, list) and self._indexable_(parent, last): parent.pop(int(last))
 
     def pick ( self, value: Mapping[str, Any], *paths: str, separator: str = "." ) -> dict[str, Any]:
 
@@ -159,17 +230,19 @@ class Json:
 
             found = self._walk_(value, path, separator)
 
-            if found is not MISSING: kept = self.put(kept, path, found, separator)
+            if found is MISSING: continue
+            if not path: kept = deepcopy(dict(value))
+            else: self._put_(kept, self._segments_(path, separator), deepcopy(found))
 
         return kept
 
     def omit ( self, value: Mapping[str, Any], *paths: str, separator: str = "." ) -> dict[str, Any]:
 
-        kept: Any = dict(value)
+        kept = deepcopy(dict(value))
 
-        for path in paths: kept = self.forget(kept, path, separator)
+        for path in paths: self._forget_(kept, path, separator)
 
-        return dict(kept)
+        return kept
 
     def merge ( self, base: Mapping[str, Any], *others: Mapping[str, Any] ) -> dict[str, Any]:
 
@@ -181,7 +254,7 @@ class Json:
 
                 found = merged.get(key)
 
-                if isinstance(found, Mapping) and isinstance(value, Mapping): merged[key] = self.merge(found, value)
+                if isinstance(found, OBJECTS) and isinstance(value, OBJECTS): merged[key] = self.merge(found, value)
                 else: merged[key] = value
 
         return merged
@@ -190,14 +263,20 @@ class Json:
 
         flat: dict[str, Any] = {}
 
-        for key, item in value.items():
-
-            name = f"{prefix}{separator}{key}" if prefix else str(key)
-
-            if isinstance(item, Mapping) and item: flat.update(self.flatten(item, name, separator))
-            else: flat[name] = item
+        self._flatten_(value, prefix or None, separator, flat)
 
         return flat
+
+    def _flatten_ (
+        self, value: Mapping[str, Any], prefix: str | None, separator: str, flat: dict[str, Any],
+    ) -> None:
+
+        for key, item in value.items():
+
+            name = f"{prefix}{separator}{key}" if prefix is not None else str(key)
+
+            if isinstance(item, OBJECTS) and item: self._flatten_(item, name, separator, flat)
+            else: flat[name] = item
 
     def unflatten ( self, flat: Mapping[str, Any], separator: str = "." ) -> dict[str, Any]:
 
@@ -218,36 +297,117 @@ class Json:
 
         return nested
 
+    def entries ( self, value: Any, separator: str = "." ) -> Iterator[tuple[str, Any]]:
+
+        if not separator: raise Fault(Code.BAD_REQUEST, reason="json.path")
+
+        if not isinstance(value, (dict, list)): return
+
+        children = iter(value.items()) if isinstance(value, dict) else iter(enumerate(value))
+        stack: list[tuple[Iterator[tuple[Any, Any]], str, int]] = [(children, "", id(value))]
+        active: set[int] = {id(value)}
+        count = 0
+
+        while stack:
+
+            source, prefix, identity = stack[-1]
+
+            try: key, item = next(source)
+            except StopIteration:
+
+                stack.pop()
+
+                active.remove(identity)
+
+                continue
+
+            if isinstance(key, str) and (not key or separator in key):
+
+                raise Fault(Code.BAD_REQUEST, "Choose an unambiguous path separator", "json.path")
+
+            path = f"{prefix}{separator}{key}" if prefix else str(key)
+            count += 1
+
+            if count > MAX_NODES or len(stack) > MAX_DEPTH: raise Fault(Code.TOO_LARGE, reason="json.depth")
+
+            if isinstance(item, (dict, list)) and item:
+
+                if id(item) in active: raise Fault(Code.BAD_REQUEST, reason="json.cycle")
+
+                active.add(id(item))
+                children = iter(item.items()) if isinstance(item, dict) else iter(enumerate(item))
+                stack.append((children, path, id(item)))
+
+            elif path: yield path, item
+
     def paths ( self, value: Mapping[str, Any], separator: str = "." ) -> list[str]:
 
         return list(self.flatten(value, "", separator))
 
     def rename ( self, value: Any, change: Callable[[str], str], deep: bool = True ) -> Any:
 
-        if isinstance(value, Mapping):
+        return self._transform_(value, lambda item: item, change, deep)
 
-            items = ((change(str(key)), item) for key, item in value.items())
+    def walk (
+        self, value: Any, change: Callable[[Any], Any], *, keys: Callable[[str], str] | None = None,
+    ) -> Any:
 
-            return { key: self.rename(item, change, deep) if deep else item for key, item in items }
+        return self._transform_(value, change, keys, deep=True)
 
-        if isinstance(value, list) and deep: return [self.rename(item, change, deep) for item in value]
+    def _transform_ (
+        self, value: Any, change: Callable[[Any], Any], keys: Callable[[str], str] | None, deep: bool,
+    ) -> Any:
 
-        return value
+        active: set[int] = set()
+        count = 1
 
-    def walk ( self, value: Any, change: Callable[[Any], Any] ) -> Any:
+        def visit ( item: Any, depth: int, recur: Visitor ) -> Any:
 
-        if isinstance(value, Mapping): return { key: self.walk(item, change) for key, item in value.items() }
-        if isinstance(value, list): return [self.walk(item, change) for item in value]
+            nonlocal count
 
-        return change(value)
+            mapping = isinstance(item, OBJECTS)
+
+            if not mapping and (not deep or not isinstance(item, (list, tuple))): return change(item)
+            if id(item) in active: raise Fault(Code.BAD_REQUEST, reason="json.cycle")
+
+            count += len(item)
+
+            if count > MAX_NODES or (item and depth >= MAX_DEPTH): raise Fault(Code.TOO_LARGE, reason="json.depth")
+
+            active.add(id(item))
+
+            if mapping:
+
+                made: Any = {}
+
+                for key, child in item.items():
+
+                    name = keys(str(key)) if keys is not None else key
+
+                    if keys is not None and not isinstance(name, str): raise Fault(Code.BAD_REQUEST, reason="json.key")
+                    if name in made: raise Fault(Code.CONFLICT, reason="json.key")
+
+                    if not deep: made[name] = child
+                    else: made[name] = change(child) if type(child) in SCALARS else recur(child, depth + 1, recur)
+
+            else:
+
+                made = [change(child) if type(child) in SCALARS else recur(child, depth + 1, recur) for child in item]
+                made = tuple(made) if isinstance(item, tuple) else made
+
+            active.remove(id(item))
+
+            return made
+
+        return visit(value, 0, visit)
 
     def prune ( self, value: Any, empty: tuple[Any, ...] = (None, "", [], {}) ) -> Any:
 
-        if isinstance(value, Mapping):
+        if isinstance(value, OBJECTS):
 
-            kept = { key: self.prune(item, empty) for key, item in value.items() }
+            pairs = ((key, self.prune(item, empty)) for key, item in value.items())
 
-            return { key: item for key, item in kept.items() if not self._empty_(item, empty) }
+            return { key: item for key, item in pairs if not self._empty_(item, empty) }
 
         if isinstance(value, list):
 
@@ -267,71 +427,133 @@ class Json:
 
     def diff ( self, left: Any, right: Any, pointer: str = "" ) -> list[dict[str, Any]]:
 
-        if isinstance(left, Mapping) and isinstance(right, Mapping):
+        self._parts_(pointer)
+        ops: list[dict[str, Any]] = []
 
-            ops: list[dict[str, Any]] = []
+        try: self._diff_(left, right, pointer, ops)
+        except RecursionError as error: raise Fault(Code.BAD_REQUEST, reason="json.depth") from error
+
+        return ops
+
+    def _diff_ ( self, left: Any, right: Any, pointer: str, ops: list[dict[str, Any]] ) -> None:
+
+        if left is right: return
+
+        if isinstance(left, OBJECTS) and isinstance(right, OBJECTS):
 
             for key in left:
 
-                if key not in right: ops.append({ "op": "remove", "path": f"{pointer}/{self._escape_(key)}" })
-                else: ops.extend(self.diff(left[key], right[key], f"{pointer}/{self._escape_(key)}"))
+                path = f"{pointer}/{self._escape_(key)}"
 
-            added = [key for key in right if key not in left]
+                if key not in right: ops.append({ "op": "remove", "path": path })
+                else: self._diff_(left[key], right[key], path, ops)
 
-            ops.extend({ "op": "add", "path": f"{pointer}/{self._escape_(key)}", "value": right[key] } for key in added)
+            ops.extend(
+                { "op": "add", "path": f"{pointer}/{self._escape_(key)}", "value": right[key] }
+                for key in right if key not in left
+            )
 
-            return ops
+        elif isinstance(left, list) and isinstance(right, list):
 
-        if isinstance(left, list) and isinstance(right, list):
+            for index in range(min(len(left), len(right))):
 
-            ops = []
+                self._diff_(left[index], right[index], f"{pointer}/{index}", ops)
 
-            shared = range(min(len(left), len(right)))
+            ops.extend(
+                { "op": "remove", "path": f"{pointer}/{index}" }
+                for index in reversed(range(len(right), len(left)))
+            )
+            ops.extend(
+                { "op": "add", "path": f"{pointer}/-", "value": right[index] }
+                for index in range(len(left), len(right))
+            )
 
-            for index in shared: ops.extend(self.diff(left[index], right[index], f"{pointer}/{index}"))
+        elif type(left) is not type(right) or left != right:
 
-            gone = reversed(range(len(right), len(left)))
-            new  = range(len(left), len(right))
-
-            ops.extend({ "op": "remove", "path": f"{pointer}/{index}" } for index in gone)
-            ops.extend({ "op": "add", "path": f"{pointer}/-", "value": right[index] } for index in new)
-
-            return ops
-
-        if left == right and type(left) is type(right): return []
-
-        return [{ "op": "replace", "path": pointer or "/", "value": right }]
+            ops.append({ "op": "replace", "path": pointer, "value": right })
 
     def patch ( self, value: Any, ops: Sequence[Mapping[str, Any]] ) -> Any:
 
-        current = deepcopy(value)
+        ops = self._operations_(ops)
 
-        for op in ops:
+        try:
 
-            parts  = [self._unescape_(part) for part in str(op["path"]).split("/")[1:]]
-            action = op["op"]
+            current = deepcopy(value)
 
-            if not parts or parts == [""]:
+            for op in ops: current = self._apply_(current, op)
 
-                current = op.get("value") if action in ("add", "replace") else current
+        except (KeyError, IndexError, TypeError, ValueError, RecursionError) as error:
 
-                continue
+            raise Fault(Code.BAD_REQUEST, reason="json.patch") from error
 
-            parent = self._pointer_(current, parts[:-1])
-            last   = parts[-1]
+        return None if current is MISSING else current
 
-            if isinstance(parent, list):
+    def _apply_ ( self, current: Any, op: Mapping[str, Any] ) -> Any:
 
-                index = len(parent) if last == "-" else int(last)
+        if not isinstance(op, OBJECTS): raise Fault(Code.BAD_REQUEST, reason="json.patch")
 
-                if action == "add": parent.insert(index, op["value"])
-                elif action == "remove": parent.pop(index)
-                elif action == "replace": parent[index] = op["value"]
+        action = op["op"]
+        parts  = self._parts_(op["path"])
 
-            elif isinstance(parent, dict):
+        if not isinstance(action, str) or action not in OPERATIONS:
 
-                if action == "remove": parent.pop(last, None)
-                else: parent[last] = op["value"]
+            raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+        if action == "test":
+
+            if not self._same_(self._pointer_(current, parts), op["value"]):
+
+                raise Fault(Code.CONFLICT, reason="json.test")
+
+            return current
+
+        if action in ("move", "copy"):
+
+            origin = self._parts_(op["from"])
+            item   = self._pointer_(current, origin)
+
+            if action == "move":
+
+                if len(parts) > len(origin) and parts[:len(origin)] == origin:
+
+                    raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+                current = self._assign_(current, origin, "remove", None)
+
+            else: item = deepcopy(item)
+
+            return self._assign_(current, parts, "add", item)
+
+        item = deepcopy(op["value"]) if action in ("add", "replace") else None
+
+        return self._assign_(current, parts, action, item)
+
+    def _assign_ ( self, current: Any, parts: Sequence[str], action: str, item: Any ) -> Any:
+
+        if not parts:
+
+            if action != "add" and current is MISSING: raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+            return MISSING if action == "remove" else item
+
+        parent = self._pointer_(current, parts[:-1])
+        last   = parts[-1]
+
+        if isinstance(parent, list):
+
+            index = self._index_(last, len(parent), action == "add")
+
+            if action == "add": parent.insert(index, item)
+            elif action == "remove": parent.pop(index)
+            else: parent[index] = item
+
+        elif isinstance(parent, dict):
+
+            if action != "add" and last not in parent: raise Fault(Code.BAD_REQUEST, reason="json.patch")
+            if action == "remove": del parent[last]
+            else: parent[last] = item
+
+        else: raise Fault(Code.BAD_REQUEST, reason="json.patch")
 
         return current
 
@@ -373,9 +595,9 @@ class Json:
 
         current = value
 
-        for part in path.split(separator) if path else []:
+        for part in self._segments_(path, separator):
 
-            if isinstance(current, Mapping) and part in current: current = current[part]
+            if isinstance(current, OBJECTS) and part in current: current = current[part]
             elif self._indexable_(current, part): current = current[int(part)]
             else: return MISSING
 
@@ -383,11 +605,78 @@ class Json:
 
     def _pointer_ ( self, value: Any, parts: Sequence[str] ) -> Any:
 
+        if value is MISSING: raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
         current = value
 
-        for part in parts: current = current[int(part)] if isinstance(current, list) else current[part]
+        for part in parts:
+
+            if isinstance(current, list): current = current[self._index_(part, len(current))]
+            elif isinstance(current, dict): current = current[part]
+            else: raise Fault(Code.BAD_REQUEST, reason="json.patch")
 
         return current
+
+    def _operations_ ( self, ops: Any ) -> Sequence[Mapping[str, Any]]:
+
+        if not isinstance(ops, Sequence) or isinstance(ops, (str, bytes, bytearray, memoryview)):
+
+            raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+        return ops
+
+    def _parts_ ( self, pointer: Any ) -> list[str]:
+
+        if not isinstance(pointer, str) or (pointer and not pointer.startswith("/")):
+
+            raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+        parts = pointer.split("/")[1:]
+
+        for part in parts:
+
+            if "~" in part.replace("~0", "").replace("~1", ""):
+
+                raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+        return [self._unescape_(part) for part in parts]
+
+    def _index_ ( self, part: str, length: int, adding: bool = False ) -> int:
+
+        if adding and part == "-": return length
+        if not part.isascii() or not part.isdecimal() or len(part) > INDEX_DIGITS:
+
+            raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+        if len(part) > 1 and part.startswith("0"): raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+        index = int(part)
+
+        if index >= length + int(adding): raise Fault(Code.BAD_REQUEST, reason="json.patch")
+
+        return index
+
+    def _same_ ( self, left: Any, right: Any ) -> bool:
+
+        if isinstance(left, OBJECTS) and isinstance(right, OBJECTS):
+
+            return left.keys() == right.keys() and all(self._same_(left[key], right[key]) for key in left)
+
+        if isinstance(left, list) and isinstance(right, list):
+
+            return len(left) == len(right) and all(self._same_(a, b) for a, b in zip(left, right, strict=True))
+
+        if isinstance(left, bool) != isinstance(right, bool): return False
+
+        return bool(left == right)
+
+    def _segments_ ( self, path: str, separator: str ) -> list[str]:
+
+        if not isinstance(cast("object", path), str) or not isinstance(cast("object", separator), str) or not separator:
+
+            raise Fault(Code.BAD_REQUEST, reason="json.path")
+
+        return path.split(separator) if path else []
 
     def _escape_ ( self, key: Any ) -> str:
 
@@ -399,10 +688,17 @@ class Json:
 
     def _indexable_ ( self, current: Any, part: str ) -> bool:
 
-        if not isinstance(current, Sequence) or isinstance(current, str) or not part.isdigit(): return False
+        if not isinstance(current, (list, tuple, Sequence)) or isinstance(current, (str, bytes, bytearray, memoryview)):
 
-        return int(part) < len(current)
+            return False
+
+        return part.isascii() and part.isdecimal() and len(part) <= INDEX_DIGITS and int(part) < len(current)
 
     def _empty_ ( self, value: Any, empty: tuple[Any, ...] ) -> bool:
 
-        return any(value is item or (type(value) is type(item) and value == item) for item in empty)
+        for item in empty:
+
+            if value is item: return True
+            if type(value) is type(item) and value == item: return True
+
+        return False

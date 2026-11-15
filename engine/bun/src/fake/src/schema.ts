@@ -1,15 +1,9 @@
 import * as string from "engine-string";
 import * as validate from "engine-validate";
 import * as value from "engine-value";
+import type { Context, Faker, Format, Hint, Maker } from "./arch.ts";
 import { coins, locales } from "./data.ts";
-import type { Faker, Format } from "./faker.ts";
 import { matcher } from "./pattern.ts";
-
-export type Overrides = Readonly<Record<string, unknown>>;
-export type Context = { faker: Faker; formats: Readonly<Record<string, Format>>; overrides: Overrides | undefined };
-
-type Maker = ( context: Context, exact: string, starred: string, depth: number ) => unknown;
-type Hint = ( faker: Faker, field: validate.Field ) => unknown;
 
 const shallow = 3;
 const year = 31_557_600_000;

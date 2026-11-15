@@ -1,7 +1,7 @@
-from .arch import Record
-from .dns import Dns
+lazy from .arch import Record
+lazy from .dns import Dns
 from .domains import Domains
-from .registrar import Registrar
+lazy from .registrar import Registrar
 
 domains = Domains()
 

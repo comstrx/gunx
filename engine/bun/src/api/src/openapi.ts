@@ -1,18 +1,10 @@
 import * as error from "engine-error";
 import * as json from "engine-json";
 import * as validate from "engine-validate";
-import { type Catalogue, type Endpoint, fieldsOf, paramsOf, partsOf } from "./contract.ts";
-import { envelope, type Meta, refusal } from "./envelope.ts";
-import { house, type Paths, type Wire } from "./wire.ts";
-
-export type Info = { title: string; version: string; description?: string | undefined; servers?: readonly string[] | undefined; wire?: Wire | undefined };
-export type TransportIssue = { feature: string; name: string; rule: string; message: string };
-export type Features = Catalogue;
-
-type Node = { type: "object"; properties: Record<string, unknown>; required?: string[] };
-type Parameter = { name: string; in: "path" | "query" | "header"; required: boolean; schema?: unknown; content?: unknown };
-type Split = { parameters: Parameter[]; body: Record<string, unknown> | undefined; needed: boolean };
-type Frame = { data: unknown; many: boolean; failed: boolean };
+import type { Endpoint, Features, Frame, Info, Meta, Node, Parameter, Paths, Split, TransportIssue, Wire } from "./arch.ts";
+import { fieldsOf, paramsOf, partsOf } from "./contract.ts";
+import { envelope, refusal } from "./envelope.ts";
+import { house } from "./wire.ts";
 
 const inner = "#/$defs/";
 const home = "#/components/schemas/";

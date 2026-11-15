@@ -1,17 +1,21 @@
+from collections import deque
+
 from engine.error import Code, Fault
 from .arch import LIMIT, Report, Work
 import inspect
 
 class Deferral:
 
-    __slots__ = ("_items",)
+    __slots__ = ("_items", "_running")
 
     def __init__ ( self ) -> None:
 
-        self._items: list[tuple[Work, bool]] = []
+        self._items: deque[tuple[Work, bool]] | None = None
+        self._running = False
 
     def add ( self, work: Work, always: bool = False ) -> int:
 
+        if self._items is None: self._items = deque()
         if len(self._items) >= LIMIT: raise Fault(Code.INTERNAL, reason="context.full")
 
         self._items.append((work, always))
@@ -20,49 +24,69 @@ class Deferral:
 
     def pending ( self ) -> int:
 
-        return len(self._items)
+        return len(self._items) if self._items else 0
 
     async def flush ( self, report: Report | None = None, failed: bool = False ) -> int:
 
+        if self._running: raise Fault(Code.INTERNAL, reason="context.busy")
+
+        self._running = True
         errors: list[Exception] = []
-        tell   = errors.append if report is None else report
-        ran    = 0
+        ran = 0
 
-        while self._items and ran < LIMIT: ran += await self._pass_(tell, failed)
+        try:
 
-        if self.clear(): tell(Fault(Code.INTERNAL, reason="context.loop"))
-        if errors: raise ExceptionGroup("deferred work failed", errors)
+            while self._items:
 
-        return ran
+                work, always = self._items.popleft()
+
+                if failed and not always: continue
+                if ran == LIMIT:
+
+                    try: await self._report_(Fault(Code.INTERNAL, reason="context.loop"), report, errors)
+                    finally: self.clear()
+
+                    break
+
+                try:
+
+                    result = work()
+
+                    if inspect.isawaitable(result): await result
+
+                except Exception as error: await self._report_(error, report, errors)
+
+                ran += 1
+
+            if errors: raise ExceptionGroup("deferred work failed", errors)
+
+            return ran
+
+        finally:
+
+            if not self._items: self._items = None
+
+            self._running = False
 
     def clear ( self ) -> int:
 
-        count, self._items = len(self._items), []
+        count, self._items = self.pending(), None
 
         return count
 
-    async def _pass_ ( self, tell: Report, failed: bool ) -> int:
+    @staticmethod
+    async def _report_ ( error: Exception, report: Report | None, errors: list[Exception] ) -> None:
 
-        items, self._items = self._items, []
-        ran = 0
+        if report is None:
 
-        for at, (work, always) in enumerate(items):
+            errors.append(error)
 
-            if failed and not always: continue
+            return
 
-            try:
+        try:
 
-                result = work()
+            result = report(error)
 
-                if inspect.isawaitable(result): await result
+            if inspect.isawaitable(result): await result
 
-            except Exception as error: tell(error)
-            except BaseException:
-
-                self._items[:0] = items[at + 1:]
-
-                raise
-
-            ran += 1
-
-        return ran
+        except Exception as failed: errors.extend((error, failed))

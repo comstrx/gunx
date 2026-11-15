@@ -2,7 +2,8 @@ from engine.error import Code, Fault
 from engine.http import App, Binder, Envelope, Request, Response, Route, Router, Throttle
 from engine.test import Bench, stage
 from engine.validate import Shape
-from typing import Any
+from typing import Any, cast
+from collections.abc import AsyncIterator
 import aiohttp, inspect
 
 bench  = Bench()
@@ -40,6 +41,14 @@ def coerced () -> None: binder.coerce(int, "42", "key")
 
 def bound () -> None: binder.bind(item, ("GET",))
 
+async def events ( request: Request ) -> Any:
+
+    async def source () -> AsyncIterator[tuple[str, object]]:
+
+        for at in range(20): yield "tick", { "id": at, "text": "\u00e9\u4e2d" * 1000 }
+
+    return Response.sse(source())
+
 async def main () -> None:
 
     stage.wire()
@@ -49,7 +58,7 @@ async def main () -> None:
     app.throttles(tight="1000000/1m")
     app.mount(
         Route.get("/hello", hello, "hello"), Route.get("/items/<key:int>", item, "item").throttled("tight"),
-        Route.post("/notes", notes, "notes"),
+        Route.post("/notes", notes, "notes"), Route.get("/events", events, "events"),
     )
 
     async with app.listen() as url_, aiohttp.ClientSession() as session:
@@ -76,6 +85,11 @@ async def main () -> None:
 
             async with session.get(f"{url_}/nope") as reply: await reply.read()
 
+        async def streamed () -> None:
+
+            async with session.get(f"{url_}/events") as reply: await reply.read()
+
+        await bench.measure_async("http.sse.unicode20", streamed, rounds=200)
         await bench.measure_async("http.hello", plain, rounds=2000)
         await bench.measure_async("http.hello.dressed", dressed, rounds=2000)
         await bench.measure_async("http.item.throttled", routed, rounds=2000)
@@ -90,5 +104,19 @@ bench.measure("http.throttle.parse", policy)
 bench.measure("http.router.url", url)
 bench.measure("http.binder.coerce", coerced)
 bench.measure("http.binder.bind", bound, rounds=5000)
+
+class Sink:
+
+    async def write ( self, chunk: bytes ) -> None: pass
+
+async def json_rows () -> AsyncIterator[object]:
+
+    for value in range(1000): yield { "id": value, "text": "sample" }
+
+async def json_export () -> None:
+
+    await Response.json_stream(json_rows()).streaming_fn(cast("Any", Sink()))
+
+Bench.run(bench.measure_async("http.json_stream.1000", json_export, rounds=50))
 
 Bench.run(main())

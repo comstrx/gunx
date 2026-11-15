@@ -1,4 +1,3 @@
-from contextlib import suppress
 from typing import Any, Self
 
 from engine.error import Code, Fault
@@ -17,16 +16,15 @@ class Pipe:
 
         if self._closed: raise Fault(Code.GONE, reason="stream.closed")
 
-        if wait is None:
+        try:
 
-            await self._queue.put(data)
+            if wait is None: await self._queue.put(data)
+            else: await asyncio.wait_for(self._queue.put(data), wait)
 
-        else:
+        except asyncio.QueueShutDown as error: raise Fault(Code.GONE, reason="stream.closed") from error
+        except TimeoutError as error:
 
-            try: await asyncio.wait_for(self._queue.put(data), wait)
-            except TimeoutError as error:
-
-                raise Fault(Code.TIMEOUT, reason="stream.backpressure", unknown=True) from error
+            raise Fault(Code.TIMEOUT, reason="stream.backpressure", unknown=True) from error
 
         self._written += len(data)
 
@@ -55,7 +53,7 @@ class Pipe:
 
         self._closed = True
 
-        with suppress(asyncio.QueueFull): self._queue.put_nowait(None)
+        self._queue.shutdown()
 
     def closed ( self ) -> bool:
 
@@ -69,11 +67,8 @@ class Pipe:
 
         if self._closed and self._queue.empty(): return None
 
-        piece = await self._queue.get()
-
-        if piece is None and not self._queue.full(): self._queue.put_nowait(None)
-
-        return piece
+        try: return await self._queue.get()
+        except asyncio.QueueShutDown: return None
 
     def __aiter__ ( self ) -> Self:
 

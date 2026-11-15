@@ -3,16 +3,20 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from http import HTTPStatus
 from itertools import count
+from functools import lru_cache
+from ipaddress import IPv4Network, IPv6Network
 from typing import Any, TYPE_CHECKING
 
 from multidict import istr
 from sanic import HTTPResponse
 from sanic.response import ResponseStream
 from engine.error import Code, Fault
+from engine.parse import parse
 import inspect, re
 
 if TYPE_CHECKING:
 
+    from engine.token import Claims, Issuer
     from .channel import Channel
     from .group import Group
     from .request import Request
@@ -114,6 +118,8 @@ ANSWERS   = (HTTPResponse, ResponseStream)
 ALL     = ("GET", "POST", "PUT", "PATCH", "DELETE")
 KNOWN   = frozenset({ *ALL, "HEAD", "OPTIONS" })
 KEYS    = frozenset({ "ip", "actor" })
+THROTTLES = frozenset({ "fixed", "bucket" })
+type ThrottleKey = str | Callable[[Request], str]
 NAME    = 128
 HOUR    = 3600
 SPREAD  = frozenset({ inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD })
@@ -154,3 +160,16 @@ class Limits:
     def _wrong_ () -> Fault:
 
         return Fault(Code.INTERNAL, reason="http.limits")
+
+@lru_cache(maxsize=64)
+def networks ( blocks: tuple[str, ...] ) -> tuple[IPv4Network | IPv6Network, ...]:
+
+    return tuple(parse.cidr(block) for block in blocks)
+
+@dataclass(frozen=True, slots=True)
+class Credential:
+
+    issuer      : Issuer
+    token       : str
+    fingerprint : str
+    claims      : Claims

@@ -76,7 +76,7 @@ describe("number", () => {
         expect(number.min([Number.NaN, 3, Number.NEGATIVE_INFINITY])).toBe(3);
         expect(number.max([Number.POSITIVE_INFINITY, 2, -4])).toBe(2);
         expect(number.min([])).toBe(0);
-        expect(number.median([Number.NaN, 4, 2])).toBe(2);
+        expect(number.median([Number.NaN, 4, 2])).toBe(3);
         expect(number.gcd(Number.NaN, 5)).toBe(5);
         expect(number.gcd(Number.POSITIVE_INFINITY, 5)).toBe(5);
         expect(number.gcd(-12, 18)).toBe(6);
@@ -138,8 +138,8 @@ describe("number", () => {
         expect(number.formatPercent(12.345, { digits: 1 })).toBe("12.3%");
         expect(number.abbreviate(2_500_000)).toBe("2.5M");
         expect(number.bytes(0)).toBe("0 B");
-        expect(number.bytes(1536)).toBe("1.5 KB");
-        expect(number.bytes(5 * 1024 ** 4, 0)).toBe("5 TB");
+        expect(number.bytes(1536)).toBe("1.5 KiB");
+        expect(number.bytes(5 * 1024 ** 4, 0)).toBe("5 TiB");
         expect(number.ordinal(1)).toBe("1st");
         expect(number.ordinal(12)).toBe("12th");
         expect(number.ordinal(23)).toBe("23rd");
@@ -160,15 +160,15 @@ describe("number", () => {
         expect(number.currency(10, "SAR", { locale: "ar-SA", digits: 0 })).toContain("١٠");
 
     });
-    it("prints an exact amount whatever its size, and never throws on a bad shape", () => {
+    it("prints exact amounts and refuses invalid numeric shapes", () => {
 
         expect(number.format("12345678901234567890.12", { digits: 2 })).toBe("12,345,678,901,234,567,890.12");
         expect(number.format(12345678901234567890n)).toBe("12,345,678,901,234,567,890");
         expect(number.format("-0.50", { digits: 2 })).toBe("-0.50");
-        expect(number.format("1e5")).toBe("0");
-        expect(number.format("12abc")).toBe("0");
-        expect(number.format("9".repeat(65))).toBe("0");
-        expect(number.format(Number.NaN)).toBe("0");
+        expect(() => number.format("1e5")).toThrow("not an amount");
+        expect(() => number.format("12abc")).toThrow("not an amount");
+        expect(() => number.format("9".repeat(65))).toThrow("not an amount");
+        expect(() => number.format(Number.NaN)).toThrow("not an amount");
         expect(number.format(1234.5, { locale: "ar_EG", numerals: "arab" })).toBe("١٬٢٣٤٫٥");
         expect(number.format(1234.5, { locale: "not a locale" })).toBe("1,234.5");
         expect(number.format(1.5, { digits: 0, minDigits: 3 })).toBe("2");
@@ -181,10 +181,10 @@ describe("number", () => {
         expect(number.formatPercent(12.5, { locale: "ar-EG", numerals: "arab" })).toContain("١٣");
         expect(number.abbreviate(1234, 2)).toBe("1.23K");
         expect(number.abbreviate(1_500_000, 1, "ar_EG")).toBe(number.abbreviate(1_500_000, 1, "ar-EG"));
-        expect(number.bytes(1023.9)).toBe("1 KB");
-        expect(number.bytes(1_048_575)).toBe("1 MB");
+        expect(number.bytes(1023.9)).toBe("1 KiB");
+        expect(number.bytes(1_048_575)).toBe("1 MiB");
         expect(number.bytes(-5)).toBe("0 B");
-        expect(number.bytes(1024 ** 6)).toBe("1024 PB");
+        expect(number.bytes(1024 ** 6)).toBe("1024 PiB");
         expect(number.pad(-0.5)).toBe("00");
         expect(number.pad(5, 3, "😀")).toBe("😀😀5");
         expect(number.pad(12345, 2)).toBe("12345");
@@ -214,7 +214,7 @@ describe("number", () => {
         expect(number.currencyParts(-0, "USD").negative).toBe(false);
 
     });
-    it("plural categories follow CLDR for Arabic, English, French and Russian without Intl", () => {
+    it("plural categories follow CLDR for Arabic, English, French and Russian", () => {
 
         expect([0, 1, 2, 3, 10, 11, 99, 100, 101, 102, 103].map(( count ) => number.category(count, "ar"))).toEqual([
             "zero", "one", "two", "few", "few", "many", "many", "other", "other", "other", "few",
@@ -229,16 +229,42 @@ describe("number", () => {
         expect(number.languageOf("")).toBe("en");
 
     });
+    it("statistics ignore invalid observations and interpolate large finite endpoints", () => {
+
+        for ( const values of [[1, 4, Number.NaN], [Number.POSITIVE_INFINITY, -2, 8], [], [Number.NaN], [-Number.MAX_VALUE, Number.MAX_VALUE]] ) {
+
+            expect(number.median(values)).toBe(number.quantile(values, 0.5));
+            expect(Number.isFinite(number.median(values))).toBe(true);
+
+        }
+
+        expect(number.median([-Number.MAX_VALUE, Number.MAX_VALUE])).toBe(0);
+        expect(number.median([Number.MAX_VALUE, Number.MAX_VALUE])).toBe(Number.MAX_VALUE);
+
+    });
+    it("invalid amounts never become a valid zero price", () => {
+
+        for ( const value of ["12,50", "", "NaN", "Infinity", Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN] ) {
+
+            expect(() => number.format(value)).toThrow("not an amount");
+            expect(() => number.currency(value, "USD")).toThrow("not an amount");
+            expect(() => number.currencyParts(value, "USD")).toThrow("not an amount");
+
+        }
+
+        expect(number.currency("0", "USD")).toBe("$0.00");
+
+    });
     it("every plural family agrees with the platform's CLDR, whole numbers and fractions", () => {
 
         const locales = [
             "en", "en-US", "de", "nl", "sv", "nb", "fi", "el", "hu", "bg", "tr", "ur", "sw", "et", "ja", "zh", "ko", "vi", "th", "id", "ms", "my", "km", "lo",
             "hi", "bn", "fa", "gu", "kn", "am", "hy", "da", "fr", "fr-CA", "pt", "pt-BR", "pt-PT", "es", "es-MX", "it", "ca", "ar", "ar-EG", "he",
-            "ru", "uk", "be", "pl", "cs", "sk", "ro", "lt", "sl",
+            "ru", "uk", "be", "pl", "cs", "sk", "ro", "lt", "sl", "hr", "lv", "cy", "ga", "mt", "br", "is", "mk", "fil", "sr", "bs", "kw", "gd",
         ];
         const counts = [
             ...Array.from({ length: 1201 }, ( _, index ) => index), 1e6, 2e6, 1e6 + 1, 5e6, 1e9, 1e12,
-            0.5, 1.5, 2.5, 5.5, 0.1, 1.1, 2.1, 11.5, 100.5, 1_000_000.5, 0.01, 1.01, 21.5, -1, -2, -0.5, -5,
+            0.0001, 1.0001, 0.0005, 1.0005, 0.5, 1.5, 2.5, 5.5, 0.1, 1.1, 2.1, 11.5, 100.5, 1_000_000.5, 0.01, 1.01, 21.5, -1, -2, -0.5, -5,
         ];
         const apart = locales.flatMap(( locale ) => {
 
@@ -295,5 +321,29 @@ describe("number", () => {
         expect(number.words(5_000_000, "ar")).toBe("خمسة ملايين");
 
     });
+
+});
+
+
+it("unknown grammar stays explicit and finite statistics share one sample policy", () => {
+
+    expect(number.ordinal(1, "fr")).toBe("1");
+    expect(number.ordinal(3, "de")).toBe("3");
+    expect(() => number.words(21, "fr")).toThrow("unsupported words locale");
+    expect(number.mean([Number.NaN, 10, Number.POSITIVE_INFINITY, 20])).toBe(15);
+    expect(number.mean([Number.NaN])).toBe(0);
+    expect(number.median([Number.NaN, 10, Number.POSITIVE_INFINITY, 20])).toBe(15);
+    expect(number.quantile([Number.NaN, 10, Number.POSITIVE_INFINITY, 20], 0.5)).toBe(15);
+
+});
+
+it("compact and percent formats refuse non-finite amounts rather than displaying zero", () => {
+
+    for ( const value of [Number.NaN, Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY] ) {
+
+        expect(() => number.abbreviate(value)).toThrow("not an amount");
+        expect(() => number.formatPercent(value)).toThrow("not an amount");
+
+    }
 
 });

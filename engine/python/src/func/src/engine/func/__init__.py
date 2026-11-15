@@ -1,9 +1,9 @@
-from .arch import Core, Info
-from .batch import Batch
-from .breaker import Breaker
+lazy from .arch import Core, Info
+lazy from .batch import Batch
+lazy from .breaker import Breaker
 from .func import Func
-from .limiter import Limiter
-from .memo import Memo
+lazy from .limiter import Limiter
+lazy from .memo import Memo
 
 func = Func()
 

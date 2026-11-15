@@ -1,7 +1,15 @@
-from collections.abc import Awaitable, Callable
+from engine.adapter import Adapter, Manager
+from engine.context import context
+from engine.exception import Exceptions
+from engine.json import json
+from engine.metric import Metrics
+from engine.rand import rand
+from engine.thread import thread
+from collections.abc import Coroutine, Awaitable, Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from functools import partial, wraps
+from types import CoroutineType
 from typing import Any, cast
 from uuid import UUID
 
@@ -795,3 +803,572 @@ def test_metadata_is_remembered_without_pinning_the_callable () -> None:
 
     assert len({ func.key(1), func.key(*truth), func.key(1.0), func.key("1"), func.key(b"1"), func.key((1,)), func.key([1]) }) == 7
     assert func.key(1, a=2) != func.key(1, 2) and func.key() == () and func.key(a={ "x": 1, "y": 2 }) == func.key(a={ "y": 2, "x": 1 })
+
+@pytest.mark.parametrize(("unknown", "idempotent", "calls_expected"), [
+    (False, False, 3), (True, False, 1), (True, True, 3),
+])
+async def test_retry_obeys_fault_state_after_transfer_and_copy (
+    unknown: bool, idempotent: bool, calls_expected: int,
+) -> None:
+
+    calls = 0
+    failure = Fault.load(Fault(Code.UNAVAILABLE, retry_after=0, unknown=unknown).dump()).copy()
+
+    async def failed () -> None:
+
+        nonlocal calls
+
+        calls += 1
+
+        raise failure
+
+    with pytest.raises(Fault) as caught:
+
+        await func.retry(failed, tries=3, backoff=0, jitter=False, idempotent=idempotent)
+
+    assert caught.value is failure and calls == calls_expected
+
+@pytest.mark.parametrize("verb", ["forget", "clear", "set"])
+async def test_memo_invalidation_does_not_publish_a_stale_inflight_load ( verb: str ) -> None:
+
+    memo = func.memo()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def old () -> str:
+
+        entered.set()
+
+        await release.wait()
+
+        return "old"
+
+    task = asyncio.create_task(memo.remember("row", old))
+
+    await entered.wait()
+
+    if verb == "forget": memo.forget("row")
+    elif verb == "clear": memo.clear()
+    else: memo.set("row", "new")
+
+    release.set()
+
+    assert await task == "old"
+    assert memo.get("row") == ("new" if verb == "set" else None)
+    async def fresh () -> str: return "new"
+
+    assert await memo.remember("row", fresh) == "new"
+
+
+async def test_memo_invalidated_waiter_cannot_remove_a_successor_lease () -> None:
+
+    memo = func.memo()
+    first = asyncio.Event()
+    second = asyncio.Event()
+    release = asyncio.Event()
+    again = asyncio.Event()
+    calls: list[str] = []
+
+    async def load ( name: str, entered: asyncio.Event, gate: asyncio.Event ) -> str:
+
+        calls.append(name)
+        entered.set()
+
+        await gate.wait()
+
+        return name
+
+    old = asyncio.create_task(memo.remember("k", partial(load, "old", first, release)))
+
+    await first.wait()
+    memo.clear()
+
+    new = asyncio.create_task(memo.remember("k", partial(load, "new", second, again)))
+
+    await second.wait()
+    release.set()
+
+    assert await old == "old"
+
+    joined = asyncio.create_task(memo.remember("k", partial(load, "duplicate", second, again)))
+
+    await asyncio.sleep(0)
+    again.set()
+
+    assert await new == await joined == "new" and calls == ["old", "new"]
+
+
+def test_memo_prunes_expired_values_and_rejects_invalid_ttl_atomically () -> None:
+
+    memo = func.memo()
+    memo.set("live", 1)
+    memo.set("gone", 2, ttl=0)
+
+    assert memo.prune() == 1 and memo.get("live") == 1 and len(memo) == 1
+
+    for bad in (-1, math.nan, True, "1", 10 ** 400):
+
+        with pytest.raises(Fault) as caught: memo.set("live", 9, ttl=cast("Any", bad))
+
+        assert caught.value.reason == "func.memo" and memo.get("live") == 1
+
+
+async def test_breaker_old_success_cannot_close_a_newly_opened_circuit () -> None:
+
+    breaker = func.breaker("upstream", threshold=1, cooldown=30)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def old () -> str:
+
+        entered.set()
+
+        await release.wait()
+
+        return "old"
+
+    async def down () -> str: raise Fault(Code.UNAVAILABLE)
+
+    task = asyncio.create_task(breaker.call(old))
+
+    await entered.wait()
+
+    with pytest.raises(Fault): await breaker.call(down)
+
+    release.set()
+
+    assert await task == "old" and breaker.state() == "open"
+
+
+async def test_breaker_explicit_reset_ignores_old_failure () -> None:
+
+    breaker = func.breaker("upstream", threshold=1)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def old () -> None:
+
+        entered.set()
+
+        await release.wait()
+
+        raise Fault(Code.UNAVAILABLE)
+
+    task = asyncio.create_task(breaker.call(old))
+
+    await entered.wait()
+    breaker.reset()
+    release.set()
+
+    with pytest.raises(Fault): await task
+
+    assert breaker.state() == "closed"
+
+
+async def test_timeout_preserves_the_handlers_own_timeout () -> None:
+
+    raised = TimeoutError("provider timeout")
+
+    async def failed () -> None: raise raised
+
+    with pytest.raises(TimeoutError) as caught: await func.timeout(1, failed)
+
+    assert caught.value is raised
+
+
+async def test_poll_bounds_the_waiting_check_and_sleep () -> None:
+
+    cancelled = asyncio.Event()
+
+    async def held () -> bool:
+
+        try: await asyncio.sleep(30)
+        finally: cancelled.set()
+
+        return False
+
+    with pytest.raises(Fault) as caught: await func.poll(held, every=10, timeout=0.01)
+
+    assert caught.value.code is Code.TIMEOUT and cancelled.is_set()
+
+    async with asyncio.timeout(1):
+
+        with pytest.raises(Fault): await func.poll(lambda: False, every=10, timeout=0.01)
+
+
+async def test_drain_includes_unfired_debounce_and_only_the_latest_call () -> None:
+
+    unit = Func()
+    seen: list[int] = []
+
+    @unit.debounce(0.01)
+    async def save ( value: int ) -> None: seen.append(value)
+
+    await save(1)
+    await save(2)
+
+    assert unit.pending() == 1
+
+    await unit.drain()
+
+    assert seen == [2] and unit.pending() == 0
+
+
+async def test_batch_bounds_live_flushes_and_releases_cancelled_admission () -> None:
+
+    gate = asyncio.Event()
+    entered = asyncio.Event()
+    live = peak = 0
+    sizes: list[int] = []
+
+    async def flush ( values: list[int] ) -> list[int]:
+
+        nonlocal live, peak
+
+        sizes.append(len(values))
+        live += 1
+        peak = max(peak, live)
+        entered.set()
+
+        try:
+
+            await gate.wait()
+
+            return values
+
+        finally: live -= 1
+
+    batch = func.batch(flush, size=3, workers=2)
+    jobs = [asyncio.create_task(batch.put(i)) for i in range(30)]
+
+    await entered.wait()
+    await asyncio.sleep(0)
+
+    assert peak <= 2 and batch.pending() <= 6
+
+    jobs[-1].cancel()
+    gate.set()
+
+    results = await asyncio.gather(*jobs, return_exceptions=True)
+
+    await batch.flush()
+
+    assert results[:-1] == list(range(29)) and isinstance(results[-1], asyncio.CancelledError)
+    assert peak <= 2 and all(1 <= n <= 3 for n in sizes) and not batch.pending()
+    assert await batch.put(31) == 31
+
+
+async def test_hedge_reaps_finished_errors_when_a_child_cancels_itself () -> None:
+
+    seen = 0
+
+    async def work () -> int:
+
+        nonlocal seen
+
+        seen += 1
+
+        if seen == 1:
+
+            await asyncio.sleep(0)
+
+            raise asyncio.CancelledError
+
+        raise ValueError("other child")
+
+    with pytest.raises(asyncio.CancelledError): await func.hedge(work, delay=0, copies=2)
+
+
+@pytest.mark.parametrize("bad", [True, 1.5, "2", None])
+async def test_counts_and_retry_promises_are_typed ( bad: object ) -> None:
+
+    async def work () -> int: return 1
+
+    with pytest.raises(Fault): await func.retry(work, tries=cast("Any", bad))
+    with pytest.raises(Fault): await func.hedge(work, delay=0, copies=cast("Any", bad))
+    with pytest.raises(Fault): func.memo(size=cast("Any", bad))
+    with pytest.raises(Fault): func.breaker("x", threshold=cast("Any", bad))
+    with pytest.raises(Fault): func.limiter(1, cast("Any", bad))
+
+
+async def test_foundation_preserves_tenant_context_and_safe_faults_across_work () -> None:
+
+    log.setup("info")
+
+    class Provider(Adapter):
+
+        family = "probe"
+        name = "local"
+        capabilities = frozenset({"run"})
+
+    manager = Manager[Provider]("probe")
+    provider = manager.use(Provider())
+    meter = Metrics()
+    failures = Exceptions()
+    cache = func.memo()
+    jobs = thread.mode("thread").options(workers=2)
+    calls: list[str] = []
+
+    async def request ( tenant: str ) -> str:
+
+        with context.scope(tenant=tenant):
+
+            async def load () -> str:
+
+                calls.append(tenant)
+
+                return await jobs.submit(context.get, "tenant")
+
+            found = await cache.remember(tenant, load)
+            fault = Fault(Code.UNAVAILABLE, reason="probe.down", unknown=True)
+            carried = Fault.load(json.decode(json.encode(fault)))
+            secret = rand.token()
+
+            assert manager.get() is provider and provider.can("run")
+            assert carried.unknown and not carried.safe() and carried.safe(idempotent=True)
+            assert failures.fault(carried) is carried
+
+            with log.capture() as events:
+
+                log.warning("probe", credential=secret, tenant=found)
+
+            assert events[0]["tenant"] == tenant and secret not in json.dumps(events)
+            meter.counter("done").inc(tenant=found)
+
+            return found
+
+    try:
+
+        assert list(await asyncio.gather(request("first"), request("second"))) == ["first", "second"]
+        assert calls == ["first", "second"] and context.get("tenant") is None
+        assert meter.counter("done").value(tenant="first") == meter.counter("done").value(tenant="second") == 1
+
+    finally:
+
+        await jobs.drop()
+        await manager.close()
+
+async def test_retry_caps_large_backoff_without_numeric_overflow () -> None:
+
+    attempts = 0
+
+    async def down () -> None:
+
+        nonlocal attempts
+
+        attempts += 1
+
+        raise Fault(Code.UNAVAILABLE)
+
+    with pytest.raises(Fault) as caught:
+
+        await func.retry(down, tries=3, backoff=1.7e308, ceiling=0, jitter=False)
+
+    assert attempts == 3 and caught.value.code is Code.UNAVAILABLE
+
+async def test_single_eager_results_do_not_turn_into_an_accidental_cache () -> None:
+
+    unit = Func()
+    loop = asyncio.get_running_loop()
+    before = loop.get_task_factory()
+    calls = 0
+
+    @unit.single
+    async def fresh () -> int:
+
+        nonlocal calls
+
+        calls += 1
+
+        return calls
+
+    try:
+
+        loop.set_task_factory(asyncio.eager_task_factory)
+
+        assert await fresh() == 1
+        assert await fresh() == 2
+
+        await unit.drain()
+
+    finally: loop.set_task_factory(before)
+
+
+async def test_zero_ttl_memo_keeps_per_key_serialisation () -> None:
+
+    memo = func.memo(ttl=0)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    live = peak = calls = 0
+
+    async def load () -> int:
+
+        nonlocal live, peak, calls
+
+        live += 1
+        peak = max(peak, live)
+        calls += 1
+        entered.set()
+
+        try:
+
+            await release.wait()
+            await asyncio.sleep(0)
+
+            return calls
+
+        finally: live -= 1
+
+    tasks = [asyncio.create_task(memo.remember("k", load)) for _ in range(8)]
+
+    await entered.wait()
+    release.set()
+    await asyncio.sleep(0)
+
+    tasks.append(asyncio.create_task(memo.remember("k", load)))
+
+    assert len(await asyncio.gather(*tasks)) == 9 and calls == 9 and peak == 1
+
+def test_limiter_rejects_an_unrepresentable_capacity () -> None:
+
+    with pytest.raises(Fault) as caught: func.limiter(1, 10 ** 400)
+
+    assert caught.value.reason == "func.limiter"
+
+async def test_batch_cancelled_callers_cannot_release_running_capacity () -> None:
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    seen: list[int] = []
+
+    async def flush ( values: list[int] ) -> list[int]:
+
+        seen.extend(values)
+        entered.set()
+
+        await release.wait()
+
+        return values
+
+    batch = func.batch(flush, size=1)
+    first = asyncio.create_task(batch.put(1))
+
+    await entered.wait()
+
+    first.cancel()
+
+    with pytest.raises(asyncio.CancelledError): await first
+
+    for n in range(100):
+
+        caller = asyncio.create_task(batch.put(n + 2))
+
+        await asyncio.sleep(0)
+
+        assert batch.pending() == 0
+
+        caller.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await caller
+
+    release.set()
+
+    await batch.flush()
+
+    assert seen == [1] and await batch.put(102) == 102
+
+
+async def test_batch_cancels_queued_values_without_retaining_them () -> None:
+
+    async def flush ( values: list[int] ) -> list[int]: return values
+
+    batch = func.batch(flush, size=4, delay=30)
+    caller = asyncio.create_task(batch.put(1))
+
+    await asyncio.sleep(0)
+
+    assert batch.pending() == 1
+
+    caller.cancel()
+
+    with pytest.raises(asyncio.CancelledError): await caller
+
+    assert batch.pending() == 0
+
+    await batch.flush()
+
+
+async def test_batch_refused_task_creation_releases_its_capacity () -> None:
+
+    loop = asyncio.get_running_loop()
+    before = loop.get_task_factory()
+
+    async def flush ( values: list[int] ) -> list[int]: return values
+
+    batch = func.batch(flush, size=1)
+    refused: list[Coroutine[Any, Any, Any]] = []
+
+    def reject (
+        _loop: asyncio.AbstractEventLoop, work: Coroutine[Any, Any, Any], **_kwargs: Any,
+    ) -> asyncio.Task[Any]:
+
+        refused.append(work)
+
+        raise RuntimeError("task factory")
+
+    try:
+
+        loop.set_task_factory(reject)
+
+        with pytest.raises(RuntimeError, match="task factory"): await batch.put(1)
+
+    finally: loop.set_task_factory(before)
+
+    assert len(refused) == 1 and isinstance(refused[0], CoroutineType) and refused[0].cr_frame is None
+    assert await batch.put(2) == 2
+
+async def test_batch_does_not_dispatch_a_seat_cancelled_before_its_ready_callback () -> None:
+
+    seen: list[int] = []
+
+    async def flush ( values: list[int] ) -> list[int]:
+
+        seen.extend(values)
+
+        return values
+
+    batch = func.batch(flush, size=2)
+    caller = asyncio.create_task(batch.put(1))
+
+    await asyncio.sleep(0)
+
+    caller.cancel()
+
+    with pytest.raises(asyncio.CancelledError): await caller
+
+    await batch.flush()
+
+    assert not seen and batch.pending() == 0
+
+async def test_batch_flush_reaps_eager_completed_runs_without_callback_delivery () -> None:
+
+    loop = asyncio.get_running_loop()
+    before = loop.get_task_factory()
+
+    async def flush ( values: list[int] ) -> list[int]: return values
+
+    batch = func.batch(flush, size=1)
+
+    try:
+
+        loop.set_task_factory(asyncio.eager_task_factory)
+
+        assert await batch.put(1) == 1
+
+        await batch.flush()
+
+        assert await batch.put(2) == 2
+
+        await batch.flush()
+
+    finally: loop.set_task_factory(before)

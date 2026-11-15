@@ -2,30 +2,10 @@ import * as date from "engine-date";
 import * as error from "engine-error";
 import * as event from "engine-event";
 import * as json from "engine-json";
+import * as string from "engine-string";
+import type { Event, EventsOptions, Feed, Held, PollOptions } from "./arch.ts";
 import { dropped, readBytes } from "./guard.ts";
-import { address, type Fetcher, failure, gone, header, fetcher as shared } from "./transport.ts";
-
-export type Event = { id: string | undefined; event: string; data: string; json: unknown };
-export type EventsOptions = {
-    headers?: Record<string, string | undefined> | undefined;
-    signal?: AbortSignal | undefined;
-    fetcher?: Fetcher | undefined;
-    lastId?: string | undefined;
-    reconnect?: number | undefined;
-    retry?: number | undefined;
-    idle?: number | undefined;
-    maxBytes?: number | undefined;
-};
-export type PollOptions<T> = {
-    every?: number | (( attempt: number, value: T ) => number) | undefined;
-    until?: (( value: T, attempt: number ) => boolean) | undefined;
-    limit?: number | undefined;
-    timeout?: number | undefined;
-    signal?: AbortSignal | undefined;
-};
-
-type Feed = { push: ( chunk: string ) => Event[]; last: () => string | undefined; retry: () => number | undefined };
-type Held = { cancel: () => Promise<void> } | null | undefined;
+import { address, failure, gone, header, fetcher as shared } from "./transport.ts";
 
 const digits = /^\d{1,9}$/;
 const longest = 2_147_483_647;
@@ -36,18 +16,21 @@ function over ( limit: number ): error.Fault {
     return error.fault("too_large", "net.event", { errors: { event: [`max:${limit}`] } });
 
 }
-function feed ( limit: number ): Feed {
+function feed ( limit: number, initial?: string ): Feed {
 
     const data: string[] = [];
+    const bounded = Number.isFinite(limit);
     let line = "";
+    let size = 0;
+    let comment = false;
     let carriage = false;
     let fresh = true;
-    let id: string | undefined;
+    let id = initial;
     let name = "";
     let held = 0;
     let last: string | undefined;
     let retry: number | undefined;
-    const take = ( text: string, out: Event[] ): void => {
+    const take = ( text: string, bytes: number, out: Event[] ): void => {
 
         if ( text === "" ) {
 
@@ -61,7 +44,6 @@ function feed ( limit: number ): Feed {
 
             if ( id !== undefined ) last = id;
 
-            id = undefined;
             name = "";
             data.length = 0;
             held = 0;
@@ -72,7 +54,7 @@ function feed ( limit: number ): Feed {
 
         if ( text.charCodeAt(0) === 58 ) return;
 
-        held += text.length;
+        held += bytes;
 
         if ( held > limit ) throw over(limit);
 
@@ -84,6 +66,30 @@ function feed ( limit: number ): Feed {
         else if ( field === "event" ) name = value;
         else if ( field === "id" && !value.includes("\0") ) id = value;
         else if ( field === "retry" && digits.test(value) ) retry = Number(value);
+
+    };
+
+    const append = ( part: string ): void => {
+
+        if ( comment ) return;
+
+        if ( line === "" && part.charCodeAt(0) === 58 ) {
+
+            comment = true;
+
+            return;
+
+        }
+
+        if ( bounded ) {
+
+            size += string.byteLength(part);
+
+            if ( held + size > limit ) throw over(limit);
+
+        }
+
+        line += part;
 
     };
 
@@ -108,8 +114,13 @@ function feed ( limit: number ): Feed {
 
                 if ( code !== 10 && code !== 13 ) continue;
 
-                take(line === "" ? text.slice(from, at) : line + text.slice(from, at), out);
+                append(text.slice(from, at));
+
+                if ( !comment ) take(line, size, out);
+
                 line = "";
+                size = 0;
+                comment = false;
 
                 if ( code === 13 && at + 1 === text.length ) carriage = true;
                 else if ( code === 13 && text.charCodeAt(at + 1) === 10 ) at += 1;
@@ -118,8 +129,7 @@ function feed ( limit: number ): Feed {
 
             }
 
-            if ( from < text.length ) line += text.slice(from);
-            if ( line.length > limit ) throw over(limit);
+            if ( from < text.length ) append(text.slice(from));
 
             return out;
 
@@ -184,9 +194,10 @@ export async function* events ( url: string, options: EventsOptions = {} ): Asyn
 
         if ( signal?.aborted ) throw error.fault("timeout", "net.aborted", { cause: signal.reason });
         if ( last !== undefined && last !== "" ) headers[header("last-event-id", last)] = last;
+        else if ( last === "" ) delete headers["last-event-id"];
 
         const link = event.abortable(signal);
-        const reader = feed(maxBytes);
+        const reader = feed(Math.max(0, Math.floor(maxBytes)), last);
         let held: Held;
         let final = false;
         let asked = 0;
@@ -236,7 +247,9 @@ export async function* events ( url: string, options: EventsOptions = {} ): Asyn
 
             if ( final || signal?.aborted || failures >= allowed || !error.retryable(fault) ) throw fault;
 
-            asked = fault.retryAfter ?? 0;
+            asked = (fault.retryAfter ?? 0) * 1000;
+
+            if ( asked > Math.max(wait, slowest) ) throw fault;
 
         } finally {
 

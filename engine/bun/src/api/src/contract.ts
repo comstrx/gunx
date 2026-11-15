@@ -1,29 +1,7 @@
 import * as error from "engine-error";
 import * as json from "engine-json";
 import * as validate from "engine-validate";
-
-export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-export type Many<T extends validate.Schema = validate.Schema> = { many: T };
-export type Endpoint<I extends validate.Schema = validate.Schema, O extends validate.Schema = validate.Schema, M extends boolean = boolean> = {
-    method: Method;
-    path: string;
-    input: I;
-    output: O;
-    many: M;
-    name: string;
-    feature: string;
-    auth: boolean;
-    cache: number;
-    permissions: readonly string[];
-    idempotent: boolean;
-};
-export type Facts = { permissions: readonly string[]; auth: boolean; cache: number };
-export type Operation = { many: boolean; write: boolean; input: string[]; output: string[] | undefined; permissions: readonly string[]; auth: boolean };
-export type Catalogue = Readonly<Record<string, Readonly<Record<string, Endpoint>>>>;
-export type Options = Partial<Facts> & { idempotent?: boolean | undefined };
-export type Item<O> = O extends Many<infer T> ? T : O extends validate.Schema ? O : never;
-export type Define = <const I extends validate.Schema, const O extends validate.Schema | Many>( path: string, input: I, output: O, options?: Options ) => Endpoint<I, Item<O>, O extends Many ? true : false>;
-export type Part = { text: string; name: string; rest: boolean };
+import type { Catalogue, Define, Endpoint, Facts, Item, Many, Method, Operation, Options, Part } from "./arch.ts";
 
 const methods: readonly Method[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const literal = /^[A-Za-z0-9\-._~!$&'()*+,;=:@%/]*$/;

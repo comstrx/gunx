@@ -20,3 +20,5 @@ class Probe:
     check    : Check
     critical : bool = True
     timeout  : float = 2.0
+
+type Swept = tuple[bool, dict[str, bool]]

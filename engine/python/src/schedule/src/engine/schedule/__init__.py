@@ -1,7 +1,7 @@
-from .cron import Cron
-from .plan import Plan
+lazy from .cron import Cron
+lazy from .plan import Plan
 from .schedule import Schedule
-from .spot import Spot
+lazy from .spot import Spot
 
 schedule = Schedule()
 

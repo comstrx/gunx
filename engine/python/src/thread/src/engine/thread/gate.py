@@ -2,7 +2,7 @@ from collections import deque
 from typing import Any
 
 from engine.error import Code, Fault
-import asyncio, math
+import asyncio, contextlib, math
 
 class Gate:
 
@@ -67,6 +67,11 @@ class Gate:
         except asyncio.CancelledError:
 
             if future.done() and not future.cancelled() and future.exception() is None: self.release()
+            else:
+
+                with contextlib.suppress(ValueError): self._waiters.remove((future, deadline))
+
+                if not self._waiters: self._idle_()
 
             raise
 
@@ -76,21 +81,33 @@ class Gate:
 
         while waiters:
 
-            future, _ = waiters.popleft()
+            future, deadline = waiters.popleft()
 
-            if not future.done():
+            if future.done(): continue
+            if deadline != math.inf and deadline <= future.get_loop().time():
 
-                future.set_result(None)
+                future.set_exception(TimeoutError("gate"))
 
-                return
+                continue
 
-        self._ragged = False
+            future.set_result(None)
 
+            if not waiters: self._idle_()
+
+            return
+
+        if self._timer is not None: self._idle_()
         if self._value < self._limit: self._value += 1
 
     def describe ( self ) -> dict[str, Any]:
 
         return { "limit": self._limit, "free": self._value, "waiting": self.waiting() }
+
+    def _idle_ ( self ) -> None:
+
+        if self._timer is not None: self._timer.cancel()
+
+        self._timer, self._due, self._ragged = None, math.inf, False
 
     def _arm_ ( self, loop: asyncio.AbstractEventLoop, deadline: float ) -> None:
 

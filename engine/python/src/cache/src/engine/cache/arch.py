@@ -1,10 +1,10 @@
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TypeGuard
+from typing import Any, TypeGuard, cast
 
 from engine.date import date
 from engine.error import Code, Fault
-import math
+import hiredis, math
 
 type Loader[T] = Callable[[], Awaitable[T]]
 type Loaders[T] = Callable[[list[str]], Awaitable[Mapping[str, T]]]
@@ -95,3 +95,7 @@ def real ( value: object, what: str ) -> float:
         return float(value)
 
     raise Fault(Code.INTERNAL, reason=f"cache.{what}")
+
+pack = cast("Callable[[tuple[Any, ...]], bytes]", hiredis.pack_command)
+
+SCAN_BATCH = 500

@@ -8,8 +8,8 @@ export const messages = {
         hello: {
             eyebrow: "مرحباً من أكمي",
             loading: "جارٍ تحضير التحية",
-            failed: "تعذّر الوصول إلى الخدمة",
-            hint: "تأكّد من تشغيل البوابة ثم أعد المحاولة.",
+            failed: "تعذّر إكمال الطلب",
+            hint: "أعد المحاولة، وإذا استمرت المشكلة فتواصل مع الدعم.",
             refresh: "تحية جديدة",
             retry: "أعد المحاولة",
             switch: "English",
@@ -24,8 +24,8 @@ export const messages = {
         hello: {
             eyebrow: "Hello from Acme",
             loading: "Preparing the greeting",
-            failed: "The service is unreachable",
-            hint: "Make sure the gateway is running, then try again.",
+            failed: "The request could not be completed",
+            hint: "Try again. If the problem continues, contact support.",
             refresh: "New greeting",
             retry: "Try again",
             switch: "العربية",

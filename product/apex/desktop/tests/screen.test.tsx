@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test as it } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/app/index.tsx";
 import { Screen } from "../src/app/screen.tsx";
 import { toneOf } from "../src/features/hello/hooks/use-hello.ts";
@@ -14,9 +14,13 @@ beforeEach(() => {
 
 describe("screen", () => {
 
-    it("the page renders without a host: the nav, then the hello screen", () => {
+    it("the page renders without a host: the nav, then the hello screen", async () => {
 
-        const markup = renderToStaticMarkup(<App />);
+        const stream = await renderToReadableStream(<App />);
+
+        await stream.allReady;
+
+        const markup = await new Response(stream).text();
 
         expect(markup).toStartWith('<title>أهلاً · أكمي</title><nav aria-label="القائمة" data-ui="block"');
         expect(markup).toContain('<a href="/" aria-current="page" data-ui="link" data-look="button" data-current=""');

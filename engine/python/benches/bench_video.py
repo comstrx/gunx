@@ -4,7 +4,7 @@ from engine.test import Bench
 from engine.video import Preset, Probe, RENDITIONS, Track, Videos
 from pathlib import Path
 from typing import Any
-import asyncio, av, tempfile
+import asyncio, av, tempfile, os
 
 bench  = Bench()
 loop   = asyncio.new_event_loop()
@@ -13,7 +13,7 @@ root   = Path(tempfile.mkdtemp(prefix="engine-bench-video-"))
 clip   = root / "clip.mp4"
 probe  = Probe(2.0, "mp4", 400_000, 100_000, (Track("video", "h264", 320, 240, 24.0, 350_000), Track("audio", "aac", bitrate=96_000, channels=2, rate=48_000)))
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 
 def synth ( path: Path, seconds: float = 1.0, fps: int = 24, width: int = 320, height: int = 240 ) -> None:
 

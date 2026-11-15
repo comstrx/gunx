@@ -5,6 +5,16 @@ module:gate:rust:nightly () {
     @print "+nightly-$(config:tools:get rust nightly)"
 
 }
+module:gate:rust:host () {
+
+    local host=""
+
+    host="$(rustc -vV | sed -n 's/^host: //p')" || { @err "rustc cannot name its host"; return; }
+    [[ -n "${host}" ]] || { @err "rustc cannot name its host"; return; }
+
+    @print "${host}"
+
+}
 module:gate:rust:deps () {
 
     local tool=""
@@ -47,7 +57,7 @@ module:gate:rust:safety () {
     local nightly="" host=""
 
     nightly="$(module:gate:rust:nightly)"
-    host="$(rustc -vV | sed -n 's/^host: //p')" || return
+    host="$(module:gate:rust:host)" || return
 
     cargo "${nightly}" udeps --workspace --all-targets --all-features || return
     cargo "${nightly}" miri test --workspace --all-features || return
@@ -62,8 +72,7 @@ module:gate:rust:audit () {
 
     cargo deny --all-features check && cargo vet --locked || return
 
-    baseline="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null)" \
-        || { @info "semver: no earlier release tag; skipped"; return 0; }
+    baseline="$(core:git:latest .)" || { @info "semver: no earlier release tag; skipped"; return 0; }
 
     cargo semver-checks check-release --workspace --baseline-rev "${baseline}"
 
@@ -79,7 +88,7 @@ module:gate:rust:fuzz () {
     local -a targets=()
 
     nightly="$(module:gate:rust:nightly)"
-    host="$(rustc -vV | sed -n 's/^host: //p')" || return
+    host="$(module:gate:rust:host)" || return
 
     export CARGO_PROFILE_RELEASE_LTO=off CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
 
@@ -87,7 +96,7 @@ module:gate:rust:fuzz () {
     mapfile -t targets < <(cargo "${nightly}" fuzz list)
 
     (( ${#targets[@]} > 0 )) || { @info "no fuzz targets"; return 0; }
-    share=$(( GATE_SECONDS * 9 / 10 / ${#targets[@]} ))
+    share="$(module:gate:share "${#targets[@]}")" || return
 
     for target in "${targets[@]}"; do
 

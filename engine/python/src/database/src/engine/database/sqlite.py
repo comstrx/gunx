@@ -30,7 +30,7 @@ class Sqlite(Dialect):
     @override
     def json ( self, column: str, key: str ) -> str:
 
-        if not KEY.match(key): raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [key[:64]] })
+        if not KEY.fullmatch(key): raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [key[:64]] })
 
         return f"json_extract({self.ident(column)}, '$.{key}')"
 

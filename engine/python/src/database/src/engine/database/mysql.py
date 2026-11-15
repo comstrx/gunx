@@ -26,6 +26,11 @@ class Mysql(Dialect):
     capabilities = frozenset({ "upsert", "transaction", "savepoint", "check", "foreign", "lock", "skip" })
 
     @override
+    def literal ( self, value: str ) -> str:
+
+        return f"(CONVERT(X'{value.encode().hex()}' USING utf8mb4))"
+
+    @override
     def kind ( self, column: Column ) -> str:
 
         if column.kind == "text" and column.length == 0: return "text"
@@ -67,7 +72,7 @@ class Mysql(Dialect):
     @override
     def json ( self, column: str, key: str ) -> str:
 
-        if not KEY.match(key): raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [key[:64]] })
+        if not KEY.fullmatch(key): raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [key[:64]] })
 
         return f"JSON_UNQUOTE(JSON_EXTRACT({self.ident(column)}, '$.{key}'))"
 

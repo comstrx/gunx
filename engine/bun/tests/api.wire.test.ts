@@ -1,7 +1,7 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
 import * as error from "engine/error";
-import * as socket from "engine/socket";
+import type * as socket from "engine/socket";
 import * as validate from "engine/validate";
 
 const user = validate.object({ id: validate.int().check(validate.gte(1)), name: validate.string().check(validate.minLength(2)) });
@@ -187,13 +187,13 @@ describe("api.wire", () => {
                 onmessage: null,
                 send: ( text ) => {
 
-                    const frame = socket.decode(text);
+                    const frame = api.decodeFrame(text);
 
                     if ( !frame ) return;
 
                     sent.push(frame);
 
-                    if ( frame.id ) made.onmessage?.({ data: socket.encode({ event: "ack", id: frame.id, data: {} }) });
+                    if ( frame.id ) made.onmessage?.({ data: api.encodeFrame({ event: "ack", id: frame.id, data: {} }) });
 
                 },
                 close: () => { made.readyState = 3; made.onclose?.({ code: 1000, reason: "" }); },
@@ -218,9 +218,9 @@ describe("api.wire", () => {
         await new Promise(( resolve ) => setTimeout(resolve, 2));
         expect(realtime.status()).toBe("open");
         expect(sent.map(( frame ) => frame.event)).toEqual(["auth", "join"]);
-        side?.onmessage?.({ data: socket.encode({ event: "orders.updated", channel: "orders", data: { id: 1 } }) });
-        side?.onmessage?.({ data: socket.encode({ event: "orders.updated", channel: "users", data: { id: 2 } }) });
-        side?.onmessage?.({ data: socket.encode({ event: "pong", channel: "orders" }) });
+        side?.onmessage?.({ data: api.encodeFrame({ event: "orders.updated", channel: "orders", data: { id: 1 } }) });
+        side?.onmessage?.({ data: api.encodeFrame({ event: "orders.updated", channel: "users", data: { id: 2 } }) });
+        side?.onmessage?.({ data: api.encodeFrame({ event: "pong", channel: "orders" }) });
         expect(seen).toEqual([{ change: "updated", event: "orders.updated", data: { id: 1 }, channel: "orders" }]);
         expect(await realtime.request("echo", { a: 1 }, "orders")).toEqual({});
         stop();
@@ -230,5 +230,31 @@ describe("api.wire", () => {
         expect(realtime.status()).toBe("idle");
 
     });
+
+});
+
+
+it("the public realtime protocol can bind the generic socket without a hidden house default", async () => {
+
+    const sent: string[] = [];
+    const wire: socket.Socket = { readyState: 1, onopen: null, onclose: null, onmessage: null, onerror: null, close: () => undefined, send: ( text ) => { sent.push(text); } };
+    const connection = (await import("engine/socket")).open({ url: "wss://example.test", protocol: api.liveProtocol, factory: () => wire, heartbeat: 0, reconnect: false });
+
+    await connection.connect();
+
+    try {
+
+        connection.emit("hello", 1);
+        expect(sent).toEqual(['{"event":"hello","data":1}']);
+        wire.onmessage?.({ data: api.encodeFrame({ event: "connected", data: { id: "bad id" } }) });
+        expect(connection.id()).toBeUndefined();
+        wire.onmessage?.({ data: api.encodeFrame({ event: "connected", data: { id: "valid-id" } }) });
+        expect(connection.id()).toBe("valid-id");
+
+    } finally {
+
+        connection.close();
+
+    }
 
 });

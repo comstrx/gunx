@@ -1,4 +1,4 @@
-export type Kind = "image" | "video" | "audio" | "document" | "archive" | "text" | "font" | "data" | "other";
+import type { Kind } from "./arch.ts";
 
 const unknown = "application/octet-stream";
 const mimes = new Map<string, string>(Object.entries({

@@ -1,4 +1,5 @@
-export { type Analysis, analyze, defineRules, type Issue, type Resolved, type Rule, type Rules } from "./architecture.ts";
-export { assets, digestOf, hashOf, type Member, members, readJson, sizeOf, type Walked, type WalkOptions, walk, writeJson } from "./core.ts";
+export type { Analysis, Change, Growth, Issue, Member, Resolved, Rule, Rules, Sizes, Surface, Walked, WalkOptions } from "./arch.ts";
+export { analyze, defineRules } from "./architecture.ts";
+export { assets, digestOf, hashOf, members, readJson, sizeOf, walk, writeJson } from "./core.ts";
 export { bindDisk, nodeDisk } from "./disk.ts";
-export { apiDiff, type Change, describeChange, type Growth, type Sizes, type Surface, sizeDiff } from "./record.ts";
+export { apiDiff, describeChange, sizeDiff } from "./record.ts";

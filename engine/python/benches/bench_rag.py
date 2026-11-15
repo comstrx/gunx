@@ -3,7 +3,7 @@ from engine.log import log
 from engine.rag import Hit, Memory, Rag
 from engine.test import Bench
 from pathlib import Path
-import asyncio
+import asyncio, os
 
 bench = Bench()
 loop  = asyncio.new_event_loop()
@@ -13,7 +13,7 @@ store = Memory()
 text  = " ".join(f"Sentence number {at} talks about cats, dogs and the weather in Cairo." for at in range(400))
 hits  = [Hit("doc.txt", at, f"Passage {at} about the weather in Cairo.", 1 - at / 100) for at in range(50)]
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 brain.use(Mock(dimensions=16), default=True, tasks=["embed", "chat", "extract"])
 rag.setup(brain, store, size=600, overlap=80, dimensions=16)
 

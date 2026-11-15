@@ -121,7 +121,7 @@ test:module:extract:commands-guard-their-usage () {
     CLI_FLAGS=()
     @eq "$(module:extract:timeout)" 1800
 
-    @contains "$(module:extract:targets 2>/dev/null)" 'engine  engine/demo  github.com/x/demox  (inherit)  missing'
+    @contains "$(NO_COLOR=1 module:extract:targets 2>/dev/null)" 'demox   engine  engine/demo  github.com/x/demox   inherit  missing'
     @errors 'Targets without a part under' module:extract:targets
     @errors 'Targets without a part under' module:extract:all
     TARGETS=()
@@ -169,7 +169,8 @@ fixture:module:extract:root () {
         [demox]=3 [demox.type]=engine [demox.path]=engine/demo [demox.repo]=demox
         [infrax]=3 [infrax.type]=engine [infrax.path]=engine/infra [infrax.repo]="${TMPDIR}/infrax.git"
     )
-    TOOL_ENGINE="${root}"
+    mkdir -p "${root}/engine/infra"
+    TOOL_ENGINE="${root}/engine/infra"
     CONFIG[RUN_RETRIES]=1
 
 }
@@ -241,7 +242,7 @@ test:module:extract:push-mirrors-without-force () {
     CLI_FLAGS=( [--repository]="${bare}" [--dry-run]=true )
 
     @contains "$(module:extract:push demox)" 'not pushed'
-    [[ ! -e "${bare}" ]] || @fails git -C "${bare}" rev-parse --verify refs/heads/main
+    [[ ! -e "${bare}" ]] || @err 'a dry run created the mirror'
 
     CLI_FLAGS=( [--repository]="${bare}" )
     module:extract:push demox
@@ -335,5 +336,121 @@ test:module:extract:names-the-gate () {
     @eq "$(module:extract:gatename fragment product/demo/web)" web
     @eq "$(module:extract:gatename tutor tutor)" tutor
     @errors 'Unknown kind' module:extract:gatename other x
+
+}
+test:module:extract:push-tracks-a-commit-only () {
+
+    local root="" bare="${TMPDIR}/mirror.git"
+
+    fixture:module:extract:root
+    root="${TMPDIR}/source"
+
+    CLI_VALUED=( [--repository]=true [--branch]=true )
+    CLI_FLAGS=( [--repository]="${bare}" )
+
+    printf 'fn main() { dirty() }\n' > "${root}/engine/demo/src/main.rs"
+    @errors '1 uncommitted files travel (engine/demo/src/main.rs)' module:extract:push demox
+    [[ ! -e "${bare}" ]] || @err 'a refused push touched the mirror'
+
+    CLI_FLAGS=( [--repository]="${bare}" [--dry-run]=true )
+    @contains "$(module:extract:push demox 2>&1)" 'a real push refuses them'
+
+    git -C "${root}" checkout -q -- engine/demo/src/main.rs
+    printf 'note\n' > "${root}/stray.md"
+    module:extract:clean "${root}" demox false
+    printf 'secret\n' > "${root}/SECURITY.md"
+    @errors 'SECURITY.md' module:extract:clean "${root}" demox false
+    rm -f -- "${root}/SECURITY.md" "${root}/stray.md"
+
+    git -C "${root}" rm -q --cached engine/demo/src/main.rs
+    rm -f -- "${root}/engine/demo/src/main.rs"
+    @absent "$(core:git:files "${root}" | tr '\0' ' ')" 'engine/demo/src/main.rs'
+
+}
+test:module:extract:knows-its-own-engine () {
+
+    fixture:module:extract:root
+
+    @eq "$(module:extract:self)" engine/infra
+
+    TOOL_ENGINE="${TMPDIR}/source"
+    mkdir -p "${TMPDIR}/source/engine/infra/src"
+    printf '' > "${TMPDIR}/source/engine/infra/infra.toml"
+    printf '' > "${TMPDIR}/source/engine/infra/src/main.sh"
+    @eq "$(module:extract:self)" engine/infra
+
+    rm -rf -- "${TMPDIR}/source/engine/infra"
+    @errors 'No target of the table is this engine' module:extract:self
+
+}
+test:module:extract:sync-reports-every-target () {
+
+    local bare="${TMPDIR}/mirror.git" report=""
+
+    fixture:module:extract:root
+
+    TARGETS=( [demox]=3 [demox.type]=engine [demox.path]=engine/demo [demox.repo]="${bare}" [infrax]=3 [infrax.type]=engine [infrax.path]=engine/infra [infrax.repo]="${TMPDIR}/infrax.git" )
+    CLI_FLAGS=( [--dry-run]=true )
+
+    report="$(module:extract:all 2>/dev/null)" || true
+
+    @contains "${report}" 'Sync'
+    @contains "${report}" 'demox'
+    @contains "${report}" 'infrax'
+
+}
+test:module:extract:flows-keep-the-own-matrix () {
+
+    local file="${TMPDIR}/ci.yml" labeler="${TMPDIR}/labeler.yml"
+
+    printf 'jobs:\n  gate:\n    strategy:\n      matrix:\n        part: [rust, python, infra, root]\n        os: [ubuntu-latest]\n\n        include:\n          - part: infra\n            os: macos-latest\n          - part: root\n            os: macos-latest\n\n    runs-on: x\n' > "${file}"
+
+    module:extract:flows:matrix "${file}" rust
+
+    @contains "$(cat "${file}")" 'part: [rust, root]'
+    @absent "$(cat "${file}")" 'part: infra'
+    @contains "$(cat "${file}")" '- part: root'
+
+    printf 'jobs:\n  gate:\n    strategy:\n      matrix:\n        part: [rust, infra]\n        include:\n          - part: infra\n            os: macos-latest\n    runs-on: x\n' > "${file}"
+    module:extract:flows:matrix "${file}" rust
+    @absent "$(cat "${file}")" 'include'
+
+    printf "rust:\n  - changed-files:\n      - any-glob-to-any-file: ['engine/rust/**']\n\nci:\n  - changed-files:\n      - any-glob-to-any-file: ['.github/**']\n" > "${labeler}"
+    core:parse:yaml:prune "${labeler}" "'(engine|product|tutor)/"
+    core:parse:yaml:hollow "${labeler}" '[a-z][a-z0-9-]*'
+
+    @eq "$(cat "${labeler}")" $'ci:\n  - changed-files:\n      - any-glob-to-any-file: [\'.github/**\']'
+
+}
+test:module:extract:verify-guards-a-product () {
+
+    local tree="${TMPDIR}/product"
+
+    fixture:module:extract:root
+    mkdir -p "${TMPDIR}/source/product/gamma" "${tree}"
+    printf '# Agents\n' > "${tree}/AGENTS.md"
+    printf 'built for gamma\n' > "${tree}/notes.md"
+
+    @errors "another product's name in notes.md" module:extract:verify "${tree}" product product/other
+
+    printf 'built for other\n' > "${tree}/notes.md"
+    module:extract:verify "${tree}" product product/other
+
+}
+test:module:extract:flows-install-only-what-the-tree-needs () {
+
+    local tree="${TMPDIR}/tree" file="${TMPDIR}/tree/ci.yml"
+
+    mkdir -p "${tree}"
+    printf '[package]\n' > "${tree}/Cargo.toml"
+    printf 'jobs:\n  gate:\n    steps:\n      - uses: cargo-bins/cargo-binstall@a # v1\n\n      - uses: astral-sh/setup-uv@b # v9\n        with:\n          enable-cache: false\n\n      - uses: actions/setup-go@c # v7\n        with:\n          cache: false\n\n      - uses: oven-sh/setup-bun@d # v2\n' > "${file}"
+
+    module:extract:flows:setups "${file}" "${tree}"
+
+    @contains "$(cat "${file}")" 'cargo-bins/cargo-binstall@a'
+    @contains "$(cat "${file}")" 'oven-sh/setup-bun@d'
+    @absent "$(cat "${file}")" 'setup-uv'
+    @absent "$(cat "${file}")" 'setup-go'
+    @absent "$(cat "${file}")" 'enable-cache'
 
 }

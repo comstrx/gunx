@@ -4,7 +4,7 @@ from engine.log import log
 from engine.schedule import Cron, Schedule
 from engine.test import Bench
 from pathlib import Path
-import asyncio
+import asyncio, os
 
 bench    = Bench()
 loop     = asyncio.new_event_loop()
@@ -14,7 +14,7 @@ every    = Cron.parse("*/5 * * * *")
 rare     = Cron.parse("0 0 29 2 *")
 runs: list[int] = []
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 schedule.setup(Cache(Memory()), tick=60.0)
 
 async def work () -> None:

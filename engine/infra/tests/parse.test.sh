@@ -75,3 +75,73 @@ test:core:toml:reads-inline-tables-and-arrays () {
     @errors 'unterminated string' core:parse:toml table "${file}"
 
 }
+test:core:parse:keeps-quoted-hashes () {
+
+    local file="${TMPDIR}/quoted.env"
+
+    local -A pairs=()
+    local -a order=()
+
+    printf 'A="x # y" # note\nB=plain # note\nC=a#b\nD='"'"'s q'"'"'\nE= spaced \n' > "${file}"
+    core:parse:env pairs order "${file}"
+
+    @eq "${pairs[A]}|${pairs[B]}|${pairs[C]}|${pairs[D]}|${pairs[E]}" 'x # y|plain|a#b|s q|spaced'
+
+    printf 'A="x" y\n' > "${file}"
+    @errors 'text after the closing quote' core:parse:env pairs order "${file}"
+
+    printf 'A="x\n' > "${file}"
+    @errors 'unterminated quote' core:parse:env pairs order "${file}"
+
+}
+test:core:toml:reads-escapes-and-comments () {
+
+    local file="${TMPDIR}/escapes.toml"
+    local -A table=()
+
+    {
+        printf '[meta] # a head note\n'
+        printf 'a = "x\\ty\\n\\"q\\" \\\\ \\u0041"\n'
+        printf "b = 'lit\\\\eral # kept'\n"
+        printf 'c = [ # first\n    "one", # one\n    "t]w#o", # two\n    { name = "n#" }, # three\n] # end\n'
+    } > "${file}"
+
+    core:parse:toml table "${file}"
+
+    @eq "${table[meta.a]}" $'x\ty\n"q" \\ A'
+    @eq "${table[meta.b]}" 'lit\eral # kept'
+    @eq "${table[meta.c]}|${table[meta.c.0]}|${table[meta.c.1]}|${table[meta.c.2.name]}" '3|one|t]w#o|n#'
+
+    printf 'x = "a\\qb"\n' > "${file}"
+    @errors 'an unknown escape' core:parse:toml table "${file}"
+
+    printf 'x = "\\u12"\n' > "${file}"
+    @errors 'a bad unicode escape' core:parse:toml table "${file}"
+
+}
+test:core:parse:counts-only-numbers () {
+
+    local -A table=( [items]=2 [items.0]=a [items.1]=b [word]=many [lead]=02 )
+
+    @eq "$(core:parse:count table items)" 2
+    @eq "$(core:parse:count table word)" 0
+    @eq "$(core:parse:count table lead)" 0
+    @eq "$(core:parse:list table items | tr '\n' ' ')" 'a b '
+    @eq "$(core:parse:list table word)" ''
+
+}
+test:core:toml:drops-a-whole-section () {
+
+    local file="${TMPDIR}/drop.toml"
+    local -A table=()
+
+    printf '[meta]\nname = "x"\n\n[deps]\na = { path = "p", deps = [\n    { name = "e" },\n] }\n[deps.extra]\nb = 1\n\n[deploy]\nstack = "native"\n' > "${file}"
+
+    core:parse:toml:drop "${file}" deps
+    core:parse:toml table "${file}"
+
+    @eq "${table[meta.name]}|${table[deploy.stack]}" 'x|native'
+    @absent "$(cat "${file}")" 'deps'
+    @errors 'Not a section name' core:parse:toml:drop "${file}" 'Bad Name'
+
+}

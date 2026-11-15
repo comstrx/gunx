@@ -1,16 +1,20 @@
 
 from engine.error import Code, Fault
-import asyncio, math, time
+from .arch import count, span
+import asyncio, time
 
 class Limiter:
 
+    __slots__ = ("_at", "_burst", "_rate", "_tokens")
+
     def __init__ ( self, rate: float, burst: int ) -> None:
 
-        if not 0 < rate < math.inf or not 1 <= burst < math.inf: raise Fault(Code.INTERNAL, reason="func.limiter")
+        self._rate   = span(rate, "func.limiter")
+        self._burst  = count(burst, "func.limiter")
 
-        self._rate   = rate
-        self._burst  = burst
-        self._tokens = float(burst)
+        if not self._rate: raise Fault(Code.INTERNAL, reason="func.limiter")
+
+        self._tokens = span(burst, "func.limiter")
         self._at     = time.monotonic()
 
     def allow ( self, cost: int = 1 ) -> bool:
@@ -41,7 +45,7 @@ class Limiter:
 
     def _refill_ ( self, cost: float = 0 ) -> None:
 
-        if not 0 <= cost <= self._burst: raise Fault(Code.INTERNAL, reason="func.limiter")
+        if type(cost) is not int or not 0 <= cost <= self._burst: raise Fault(Code.INTERNAL, reason="func.limiter")
 
         now          = time.monotonic()
         self._tokens = min(float(self._burst), self._tokens + (now - self._at) * self._rate)

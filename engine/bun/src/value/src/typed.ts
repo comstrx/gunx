@@ -1,18 +1,6 @@
 import * as calendar from "engine-date";
 import * as string from "engine-string";
-
-export type Typed<T, Name extends string> = T & { readonly "~kind": Name };
-export type Email = Typed<string, "email">;
-export type Url = Typed<string, "url">;
-export type Phone = Typed<string, "phone">;
-export type Slug = Typed<string, "slug">;
-export type Key = Typed<string, "key">;
-export type Uuid = Typed<string, "uuid">;
-export type Ulid = Typed<string, "ulid">;
-export type CurrencyCode = Typed<string, "currency">;
-export type LocaleTag = Typed<string, "locale">;
-export type Otp = Typed<string, "otp">;
-export type PlainDate = Typed<string, "plain-date">;
+import type { CurrencyCode, Email, Key, LocaleTag, Otp, Phone, PlainDate, Slug, Ulid, Url, Uuid } from "./arch.ts";
 
 export const patterns = {
     email: /^(?:[A-Za-z0-9_'+-]+\.)*[A-Za-z0-9_'+-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/,

@@ -1,8 +1,8 @@
-from .arch import Answer, Chunk, Hit
-from .database import Database
-from .memory import Memory
+lazy from .arch import Answer, Chunk, Hit
+lazy from .database import Database
+lazy from .memory import Memory
 from .rag import Rag
-from .store import Store
+lazy from .store import Store
 
 rag = Rag()
 

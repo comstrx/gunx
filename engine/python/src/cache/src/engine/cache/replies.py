@@ -1,6 +1,7 @@
 from collections import deque
 from typing import Any, TYPE_CHECKING, override
 
+from engine.thread import Gate
 import asyncio, hiredis
 
 if TYPE_CHECKING:
@@ -12,14 +13,15 @@ class Replies(asyncio.Protocol):
     def __init__ ( self, wire: Wire ) -> None:
 
         self.reader    = hiredis.Reader()
-        self.pending: deque[tuple[asyncio.Future[Any], float]] = deque()
-        self.staged: list[bytes] = []
+        self.pending: deque[tuple[asyncio.Future[Any], float, Gate | None]] = deque()
         self.transport: Any = None
         self.wire      = wire
         self.wait      = wire.wait
         self.loop      = asyncio.get_running_loop()
         self.timer: asyncio.TimerHandle | None = None
         self.failure: BaseException | None = None
+        self.outgoing: list[bytes] = []
+        self.flush: asyncio.Handle | None = None
         self.writable  = asyncio.Event()
 
         self.writable.set()
@@ -55,7 +57,9 @@ class Replies(asyncio.Protocol):
 
                 return
 
-            future, _ = self.pending.popleft()
+            future, _, gate = self.pending.popleft()
+
+            if gate is not None: gate.release()
 
             if future.done(): continue
 
@@ -67,6 +71,11 @@ class Replies(asyncio.Protocol):
 
         self.transport = None
 
+        if self.flush is not None: self.flush.cancel()
+
+        self.flush = None
+        self.outgoing.clear()
+
         if self.timer is not None:
 
             self.timer.cancel()
@@ -74,11 +83,12 @@ class Replies(asyncio.Protocol):
             self.timer = None
 
         failure     = self.failure or exc or ConnectionError("redis closed")
-        self.staged = []
 
         while self.pending:
 
-            future, _ = self.pending.popleft()
+            future, _, gate = self.pending.popleft()
+
+            if gate is not None: gate.release()
 
             if not future.done(): future.set_exception(failure)
 
@@ -99,33 +109,41 @@ class Replies(asyncio.Protocol):
 
         return self.transport is not None and not self.transport.is_closing()
 
-    def submit ( self, command: bytes ) -> asyncio.Future[Any]:
+    def submit ( self, command: bytes, gate: Gate | None = None ) -> asyncio.Future[Any]:
 
         loop = self.loop
         future: asyncio.Future[Any] = loop.create_future()
 
         if self.transport is None:
 
+            if gate is not None: gate.release()
+
             future.set_exception(self.failure or ConnectionError("redis closed"))
 
             return future
 
-        self.pending.append((future, loop.time() + self.wait))
+        self.pending.append((future, loop.time() + self.wait, gate))
 
         if self.timer is None: self.timer = loop.call_later(self.wait, self.expire)
-        if not self.staged: loop.call_soon(self.flush)
+        self.outgoing.append(command)
 
-        self.staged.append(command)
+        if self.flush is None: self.flush = loop.call_soon(self.write)
 
         return future
 
-    def flush ( self ) -> None:
+    def write ( self ) -> None:
 
-        staged, self.staged = self.staged, []
+        self.flush = None
 
-        if self.transport is None or not staged: return
+        if not self.outgoing or self.transport is None: return
 
-        self.transport.write(staged[0] if len(staged) == 1 else b"".join(staged))
+        commands, self.outgoing = self.outgoing, []
+
+        try: self.transport.write(commands[0] if len(commands) == 1 else b"".join(commands))
+        except (OSError, RuntimeError) as error:
+
+            self.failure = error
+            self.transport.abort()
 
     def expire ( self ) -> None:
 

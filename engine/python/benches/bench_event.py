@@ -4,7 +4,7 @@ from engine.event import Event, Events
 from engine.log import log
 from engine.test import Bench
 from pathlib import Path
-import asyncio
+import asyncio, os
 
 bench  = Bench()
 loop   = asyncio.new_event_loop()
@@ -12,7 +12,7 @@ bus    = Broker()
 events = Events()
 seen: list[str] = []
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 bus.setup(Memory())
 events.setup("orders", bus)
 

@@ -23,6 +23,37 @@ describe("fuzz json", () => {
         );
 
     });
+    it("safe parse agrees with native JSON for arbitrary input, whitespace and corrupted serialized values", () => {
+
+        const raw = fc.string({ maxLength: 100, unit: "binary" });
+        const encoded = fc.tuple(fc.jsonValue({ maxDepth: 4 }), fc.constantFrom("", " ", "\t\r\n", "\u00a0", "\ufeff"), fc.constantFrom("", " ", "x", "]", "\0")).map(([value, prefix, suffix]) => prefix + JSON.stringify(value) + suffix);
+
+        fc.assert(fc.property(fc.oneof(raw, encoded), ( text ) => {
+
+            let expected: unknown;
+
+            try { expected = JSON.parse(text, ( key, value: unknown ) => key === "__proto__" ? undefined : value); } catch { expected = undefined; }
+
+            expect(json.parse(text)).toEqual(expected);
+
+        }), { numRuns: runs });
+
+    });
+    it("pretty output agrees with native JSON and cycles round trip through the tolerant form", () => {
+
+        fc.assert(fc.property(fc.jsonValue({ maxDepth: 4 }), fc.integer({ min: 0, max: 12 }), ( value, pretty ) => {
+
+            expect(json.stringify(value, { pretty })).toBe(JSON.stringify(value, undefined, pretty));
+
+            const ring: { value: unknown; self?: unknown } = { value };
+
+            ring.self = ring;
+
+            expect(JSON.parse(json.stringify(ring, { pretty }))).toEqual(JSON.parse(JSON.stringify({ value, self: "[Circular]" }), ( key, item: unknown ) => key === "__proto__" ? undefined : item));
+
+        }), { numRuns: 5000 });
+
+    });
     it("flatten and unflatten are inverses for records without empty leaves", { timeout: 60_000 }, () => {
 
         const leaf = fc.oneof(fc.string({ maxLength: 8 }), fc.integer(), fc.boolean());

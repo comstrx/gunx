@@ -1,6 +1,4 @@
-export type Dictionary = Record<string, unknown>;
-export type Kind = "null" | "boolean" | "number" | "string" | "list" | "record" | "undefined" | "other";
-export type StringifyOptions = { pretty?: boolean | number | undefined; stable?: boolean | undefined };
+import type { Dictionary, Kind, StringifyOptions } from "./arch.ts";
 
 const unsafe = new Set(["__proto__", "constructor", "prototype"]);
 const index = /^(?:0|[1-9]\d*)$/;
@@ -73,6 +71,10 @@ export function parse ( text: string ): unknown {
 
     try {
 
+        const first = typeof text === "string" ? text.charCodeAt(0) : 0;
+
+        if ( first > 123 || (first >= 65 && first <= 122 && first !== 91 && first !== 102 && first !== 110 && first !== 116) ) return undefined;
+
         return poisoned.test(text) ? JSON.parse(text, ( key, value: unknown ) => (key === poison ? undefined : value)) : JSON.parse(text);
 
     } catch {
@@ -136,7 +138,7 @@ export function stringify ( value: unknown, options: StringifyOptions = {} ): st
 
     try {
 
-        return JSON.stringify(value, undefined, space) ?? "null";
+        return JSON.stringify(value, space === undefined ? undefined : ( _key, item: unknown ) => item, space) ?? "null";
 
     } catch {
 

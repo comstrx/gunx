@@ -1,10 +1,5 @@
 import * as number from "engine-number";
-
-export type Scalar = string | number | bigint | boolean | null | undefined;
-export type Key<T> = keyof T | (( item: T ) => Scalar);
-export type Direction = "asc" | "desc";
-export type Order<T> = { by: Key<T>; direction?: Direction | undefined };
-export type Changes<T> = { added: T[]; removed: T[]; kept: T[] };
+import type { Changes, Direction, Key, Order, Scalar } from "./arch.ts";
 
 const settings: Intl.CollatorOptions = { numeric: true, sensitivity: "base" };
 const collators = new Map<string, Intl.Collator>();

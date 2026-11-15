@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 from engine.error import Code, Fault
 from .arch import Guard, Middleware
 
-
 if TYPE_CHECKING:
 
     from .route import Route

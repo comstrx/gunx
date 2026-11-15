@@ -334,7 +334,7 @@ describe("form", () => {
         name.touch();
         expect(name.checking()).toBe(true);
         await tick(5);
-        expect([asked.slice(2), name.error(), name.checking()]).toEqual([["Cat/1", "Dog/1"], undefined, false]);
+        expect([asked.slice(2), name.error(), name.checking()]).toEqual([["Dog/1"], undefined, false]);
         name.set("Eve");
         made.touch("name");
         made.reset();

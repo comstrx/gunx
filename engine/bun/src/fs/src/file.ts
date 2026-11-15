@@ -2,15 +2,9 @@ import * as error from "engine-error";
 import * as json from "engine-json";
 import * as number from "engine-number";
 import * as string from "engine-string";
+import type { FileRef, Limits, Seen, Size, Slice } from "./arch.ts";
 import { accepts, agrees, essence, mime, sniff, sniffable } from "./mime.ts";
 import { safe } from "./path.ts";
-
-export type Limits = { maxBytes: number; maxFiles: number; types?: readonly string[] | undefined; maxPixels?: number | undefined };
-export type FileRef = { uri: string; name: string; type: string; size?: number | undefined };
-export type Part = Blob | FileRef | string | number | boolean | bigint | Date;
-export type Size = { width: number; height: number; type: string; orientation?: number | undefined };
-export type Seen = { type: string; size: number; name: string; width?: number | undefined; height?: number | undefined };
-export type Slice = { index: number; start: number; end: number; blob: Blob };
 
 export const limits: Readonly<Limits> = Object.freeze({ maxBytes: 10_485_760, maxFiles: 10 });
 

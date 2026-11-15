@@ -2,11 +2,7 @@ import * as adapter from "engine-adapter";
 import * as json from "engine-json";
 import * as rand from "engine-rand";
 import * as string from "engine-string";
-
-export type Algorithm = "SHA-256" | "SHA-384" | "SHA-512" | "SHA-1";
-export type Source = { subtle: SubtleCrypto };
-export type Bytes = Uint8Array<ArrayBuffer>;
-export type Kept<T> = ( name: string, make: ( subtle: SubtleCrypto ) => Promise<T> ) => Promise<T>;
+import type { Algorithm, Bytes, Kept, Source } from "./arch.ts";
 
 const hexPattern = /^[0-9a-fA-F]+$/;
 const algorithms = new Set<string>(["SHA-256", "SHA-384", "SHA-512", "SHA-1"]);
@@ -46,14 +42,32 @@ export function keyed ( secret: string | Uint8Array ): Bytes {
 
     const found = typeof secret === "string" || ArrayBuffer.isView(secret) ? view(secret) : undefined;
 
-    if ( found && found.length > 0 ) return found;
+    if ( found && found.length > 0 ) return typeof secret === "string" ? found : found.slice();
 
     throw new RangeError("not a secret");
 
 }
-export function label ( secret: string | Uint8Array, material: Bytes ): string {
+const identities = new WeakMap<Source, Promise<CryptoKey>>();
 
-    return typeof secret === "string" ? `text:${secret}` : `hex:${string.hex(material)}`;
+export async function label ( source: Source, material: Bytes ): Promise<string> {
+
+    let identity = identities.get(source);
+
+    if ( identity === undefined ) {
+
+        const made = source.subtle.generateKey({ name: "HMAC", hash: "SHA-256", length: 256 }, false, ["sign"]) as Promise<CryptoKey>;
+
+        identities.set(source, made);
+        void made.catch(() => {
+
+            if ( identities.get(source) === made ) identities.delete(source);
+
+        });
+        identity = made;
+
+    }
+
+    return string.hex(new Uint8Array(await source.subtle.sign("HMAC", await identity, material)));
 
 }
 export function kept<T> ( most: number ): Kept<T> {
@@ -61,9 +75,7 @@ export function kept<T> ( most: number ): Kept<T> {
     const held = new Map<string, Promise<T>>();
     let owner: Source | undefined;
 
-    return ( name, make ) => {
-
-        const source = engine.get();
+    return ( source, name, make ) => {
 
         if ( source !== owner ) {
 
@@ -78,7 +90,7 @@ export function kept<T> ( most: number ): Kept<T> {
 
         const made = make(source.subtle).catch(( cause: unknown ) => {
 
-            held.delete(name);
+            if ( source === owner && held.get(name) === made ) held.delete(name);
 
             throw cause;
 
@@ -94,14 +106,12 @@ export function kept<T> ( most: number ): Kept<T> {
 
 }
 
-const macs = kept<CryptoKey>(64);
-
-function macKey ( secret: string | Uint8Array, algorithm: Algorithm ): Promise<CryptoKey> {
+async function macKey ( source: Source, secret: string | Uint8Array, algorithm: Algorithm ): Promise<CryptoKey> {
 
     const material = keyed(secret);
     const hash = known(algorithm);
 
-    return macs(`${hash}:${label(secret, material)}`, ( subtle ) => subtle.importKey("raw", material, { name: "HMAC", hash }, false, ["sign", "verify"]));
+    return source.subtle.importKey("raw", material, { name: "HMAC", hash }, false, ["sign", "verify"]);
 
 }
 
@@ -117,9 +127,11 @@ export async function hash ( data: string | Uint8Array, algorithm: Algorithm = "
 }
 export async function mac ( secret: string | Uint8Array, data: string | Uint8Array, algorithm: Algorithm = "SHA-256" ): Promise<Bytes> {
 
-    const key = await macKey(secret, algorithm);
+    const source = engine.get();
+    const body = typeof data === "string" ? view(data) : view(data).slice();
+    const key = await macKey(source, secret, algorithm);
 
-    return new Uint8Array(await engine.get().subtle.sign("HMAC", key, view(data)));
+    return new Uint8Array(await source.subtle.sign("HMAC", key, body));
 
 }
 export async function hmac ( secret: string | Uint8Array, data: string | Uint8Array, algorithm: Algorithm = "SHA-256" ): Promise<string> {
@@ -129,10 +141,12 @@ export async function hmac ( secret: string | Uint8Array, data: string | Uint8Ar
 }
 export async function verify ( secret: string | Uint8Array, data: string | Uint8Array, signature: string | Uint8Array, algorithm: Algorithm = "SHA-256" ): Promise<boolean> {
 
-    const key = await macKey(secret, algorithm);
-    const claimed = given(signature);
+    const source = engine.get();
+    const body = typeof data === "string" ? view(data) : view(data).slice();
+    const claimed = given(signature)?.slice();
+    const key = await macKey(source, secret, algorithm);
 
-    return claimed !== undefined && engine.get().subtle.verify("HMAC", key, claimed, view(data));
+    return claimed !== undefined && source.subtle.verify("HMAC", key, claimed, body);
 
 }
 export function equal ( a: string | Uint8Array, b: string | Uint8Array ): boolean {

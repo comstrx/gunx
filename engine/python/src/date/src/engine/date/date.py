@@ -1,14 +1,15 @@
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator
 from datetime import UTC, date as Day, datetime as DateTime, timedelta as TimeDelta
-from email.utils import parsedate_to_datetime
+from email.utils import format_datetime, parsedate_to_datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from engine.error import Code, Fault
 from engine.string import string
 from .arch import (
-    ARABIC, BACKWARD, CLOCK, CLOCKED, COMPACT, DAYS, DAY_NAMES, DIRECTIVE, END, ENDLESS, EPOCH, EPOCH_MS, FEW, FILLER,
-    FORMATS, FORWARD, GLUED, HOURS, LAST, LIMIT, MICRO, MILLI, MINUTES, MONTHS, MONTH_NAMES, NEXT, NOON, ONES, QUARTER,
-    SECONDS, SHORT, SOON, STEPS, TWO, UNITS, WEEK, WEEKEND, WORDS_UNITS,
+    ARABIC, BACKWARD, CLOCK, CLOCKED, COMPACT, DAYS, DAY_NAMES, DIRECTIVE, DURATION, END, ENDLESS, EPOCH, EPOCH_MS, FEW,
+    FILLER, FORMAT, FORMATS, FORWARD, GLUED, HOURS, LAST, LIMIT, MICRO, MILLI, MINUTES, MONTHS, MONTH_NAMES, NEXT,
+    NOON, ONES, QUARTER, SECONDS, SHORT, SOON, STEPS, TWO, UNITS, WEEK, WEEKEND, WORDS_UNITS, ZERO, utc,
 )
 from .span import Span
 import calendar, time
@@ -18,6 +19,18 @@ class Date:
     def __init__ ( self ) -> None:
 
         self._frozen: DateTime | None = None
+        self._zone    = "UTC"
+        self._pattern = FORMAT
+
+    def options ( self, *, zone: str | None = None, pattern: str | None = None ) -> Date:
+
+        scoped = Date()
+        scoped._zone    = self._zone if zone is None else zone
+        scoped._pattern = self._pattern if pattern is None else pattern
+        scoped._frozen  = self._frozen
+        scoped.format(EPOCH)
+
+        return scoped
 
     def now ( self ) -> DateTime:
 
@@ -25,7 +38,7 @@ class Date:
 
     def today ( self ) -> Day:
 
-        return self.now().date()
+        return self.local(self.now()).date()
 
     def stamp ( self ) -> float:
 
@@ -45,12 +58,11 @@ class Date:
 
     def utc ( self, value: DateTime ) -> DateTime:
 
-        if value.tzinfo is None: return value.replace(tzinfo=UTC)
-
-        try: return value.astimezone(UTC)
-        except OverflowError as error: raise self._beyond_(value) from error
+        return value if value.tzinfo is UTC else utc(value)
 
     def zone ( self, name: str ) -> ZoneInfo:
+
+        if len(name) > LIMIT: raise Fault(Code.BAD_REQUEST, reason="date.zone", errors={ "zone": [name[:LIMIT]] })
 
         try: return ZoneInfo(name)
         except (ZoneInfoNotFoundError, ValueError) as error:
@@ -61,15 +73,19 @@ class Date:
 
         return sorted(available_timezones())
 
-    def offset ( self, zone: str, at: DateTime | None = None ) -> int:
+    def offset ( self, zone: str | None = None, at: DateTime | None = None ) -> int:
 
         shift = self.local(at or self.now(), zone).utcoffset()
 
         return int(shift.total_seconds()) if shift else 0
 
-    def local ( self, value: DateTime, zone: str ) -> DateTime:
+    def local ( self, value: DateTime, zone: str | None = None ) -> DateTime:
 
-        try: return self.utc(value).astimezone(self.zone(zone))
+        name = self._zone if zone is None else zone
+
+        if name == "UTC": return self.utc(value)
+
+        try: return self.utc(value).astimezone(self.zone(name))
         except OverflowError as error: raise self._beyond_(value) from error
 
     def parse ( self, text: object, formats: tuple[str, ...] = FORMATS ) -> DateTime:
@@ -77,27 +93,26 @@ class Date:
         if isinstance(text, DateTime): return self.utc(text)
         if isinstance(text, (int, float)) and not isinstance(text, bool): return self.of(text)
 
-        raw = string.digits(str(text)).strip()
+        raw = str(text).strip()
 
         if not raw or len(raw) > LIMIT: raise self._refuse_(text)
+
+        if not raw.isascii(): raw = string.digits(raw)
         if raw.isascii() and raw.isdigit(): return self._digits_(raw)
 
         try: return self.utc(DateTime.fromisoformat(raw))
         except ValueError: pass
 
-        words, at = self._clock_(raw.lower())
-        found     = self._keyword_(words, self.now())
-        shift     = self._relative_(words) if found is None else None
+        found = self._phrase_(raw, formats)
 
-        if shift is not None: found = self.add(self.now(), **{ shift[0]: shift[1] })
-        if found is None: found = self._formatted_(raw, formats)
         if found is None: raise self._refuse_(text)
 
-        return found.replace(hour=at[0], minute=at[1], second=0, microsecond=0) if at else self.utc(found)
+        return found
 
     def day ( self, text: object ) -> Day:
 
-        if isinstance(text, Day) and not isinstance(text, DateTime): return text
+        if isinstance(text, DateTime): return self.local(text).date()
+        if isinstance(text, Day): return text
 
         try: return Day.fromisoformat(str(text).strip())
         except ValueError as error: raise self._refuse_(text) from error
@@ -122,29 +137,33 @@ class Date:
 
     def http ( self, value: DateTime | None = None ) -> str:
 
-        return self.utc(value or self.now()).strftime("%a, %d %b %Y %H:%M:%S GMT")
+        return format_datetime(self.utc(value or self.now()), usegmt=True)
 
-    def format ( self, value: DateTime, pattern: str = "%Y-%m-%d %H:%M", zone: str = "UTC", locale: str = "en" ) -> str:
+    def format (
+        self, value: DateTime | None = None, pattern: str | None = None, zone: str | None = None, locale: str = "en",
+    ) -> str:
 
-        local  = self.local(value, zone)
-        filled = pattern
+        local  = self.local(value or self.now(), zone)
+        filled = self._pattern if pattern is None else pattern
 
         if locale == "ar":
 
             month  = MONTH_NAMES[local.month - 1]
             day    = DAY_NAMES[local.weekday()]
             names  = { "%B": month, "%b": month, "%A": day, "%a": day, "%p": "م" if local.hour >= NOON else "ص" }
-            filled = DIRECTIVE.sub(lambda found: names.get(found.group(0), found.group(0)), pattern)
+            filled = DIRECTIVE.sub(lambda found: names.get(found.group(0), found.group(0)), filled)
 
         try: return local.strftime(filled)
         except ValueError as error: raise Fault(Code.INTERNAL, reason="date.format") from error
 
-    def at ( self, value: DateTime, moment: str, zone: str = "UTC" ) -> DateTime:
+    def at ( self, value: DateTime, moment: str, zone: str | None = None ) -> DateTime:
+
+        if len(moment) > LIMIT: raise self._refuse_(moment)
 
         parts = [part.strip(" ") for part in moment.split(":")]
         clock = len(parts) <= CLOCKED and all(part.isascii() and part.isdigit() for part in parts)
 
-        if not clock or len(moment) > LIMIT: raise self._refuse_(moment)
+        if not clock: raise self._refuse_(moment)
 
         hour, minute, second = (int(parts[index]) if len(parts) > index else 0 for index in range(CLOCKED))
 
@@ -155,12 +174,16 @@ class Date:
 
     def after ( self, seconds: float, since: DateTime | None = None ) -> DateTime:
 
-        try: return (since or self.now()) + TimeDelta(seconds=seconds)
+        moment = self.utc(since) if since is not None else self.now()
+
+        try: return moment + TimeDelta(seconds=seconds)
         except (OverflowError, ValueError) as error: raise self._beyond_(seconds) from error
 
     def before ( self, seconds: float, since: DateTime | None = None ) -> DateTime:
 
-        try: return (since or self.now()) - TimeDelta(seconds=seconds)
+        moment = self.utc(since) if since is not None else self.now()
+
+        try: return moment - TimeDelta(seconds=seconds)
         except (OverflowError, ValueError) as error: raise self._beyond_(seconds) from error
 
     def add (
@@ -202,12 +225,16 @@ class Date:
         if unit in SECONDS: return self.between(start, end) / SECONDS[unit]
 
         first, last = self.utc(start), self.utc(end)
+        sign = 1 if last >= first else -1
+
+        if sign < 0: first, last = last, first
+
         months = (last.year - first.year) * MONTHS + last.month - first.month
 
         if (last.day, last.time()) < (first.day, first.time()): months -= 1
 
-        if unit == "months": return float(months)
-        if unit == "years": return float(int(months / MONTHS))
+        if unit == "months": return float(sign * months)
+        if unit == "years": return float(sign * (months // MONTHS))
 
         raise Fault(Code.INTERNAL, reason="date.unit", errors={ "unit": [unit] })
 
@@ -215,22 +242,35 @@ class Date:
 
         return at is not None and self.utc(at) <= self.now()
 
-    def start_of ( self, unit: str, value: DateTime | None = None, zone: str = "UTC", week_start: int = 0 ) -> DateTime:
+    def start_of (
+        self, unit: str, value: DateTime | None = None, zone: str | None = None, week_start: int = 0,
+    ) -> DateTime:
 
         return self._instant_(self._floor_(unit, value, zone, week_start))
 
-    def end_of ( self, unit: str, value: DateTime | None = None, zone: str = "UTC", week_start: int = 0 ) -> DateTime:
+    def end_of (
+        self, unit: str, value: DateTime | None = None, zone: str | None = None, week_start: int = 0,
+    ) -> DateTime:
 
         floor = self._floor_(unit, value, zone, week_start)
 
-        try: return self._instant_(self.add(floor, **STEPS[unit]) - MICRO, last=True)
+        try: return self._end_(unit, floor)
         except Fault: return END
 
-    def start_of_day ( self, value: DateTime | None = None, zone: str = "UTC" ) -> DateTime:
+    def period (
+        self, unit: str, value: DateTime | None = None, zone: str | None = None, week_start: int = 0,
+    ) -> Span:
+
+        floor = self._floor_(unit, value, zone, week_start)
+
+        try: return Span(self._instant_(floor), self._end_(unit, floor) + MICRO)
+        except OverflowError as error: raise self._beyond_(floor) from error
+
+    def start_of_day ( self, value: DateTime | None = None, zone: str | None = None ) -> DateTime:
 
         return self.start_of("day", value, zone)
 
-    def start_of_month ( self, value: DateTime | None = None, zone: str = "UTC" ) -> DateTime:
+    def start_of_month ( self, value: DateTime | None = None, zone: str | None = None ) -> DateTime:
 
         return self.start_of("month", value, zone)
 
@@ -238,15 +278,23 @@ class Date:
 
         if not 0 < seconds < ENDLESS: raise Fault(Code.INTERNAL, reason="date.floor")
 
-        stamp = self.utc(value).timestamp()
+        try:
 
-        return self.of(stamp - stamp % seconds)
+            step = TimeDelta(seconds=seconds)
 
-    def same ( self, left: DateTime, right: DateTime, unit: str = "day", zone: str = "UTC" ) -> bool:
+            if not step: raise Fault(Code.INTERNAL, reason="date.floor")
+
+            moment = self.utc(value)
+
+            return moment - (moment - EPOCH) % step
+
+        except (OverflowError, ValueError) as error: raise self._beyond_(value) from error
+
+    def same ( self, left: DateTime, right: DateTime, unit: str = "day", zone: str | None = None ) -> bool:
 
         return self.start_of(unit, left, zone) == self.start_of(unit, right, zone)
 
-    def is_today ( self, value: DateTime, zone: str = "UTC" ) -> bool:
+    def is_today ( self, value: DateTime, zone: str | None = None ) -> bool:
 
         return self.same(value, self.now(), "day", zone)
 
@@ -258,7 +306,7 @@ class Date:
 
         return self.utc(value) > self.now()
 
-    def is_weekend ( self, value: DateTime, weekend: tuple[int, ...] = WEEKEND, zone: str = "UTC" ) -> bool:
+    def is_weekend ( self, value: DateTime, weekend: tuple[int, ...] = WEEKEND, zone: str | None = None ) -> bool:
 
         return self.local(value, zone).weekday() in weekend
 
@@ -269,7 +317,7 @@ class Date:
     def age ( self, birth: DateTime | Day, at: DateTime | None = None ) -> int:
 
         born = birth.date() if isinstance(birth, DateTime) else birth
-        when = (at or self.now()).date()
+        when = at.date() if at is not None else self.today()
 
         return when.year - born.year - ((when.month, when.day) < (born.month, born.day))
 
@@ -298,7 +346,7 @@ class Date:
         try: delta = step if isinstance(step, TimeDelta) else TimeDelta(seconds=self._seconds_(step))
         except OverflowError as error: raise Fault(Code.INTERNAL, reason="date.step") from error
 
-        if delta <= TimeDelta(0): raise Fault(Code.INTERNAL, reason="date.step")
+        if delta <= ZERO: raise Fault(Code.INTERNAL, reason="date.step")
 
         return self._walk_(self.utc(start), self.utc(end), delta)
 
@@ -306,8 +354,8 @@ class Date:
         self, start: DateTime, end: DateTime, weekend: tuple[int, ...] = WEEKEND, holidays: Iterable[Day] = (),
     ) -> int:
 
-        first = self.utc(start).date()
-        last  = self.utc(end).date()
+        first = self.local(start).date()
+        last  = self.local(end).date()
 
         if last < first: return -self.business_days(end, start, weekend, holidays)
 
@@ -323,28 +371,45 @@ class Date:
         self, value: DateTime, count: int, weekend: tuple[int, ...] = WEEKEND, holidays: Iterable[Day] = (),
     ) -> DateTime:
 
-        skipped = set(holidays)
-        current = self.utc(value)
+        closed  = sorted({day.toordinal() for day in holidays if day.weekday() not in weekend})
+        current = self.local(value)
         step    = TimeDelta(days=1 if count >= 0 else -1)
         left    = abs(count)
+        worked  = WEEK - len(WEEKEND) if weekend == WEEKEND else sum(day not in weekend for day in range(WEEK))
 
-        if all(day in weekend for day in range(WEEK)): raise Fault(Code.INTERNAL, reason="date.weekend")
+        if not worked: raise Fault(Code.INTERNAL, reason="date.weekend")
 
         try:
 
             while left:
 
-                current += step
+                origin = current.toordinal()
 
-                if current.weekday() not in weekend and current.date() not in skipped: left -= 1
+                if left > WEEK:
+
+                    weeks = (left - 1) // worked
+                    current += step * (weeks * WEEK)
+                    left -= weeks * worked
+
+                while left:
+
+                    current += step
+
+                    if current.weekday() not in weekend: left -= 1
+
+                target = current.toordinal()
+                left = (
+                    bisect_right(closed, target) - bisect_right(closed, origin) if count >= 0
+                    else bisect_left(closed, origin) - bisect_left(closed, target)
+                ) if closed else 0
 
         except OverflowError as error: raise self._beyond_(count) from error
 
-        return current
+        return self.utc(current)
 
     def span ( self, start: DateTime, end: DateTime ) -> Span:
 
-        return Span(self.utc(start), self.utc(end))
+        return Span(start, end)
 
     def humanize (
         self, value: DateTime, since: DateTime | None = None, locale: str = "en", short: bool = False,
@@ -379,29 +444,31 @@ class Date:
 
     def duration ( self, seconds: float ) -> str:
 
-        try: whole = int(seconds)
+        try:
+
+            whole = int(seconds)
+            total = abs(whole)
+            parts: list[str] = []
+
+            for unit, size in DURATION:
+
+                count, total = divmod(total, size)
+
+                if count: parts.append(f"{count}{unit}")
+
+            return ("-" if whole < 0 else "") + " ".join(parts) if parts else "0s"
+
         except (OverflowError, ValueError) as error: raise self._beyond_(seconds) from error
-
-        total = abs(whole)
-        parts: list[str] = []
-
-        for unit, size in (("d", 86400), ("h", 3600), ("m", 60), ("s", 1)):
-
-            count, total = divmod(total, size)
-
-            if count: parts.append(f"{count}{unit}")
-
-        return ("-" if whole < 0 else "") + " ".join(parts) if parts else "0s"
 
     def _seconds_ ( self, step: str ) -> float:
 
-        shift = self._relative_(step.strip().lower()) if len(step) <= LIMIT else None
+        shift = self._relative_(string.digits(step).strip().lower()) if len(step) <= LIMIT else None
 
-        if shift is None or shift[0] not in SECONDS:
+        if shift is None or any(unit not in SECONDS for unit in shift):
 
             raise Fault(Code.INTERNAL, reason="date.step", errors={ "step": [step[:LIMIT]] })
 
-        return shift[1] * SECONDS[shift[0]]
+        return sum(count * SECONDS[unit] for unit, count in shift.items())
 
     def _refuse_ ( self, text: object ) -> Fault:
 
@@ -428,62 +495,99 @@ class Date:
 
     def _digits_ ( self, raw: str ) -> DateTime:
 
-        pattern = COMPACT.get(len(raw))
+        if len(raw) in COMPACT:
 
-        if pattern is not None:
+            size = COMPACT[0]
+            body = raw if len(raw) == size else f"{raw[:size]}T{raw[size:]}"
 
-            try: return DateTime.strptime(raw, pattern).replace(tzinfo=UTC)
+            try: return DateTime.fromisoformat(body).replace(tzinfo=UTC)
             except ValueError: pass
 
         return self.of(int(raw))
 
-    def _keyword_ ( self, text: str, now: DateTime ) -> DateTime | None:
+    def _phrase_ ( self, raw: str, formats: tuple[str, ...] ) -> DateTime | None:
+
+        words, at = self._clock_(raw.lower())
+        found     = self._keyword_(words)
+        shift     = self._relative_(words) if found is None else None
+
+        if shift is not None: found = self.add(self.local(self.now()), **shift)
+        if found is None: found = self._formatted_(raw, formats)
+        if found is None: return None
+
+        if at:
+
+            wall = self.local(found).replace(hour=at[0], minute=at[1], second=0, microsecond=0)
+
+            return self._instant_(wall)
+
+        return self.utc(found)
+
+    def _keyword_ ( self, text: str ) -> DateTime | None:
 
         if text not in DAYS: return None
 
+        now    = self.now()
         offset = DAYS[text]
 
         if offset is None: return now
 
-        return now.replace(hour=0, minute=0, second=0, microsecond=0) + TimeDelta(days=offset)
+        day = self.local(now).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    def _relative_ ( self, text: str ) -> tuple[str, int] | None:
+        return self._instant_(self.add(day, days=offset) if offset else day)
 
-        sign  = 1
+    def _relative_ ( self, text: str ) -> dict[str, int] | None:
+
+        sign: int | None = None
         count: int | None = None
-        unit: str | None = None
+        values: dict[str, int] = {}
 
-        for token in GLUED.sub(r"\1 \2", text).split():
+        for token in GLUED.sub(" ", text).split():
 
-            bare = token.startswith("ال") and token not in WORDS_UNITS and token not in NEXT | LAST
+            bare = token.startswith("ال") and token not in WORDS_UNITS and token not in NEXT and token not in LAST
             word = token[2:] if bare else token
 
-            if token in FORWARD: sign = 1
-            elif token in BACKWARD: sign = -1
-            elif token.isascii() and token.isdigit(): count = int(token)
-            elif token in ONES: count = ONES[token]
+            if token in FORWARD or token in BACKWARD:
+
+                direction = 1 if token in FORWARD else -1
+
+                if sign is not None and sign != direction: return None
+
+                sign = direction
+
+            elif (token.isascii() and token.isdigit()) or token in ONES:
+
+                if count is not None: return None
+
+                count = ONES[token] if token in ONES else int(token)
+
             elif word in WORDS_UNITS:
 
-                unit, count = WORDS_UNITS[word][0], WORDS_UNITS[word][1] if count is None else count
-            elif token in FILLER: continue
-            else: return None
+                unit, default = WORDS_UNITS[word]
 
-            if (token in NEXT or token in LAST) and count is None: count = 1
+                if unit in values: return None
 
-        if unit is None: return None
+                values[unit], count = default if count is None else count, None
 
-        return unit, sign * (1 if count is None else count)
+            elif token not in FILLER: return None
 
-    def _floor_ ( self, unit: str, value: DateTime | None, zone: str, week_start: int ) -> DateTime:
+        if not values or count is not None: return None
 
-        local = self.local(value or self.now(), zone)
-        day   = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
+        return {unit: -value for unit, value in values.items()} if sign == -1 else values
+
+    def _floor_ ( self, unit: str, value: DateTime | None, zone: str | None, week_start: int ) -> DateTime:
+
+        moment = value or self.now()
+        local  = self.local(moment, zone)
+
+        if unit == "minute": return local.replace(second=0, microsecond=0, fold=0)
+        if unit == "hour": return local.replace(minute=0, second=0, microsecond=0, fold=0)
+
+        day = local.replace(hour=0, minute=0, second=0, microsecond=0, fold=0)
 
         try:
 
-            if unit == "minute": found = local.replace(second=0, microsecond=0, fold=0)
-            elif unit == "hour": found = local.replace(minute=0, second=0, microsecond=0, fold=0)
-            elif unit == "day": found = day
+            if unit == "day": found = day
             elif unit == "week": found = day - TimeDelta(days=(day.weekday() - week_start) % WEEK)
             elif unit == "month": found = day.replace(day=1)
             elif unit == "quarter": found = day.replace(day=1, month=(day.month - 1) // QUARTER * QUARTER + 1)
@@ -494,7 +598,13 @@ class Date:
 
         return found
 
+    def _end_ ( self, unit: str, floor: DateTime ) -> DateTime:
+
+        return self._instant_(self.add(floor, **STEPS[unit]) - MICRO, last=True)
+
     def _instant_ ( self, wall: DateTime, last: bool = False ) -> DateTime:
+
+        if wall.tzinfo is UTC: return wall
 
         early, late   = wall.replace(fold=0), wall.replace(fold=1)
         before, after = early.utcoffset(), late.utcoffset()
@@ -520,6 +630,8 @@ class Date:
 
         hour, minute, meridian = int(found.group(1)), int(found.group(2) or 0), (found.group(3) or "").lower()
 
+        if meridian and not 1 <= hour <= NOON: raise self._refuse_(text)
+
         if meridian in ("pm", "م") and hour < NOON: hour += NOON
         if meridian in ("am", "ص") and hour == NOON: hour = 0
         if hour >= HOURS or minute >= MINUTES: return text, None
@@ -530,7 +642,12 @@ class Date:
 
         for pattern in formats:
 
-            try: return DateTime.strptime(text, pattern).replace(tzinfo=UTC)
+            try:
+
+                parsed = DateTime.strptime(text, pattern)
+
+                return self.utc(parsed)
+
             except ValueError: continue
 
         try: return self.utc(parsedate_to_datetime(text))

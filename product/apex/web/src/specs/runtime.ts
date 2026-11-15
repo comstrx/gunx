@@ -2,6 +2,7 @@ import * as event from "engine/event";
 import * as log from "engine/log";
 import * as seo from "engine/seo";
 import * as spec from "engine/spec";
+import * as translate from "engine/translate";
 import { addressOf, type Compiled, roleOf } from "@/specs/deployment.ts";
 import type { Locale } from "@/types/index.ts";
 import { platform } from "@/types/platform.ts";
@@ -13,6 +14,9 @@ export type Public = { indexable: boolean; url: string | undefined };
 export type Asked = { key: string; resolve: ( yes: boolean ) => void };
 
 export const compiled: Compiled = { ...spec.revive(serialized), role: roleOf(), address: addressOf(roleOf()) };
+const dictionaries = new Map(compiled.surface.locales.map(( locale ) => [locale, translate.dictionary(compiled.role.messages, locale, compiled.surface.locale)]));
+const sheets = new Map<string, Labels>();
+
 export const logs: log.Sink & { entries: log.Entry[]; clear: () => void } = log.memorySink(100);
 export const logger: log.Logger = log.create({ name: `${platform}-${compiled.role.role}`, sinks: [log.consoleSink(), logs] });
 export const bus: event.Bus = event.bus();
@@ -63,21 +67,36 @@ export function title ( screen: spec.Screen, locale: Locale ): string {
 }
 export function labels ( locale: Locale, feature: string ): Labels {
 
-    const sheet = compiled.role.messages[locale] as Readonly<Record<string, Labels>>;
+    const selected = compiled.surface.locales.includes(locale) ? locale : compiled.surface.locale;
+    const key = JSON.stringify([selected, feature]);
+    const found = sheets.get(key);
 
-    return sheet[feature] ?? {};
+    if ( found ) return found;
+
+    const messages: Readonly<Record<string, Readonly<Record<string, Labels>>>> = compiled.role.messages;
+    const names = Object.keys({ ...messages[compiled.surface.locale]?.[feature], ...messages[selected]?.[feature] });
+    const made = Object.fromEntries(names.map(( name ) => [name, textOf(selected, `${feature}.${name}`)]));
+
+    if ( names.length > 0 ) sheets.set(key, made);
+
+    return made;
 
 }
-export function textOf ( locale: Locale, key: string ): string {
+export function textOf ( locale: Locale, key: string, params?: translate.Params, count?: number ): string {
 
-    const [feature = "", name = ""] = key.split(".");
-
-    return labels(locale, feature)[name] ?? key;
+    return (dictionaries.get(locale) ?? dictionaries.get(compiled.surface.locale))?.t(key, params, count) ?? key;
 
 }
 export function settingsOf ( screen: string, feature: string ): Record<string, unknown> {
 
     return live.settings(screen, feature);
+
+}
+export function contentOf ( key: "name" | "tagline", locale: string ): string {
+
+    const values: Readonly<Record<string, string>> = compiled.role.config.contents[key];
+
+    return values[locale] ?? values[compiled.surface.locale] ?? "";
 
 }
 export function publicOf (): Public {
@@ -97,18 +116,18 @@ export type Meta = { title: string; description: string; robots: string; canonic
 
 export function siteOf ( locale: Locale, open: Public = publicOf() ): seo.Site | undefined {
 
-    return open.url ? { name: compiled.role.config.contents.name[locale], url: open.url, locale, locales: [locale], default: locale, hide: true, description: compiled.role.config.contents.tagline[locale] } : undefined;
+    return open.url ? { name: contentOf("name", locale), url: open.url, locale, locales: [locale], default: locale, hide: true, description: contentOf("tagline", locale) } : undefined;
 
 }
 export function titleOf ( screen: spec.CompiledScreen, locale: Locale ): string {
 
-    return seo.titleOf([title(screen, locale), compiled.role.config.contents.name[locale]]);
+    return seo.titleOf([title(screen, locale), contentOf("name", locale)]);
 
 }
 export function metadataOf ( screen: spec.CompiledScreen, locale: Locale ): Meta {
 
     const site = siteOf(locale);
-    const description = compiled.role.config.contents.tagline[locale];
+    const description = contentOf("tagline", locale);
 
     if ( !site ) return { title: titleOf(screen, locale), description, robots: "noindex, nofollow", canonical: undefined, alternates: [], openGraph: {} };
 

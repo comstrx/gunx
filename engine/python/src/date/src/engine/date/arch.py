@@ -1,8 +1,9 @@
+from engine.error import Code, Fault
 
 from datetime import UTC, datetime as DateTime, timedelta as TimeDelta
 import re
 
-ISO     = "%Y-%m-%dT%H:%M:%S.%f%z"
+FORMAT  = "%Y-%m-%d %H:%M"
 LIMIT   = 64
 SOON    = 10
 TWO     = 2
@@ -17,6 +18,7 @@ UNITS   = (
     ("year", 31536000), ("month", 2592000), ("week", 604800), ("day", 86400), ("hour", 3600), ("minute", 60),
     ("second", 1),
 )
+DURATION = (("d", 86400), ("h", 3600), ("m", 60), ("s", 1))
 SHORT   = { "year": "y", "month": "mo", "week": "w", "day": "d", "hour": "h", "minute": "m", "second": "s" }
 ARABIC  = {
     "year"   : ("سنة", "سنتين", "سنوات"),
@@ -75,20 +77,33 @@ ONES     = {
     "a": 1, "an": 1, "one": 1, "واحد": 1, "واحدة": 1, "two": 2, "اثنين": 2, "اثنان": 2, "three": 3, "ثلاث": 3,
     "ثلاثة": 3,
 }
-FILLER   = frozenset({ "from", "now", "the", "اللي", "الذي", "و" })
-GLUED    = re.compile(r"(\d)([^\d\s])")
+FILLER   = frozenset({ "from", "now", "the", "and", "اللي", "الذي", "و" })
+GLUED    = re.compile(r"(?<=\d)(?=[^\d\s])|(?<=[^\d\s])(?=\d)")
 CLOCK    = re.compile(r"\s*(?:at|الساعة|الساعه)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|ص|م)?\s*$", re.IGNORECASE)
 EPOCH_MS = 1e12
 NOON     = 12
 CLOCKED  = 3
-COMPACT  = { 8: "%Y%m%d", 14: "%Y%m%d%H%M%S" }
+COMPACT  = (8, 14)
 ENDLESS  = float("inf")
 EPOCH    = DateTime(1970, 1, 1, tzinfo=UTC)
 END      = DateTime.max.replace(tzinfo=UTC)
 MILLI    = TimeDelta(milliseconds=1)
 MICRO    = TimeDelta(microseconds=1)
+ZERO     = TimeDelta(0)
 DIRECTIVE = re.compile(r"%[%AaBbp]")
 STEPS    = {
     "minute": { "minutes": 1 }, "hour": { "hours": 1 }, "day": { "days": 1 }, "week": { "weeks": 1 },
     "month": { "months": 1 }, "quarter": { "months": QUARTER }, "year": { "years": 1 },
 }
+
+def utc ( value: DateTime ) -> DateTime:
+
+    if value.tzinfo is UTC: return value
+    if value.tzinfo is None: return value.replace(tzinfo=UTC)
+
+    try: return value.replace(tzinfo=UTC) if value.utcoffset() is None else value.astimezone(UTC)
+    except OverflowError as error:
+
+        details = { "value": [str(value)[:LIMIT]] }
+
+        raise Fault(Code.BAD_REQUEST, "The date is out of range", "date.range", details) from error

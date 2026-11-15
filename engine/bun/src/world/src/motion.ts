@@ -1,9 +1,5 @@
 import * as number from "engine-number";
-
-export type Spring = { damping: number; stiffness: number; mass: number };
-export type Path = { duration: number; points: readonly number[] };
-export type Curve = readonly [number, number, number, number];
-export type Easing = "linear" | "standard" | "emphasized" | "decelerate" | "accelerate" | "overshoot";
+import type { Curve, Easing, Path, Spring } from "./arch.ts";
 
 const settled = Math.log(1000);
 const longest = 10;

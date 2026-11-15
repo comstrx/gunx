@@ -6,6 +6,8 @@ from .meter import Meter
 
 class Gauge(Meter):
 
+    __slots__ = ()
+
     kind : ClassVar[str] = "gauge"
 
     def set ( self, value: float, **labels: str ) -> None:
@@ -13,7 +15,9 @@ class Gauge(Meter):
         fixed = float(self._number_(value))
         cell  = self._cell_(labels)
 
-        if cell is not None: cell[0] = fixed
+        if cell is not None:
+
+            with self._lock: cell[0] = fixed
 
     def add ( self, amount: float, **labels: str ) -> None:
 
@@ -34,7 +38,15 @@ class Gauge(Meter):
     @contextmanager
     def track ( self, **labels: str ) -> Iterator[None]:
 
-        self.add(1, **labels)
+        cell = self._cell_(labels)
+
+        if cell is not None:
+
+            with self._lock: cell[0] += 1
 
         try: yield
-        finally: self.add(-1, **labels)
+        finally:
+
+            if cell is not None:
+
+                with self._lock: cell[0] -= 1

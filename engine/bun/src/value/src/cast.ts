@@ -1,11 +1,8 @@
 import * as calendar from "engine-date";
 import * as json from "engine-json";
 import * as string from "engine-string";
+import type { Kind, Kinds, Scalar } from "./arch.ts";
 import { ungrouped } from "./exact.ts";
-
-export type Scalar = string | number | boolean | null;
-export type Kind = "null" | "boolean" | "integer" | "number" | "date" | "text" | "list" | "record";
-export type Kinds = { null: null; boolean: boolean; integer: number; number: number; date: Date; text: string; list: string[]; record: json.Dictionary };
 
 const truthy = new Set(["true", "1", "yes", "y", "on", "نعم"]);
 const falsy = new Set(["false", "0", "no", "n", "off", "لا"]);

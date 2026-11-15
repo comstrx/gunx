@@ -2,7 +2,7 @@ config:settings:manifest () {
 
     local file=""
 
-    if declare -F bundle:asset >/dev/null; then config:manifest:load "" || return
+    if declare -F bundle:manifest >/dev/null; then config:manifest:load "" || return
     else file="$(config:manifest:file "${TOOL_ENGINE}")" || return; config:manifest:load "${file}" || return
     fi
 
@@ -16,7 +16,7 @@ config:settings:schema () {
     local -A pairs=()
     local -a order=()
 
-    if declare -F bundle:asset >/dev/null; then core:parse:env pairs order <(bundle:asset .env.example) || return
+    if declare -F bundle:schema >/dev/null; then bundle:schema pairs order
     else core:parse:env pairs order "${TOOL_ENGINE}/.env.example" || return
     fi
 

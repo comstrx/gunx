@@ -4,6 +4,7 @@ from engine.log import log
 from engine.test import Bench
 from functools import partial, wraps
 from typing import Any
+import asyncio, gc, tracemalloc
 
 bench   = Bench()
 memo    = func.memo(60.0, 1024)
@@ -139,3 +140,28 @@ Bench.run(bench.measure_async("func.settle", settle))
 Bench.run(bench.measure_async("func.fallback", fallback))
 Bench.run(bench.measure_async("func.attempt", attempt))
 Bench.run(bench.measure_async("func.measure", measure))
+
+def allocation ( name: str, work: Any ) -> None:
+
+    gc.collect()
+    tracemalloc.start()
+
+    held = work()
+    retained, peak = tracemalloc.get_traced_memory()
+
+    tracemalloc.stop()
+
+    del held
+
+    print(f"{name} allocation_retained_bytes={retained} allocation_peak_bytes={peak}")
+
+allocation("func.memo1000", lambda: [func.memo() for _ in range(1000)])
+allocation("func.breaker1000", lambda: [func.breaker("peer") for _ in range(1000)])
+
+many = func.batch(double, 64)
+
+async def batch64 () -> None:
+
+    await asyncio.gather(*(many.put(i) for i in range(64)))
+
+Bench.run(bench.measure_async("func.batch64", batch64, rounds=200))

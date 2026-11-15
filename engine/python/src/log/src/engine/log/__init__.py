@@ -1,7 +1,7 @@
-from .arch import Fields
+lazy from .arch import Fields
 from .log import Log
-from .logger import Logger
-from .render import Render
+lazy from .logger import Logger
+lazy from .render import Render
 
 log = Log()
 

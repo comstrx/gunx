@@ -1,13 +1,19 @@
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import Any
+from typing import Any, cast
+from types import MappingProxyType
+from itertools import islice
 
 from engine.error import Code, Fault
-from .arch import EMPTY, FLAT, NAME, NUMBER, Opened, Report, SCALAR, SHARED, WIDE, Work
+from .arch import EMPTY, FLAT, IDENTITY, MAPPINGS, NAME, Opened, Report, SHARED, WIDE, Work
 from .deferral import Deferral
+from .trace import Trace
+import math
 
 class Context:
+
+    __slots__ = ("_deferral", "_facts")
 
     def __init__ ( self ) -> None:
 
@@ -16,9 +22,11 @@ class Context:
 
     def put ( self, **fields: Any ) -> Token[Mapping[str, Any]]:
 
-        held = self._facts.get()
+        held = cast("MappingProxyType[str, Any]", self._facts.get())
 
-        return self._facts.set({ **held, **fields } if held else fields)
+        facts = MappingProxyType(held | fields if held else fields) if fields else held
+
+        return self._facts.set(facts)
 
     def get ( self, name: str, default: Any = None ) -> Any:
 
@@ -38,10 +46,19 @@ class Context:
 
     def forget ( self, *names: str ) -> int:
 
-        current = self._facts.get()
-        kept    = { key: value for key, value in current.items() if key not in names }
+        current = cast("MappingProxyType[str, Any]", self._facts.get())
+        kept: dict[str, Any] | None = None
 
-        self._facts.set(kept)
+        for name in names:
+
+            if name not in current: continue
+            if kept is None: kept = current.copy()
+
+            kept.pop(name, None)
+
+        if kept is None: return 0
+
+        self._facts.set(MappingProxyType(kept))
 
         return len(current) - len(kept)
 
@@ -56,27 +73,15 @@ class Context:
 
     def snapshot ( self ) -> dict[str, Any]:
 
-        return dict(self._facts.get())
+        return cast("MappingProxyType[str, Any]", self._facts.get()).copy()
 
     def dump ( self ) -> dict[str, Any]:
 
-        return { key: value for key, value in self._facts.get().items() if key in SHARED }
+        return self._shared_(self._facts.get())
 
     def load ( self, facts: Mapping[str, Any] ) -> None:
 
-        kept: dict[str, Any] = {}
-
-        for key in SHARED:
-
-            value = facts.get(key)
-
-            if isinstance(value, SCALAR):
-
-                if self._plain_(value): kept[key] = value
-
-            elif isinstance(value, Mapping) and self._flat_(value): kept[key] = dict(value)
-
-        self._facts.set(kept)
+        self._facts.set(MappingProxyType(self._shared_(facts)))
 
     def reset ( self, token: Token[Mapping[str, Any]] ) -> None:
 
@@ -84,9 +89,12 @@ class Context:
 
     def open ( self, **fields: Any ) -> Opened:
 
-        held = self._facts.get()
+        held = cast("MappingProxyType[str, Any]", self._facts.get())
 
-        return self._facts.set({ **held, **fields } if held else fields), self._deferral.set(Deferral())
+        facts = MappingProxyType(held | fields if held else fields) if fields else held
+        token = self._facts.set(facts)
+
+        return token, self._deferral.set(Deferral())
 
     def close ( self, opened: Opened ) -> None:
 
@@ -98,6 +106,22 @@ class Context:
         found = self._facts.get().get("request_id")
 
         return str(found) if found else None
+
+    def headers ( self ) -> dict[str, str]:
+
+        facts = self._facts.get()
+        headers: dict[str, str] = {}
+        identity = facts.get("request_id")
+        parent = Trace.clean(facts.get("traceparent"))
+
+        if (type(identity) is str and 0 < len(identity) <= IDENTITY
+                and identity.isascii() and identity.replace("-", "").isalnum()):
+
+            headers["X-Request-Id"] = identity
+
+        if parent is not None: headers["traceparent"] = parent
+
+        return headers
 
     def locale ( self, default: str = "en" ) -> str:
 
@@ -143,7 +167,10 @@ class Context:
     @staticmethod
     def _plain_ ( value: object ) -> bool:
 
-        return len(value) <= WIDE if isinstance(value, str) else isinstance(value, NUMBER)
+        if isinstance(value, str): return len(value) <= WIDE
+        if isinstance(value, int): return True
+
+        return isinstance(value, float) and math.isfinite(value)
 
     @classmethod
     def _flat_ ( cls, value: Mapping[Any, Any] ) -> bool:
@@ -155,3 +182,22 @@ class Context:
             if not isinstance(name, str) or len(name) > NAME or not cls._plain_(item): return False
 
         return True
+
+    @classmethod
+    def _shared_ ( cls, facts: Mapping[str, Any] ) -> dict[str, Any]:
+
+        kept: dict[str, Any] = {}
+
+        for key in SHARED:
+
+            value = facts.get(key)
+
+            if value is None: continue
+            if cls._plain_(value): kept[key] = value
+            elif isinstance(value, MAPPINGS) and len(value) <= FLAT:
+
+                flat = value.copy() if type(value) is dict else dict(islice(value.items(), FLAT + 1))
+
+                if cls._flat_(flat): kept[key] = flat
+
+        return kept

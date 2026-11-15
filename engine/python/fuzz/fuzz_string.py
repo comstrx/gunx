@@ -1,9 +1,12 @@
 from engine.error import Fault
-from engine.string import string
+from engine.string import String, string
+from engine.func import func
+from rapidfuzz import fuzz
 from collections.abc import Callable
+from collections import Counter
 from functools import partial
 from hypothesis import HealthCheck, given, settings, strategies as st
-from typing import Any
+from typing import Any, Literal
 import base64, html, re, unicodedata, warnings
 
 EXAMPLES = 1000
@@ -79,7 +82,7 @@ def no_verb_leaks_a_raw_error ( text: str ) -> None:
     assert string.slug(string.slug(text)) == string.slug(text)
     assert string.squish(string.squish(text)) == string.squish(text)
     assert "".join(string.words(text)) == "".join(string.words(" ".join(string.words(text))))
-    assert string.reverse(string.reverse(text)) == text or bool(unicodedata.combining(text[0]))
+    assert Counter(string.reverse(text)) == Counter(text)
     assert string.diff(text, text) == ""
     assert string.keep(text).isalnum() or not string.keep(text)
     assert string.highlight(text, text[:3], "", "") == text
@@ -248,8 +251,8 @@ def a_pattern_is_read_or_refused ( text: str, pattern: str, fill: str, limit: in
         assert not isinstance(found, Fault) or found.reason == "string.pattern"
 
 @settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
-@given(SMALL, PARTS, PARTS, st.integers(-3, 14), st.integers(-3, 6))
-def cut_pieces_rejoin ( text: str, part: str, other: str, start: int, size: int ) -> None:
+@given(SMALL, PARTS, PARTS, st.integers(-3, 6))
+def cut_pieces_rejoin ( text: str, part: str, other: str, size: int ) -> None:
 
     held = part in text
     cut  = string.excerpt(text, part.upper(), size, "~")
@@ -266,8 +269,6 @@ def cut_pieces_rejoin ( text: str, part: str, other: str, start: int, size: int 
     assert string.replace_last(text, part, other)[::-1] == (text[::-1].replace(part[::-1], other[::-1], 1) if part else text[::-1])
     assert string.replace_start(part + text, part, other) == (other + text if part else text)
     assert string.replace_end(text + part, part, other) == (text + other if part else text)
-    assert string.splice(text, other, start, max(0, size)) == text[:start] + other + text[start + max(0, size):]
-    assert string.substr(text, start, max(0, size)) == text[start:start + max(0, size)]
     assert string.lacks(text, [part, other]) is not ((bool(part) and held) or (bool(other) and other in text))
     assert (cut is None) is (part.lower() not in text.lower())
     assert cut is None or len(cut) <= len(part) + max(0, size) * 2 + 2
@@ -289,6 +290,38 @@ def likeness_is_bounded ( left: str, right: str, choices: list[str], limit: int 
     assert [score for _, score in ranked] == sorted((score for _, score in ranked), reverse=True)
     assert found is None or found in choices
 
+    scores = [(choice, float(fuzz.WRatio(string.fold(left), string.fold(choice))) / 100.0) for choice in choices]
+    scores.sort(key=lambda row: row[1], reverse=True)
+
+    assert ranked == scores[:max(0, limit)]
+    assert found == (scores[0][0] if scores and scores[0][1] >= 0.6 else None)
+
+
+previous = func.mode()
+
+try:
+
+    func.setup("pure")
+
+    pure = String()
+
+    func.setup("native")
+
+    native = String()
+
+finally: func.setup(previous)
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.binary(max_size=16384), st.binary(max_size=128), SIZES)
+def search_providers_agree_on_binary_data ( data: bytes, needle: bytes, start: int ) -> None:
+
+    expected = data.find(needle, start)
+
+    assert pure.find(data, needle, start) == expected
+    assert native.find(data, needle, start) == expected
+
+search_providers_agree_on_binary_data()
+
 no_verb_leaks_a_raw_error()
 cuts_stay_inside_their_size()
 a_mask_shows_only_what_it_keeps()
@@ -303,4 +336,207 @@ a_pattern_is_read_or_refused()
 cut_pieces_rejoin()
 likeness_is_bounded()
 
-print(f"fuzz string  examples={EXAMPLES * 13}  ok")
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD, st.text(max_size=5), st.text(max_size=5))
+def between_matches_nested_delimiter_operations ( text: str, opening: str, closing: str ) -> None:
+
+    assert string.between(text, opening, closing) == string.before(string.after(text, opening), closing)
+
+between_matches_nested_delimiter_operations()
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD, WILD, SIZES, st.one_of(st.none(), SIZES))
+def ranges_select_characters_without_duplication (
+    text: str, replacement: str, start: int, length: int | None,
+) -> None:
+
+    chars = list(text)
+    rest  = chars[start:]
+    head  = chars[:len(chars) - len(rest)]
+
+    if length is None: picked = rest
+    elif length >= 0: picked = rest[:length]
+    else: picked = [char for index, char in enumerate(chars) if len(head) <= index < len(chars) + length]
+
+    tail = rest[len(picked):]
+
+    assert string.substr(text, start, length) == "".join(picked)
+    assert string.splice(text, replacement, start, length) == "".join([*head, replacement, *tail])
+    assert "".join([*head, *picked, *tail]) == text
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.text("ab1", max_size=12), PATTERNS)
+def regex_results_follow_the_first_capture_contract ( text: str, pattern: str ) -> None:
+
+    try: compiled = re.compile(pattern)
+    except (re.PatternError, RecursionError, OverflowError): return
+
+    matches = list(compiled.finditer(text))
+    group   = 1 if compiled.groups else 0
+
+    assert string.matches(text, pattern) == [match.group(group) or "" for match in matches]
+    assert string.match(text, pattern) == (matches[0].group(group) if matches else None)
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD, SIZES)
+def counts_and_initials_keep_unicode_whitespace_semantics ( text: str, limit: int ) -> None:
+
+    assert string.word_count(text) == len(re.findall(r"\w+", text))
+    assert string.initials(text, limit) == "".join(word[0] for word in text.split()[:max(0, limit)]).upper()
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD, st.lists(WILD, max_size=8), st.floats(min_value=0.0, max_value=1.0))
+def filtered_rank_and_closest_agree ( query: str, choices: list[str], floor: float ) -> None:
+
+    expected = [(item, score) for item, score in string.rank(query, choices, len(choices)) if score >= floor]
+    ranked   = string.rank(query, iter(choices), len(choices), floor=floor)
+
+    assert ranked == expected
+    assert string.closest(query, iter(choices), floor=floor) == (expected[0][0] if expected else None)
+
+    mapping = dict.fromkeys(choices, "not a choice")
+    ranked  = string.rank(query, mapping, len(mapping), floor=floor)
+
+    assert string.closest(query, mapping, floor=floor) == (ranked[0][0] if ranked else None)
+
+ranges_select_characters_without_duplication()
+regex_results_follow_the_first_capture_contract()
+counts_and_initials_keep_unicode_whitespace_semantics()
+filtered_rank_and_closest_agree()
+
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD)
+def normalization_matches_the_previous_unicode_contract ( text: str ) -> None:
+
+    decomposed = unicodedata.normalize("NFKD", text)
+    unmarked   = "".join(char for char in decomposed if unicodedata.combining(char) == 0)
+    expected   = re.sub("[\\u064b-\\u0652\\u0670\\u0640]", "", unmarked).casefold()
+
+    assert string.fold(text) == expected
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.lists(st.sampled_from(["e\u0301", "👩🏽‍💻", "🇪🇬", "🇯🇵", "1️⃣", "✈️", "\r\n", "a", "é", "\u1100\u1161\u11a8"]), max_size=40))
+def reversal_keeps_delimited_graphemes ( clusters: list[str] ) -> None:
+
+    text     = "|".join(clusters)
+    expected = "|".join(reversed(clusters))
+
+    assert string.reverse(text) == expected
+    assert string.reverse(expected) == text
+
+normalization_matches_the_previous_unicode_contract()
+reversal_keeps_delimited_graphemes()
+
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.text(alphabet=st.characters(max_codepoint=127), max_size=100), st.text("\r\n", max_size=100))
+def ascii_reversal_matches_grapheme_boundaries ( text: str, endings: str ) -> None:
+
+    text += endings
+    expected = "".join(str(group) for group in reversed(list(unicodedata.iter_graphemes(text))))
+
+    assert string.reverse(text) == expected
+
+ascii_reversal_matches_grapheme_boundaries()
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD)
+def squishing_matches_unicode_whitespace ( text: str ) -> None:
+
+    assert string.squish(text) == re.sub(r"\s+", " ", text).strip()
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD, st.integers(-3, 40), WILD)
+def grapheme_cuts_follow_complete_boundaries ( text: str, limit: int, suffix: str ) -> None:
+
+    parts = list(map(str, unicodedata.iter_graphemes(text)))
+    tail = list(map(str, unicodedata.iter_graphemes(suffix)))
+
+    if len(parts) <= limit: expected = text
+    elif limit <= 0: expected = ""
+    elif len(tail) >= limit: expected = "".join(tail[:limit])
+    else:
+
+        selected = parts[:limit - len(tail)]
+
+        while selected and selected[-1].isspace(): selected.pop()
+
+        expected = "".join(selected) + suffix
+
+    assert "".join(string.graphemes(text)) == text
+    assert string.truncate(text, limit, suffix, graphemes=True) == expected
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD, st.dictionaries(st.text(min_size=1, max_size=1), st.text(max_size=4), max_size=8))
+def character_substitution_is_literal ( text: str, changes: dict[str, str] ) -> None:
+
+    assert string.replace_many(text, changes) == "".join(changes.get(char, char) for char in text)
+
+squishing_matches_unicode_whitespace()
+grapheme_cuts_follow_complete_boundaries()
+character_substitution_is_literal()
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(WILD, st.integers(-3, 50), WILD, st.sampled_from(SIDES))
+def padding_keeps_pattern_order ( text: str, width: int, fill: str, side: Literal["both", "left", "right"] ) -> None:
+
+    room = max(0, width - len(text))
+    left = room if side == "left" else 0 if side == "right" else room // 2 + (room & width & 1)
+    repeated = "".join(fill[index % len(fill)] for index in range(room)) if fill else ""
+    expected = repeated[:left] + text + repeated[:room - left]
+
+    assert string.pad(text, width, fill, side) == expected
+
+padding_keeps_pattern_order()
+
+
+@settings(max_examples=1500, deadline=None, database=None)
+@given(st.text(max_size=200))
+def templates_insert_values_literally_once ( text: str ) -> None:
+
+    assert string.template("{value}", {"value": text}) == text
+    assert string.template("__value__", {"value": text}, delimiters=("__", "__")) == text
+
+templates_insert_values_literally_once()
+
+@settings(max_examples=1000, deadline=None, database=None)
+@given(st.text(max_size=100), st.text(max_size=100))
+def adjacent_custom_values_never_consume_each_others_placeholders ( left: str, right: str ) -> None:
+
+    assert string.template("__left____right__", {"left": left, "right": right}, delimiters=("__", "__")) == left + right
+
+adjacent_custom_values_never_consume_each_others_placeholders()
+
+@settings(max_examples=1000, deadline=None, database=None)
+@given(st.text(max_size=200), st.sampled_from([("{", "}"), ("__", "__"), ("**__", "__**")]))
+def padded_markers_preserve_literal_values ( value: str, marks: tuple[str, str] ) -> None:
+
+    source = f"{marks[0]} \tvalue {marks[1]}"
+    assert string.template(source, {"value": value}, delimiters=marks) == value
+    assert string.keys(source, marks) == ["value"]
+
+padded_markers_preserve_literal_values()
+
+
+
+@settings(max_examples=2000, deadline=None, database=None)
+@given(st.binary(max_size=4096))
+def strict_base64_matches_reference_encoding ( raw: bytes ) -> None:
+
+    standard = base64.b64encode(raw).decode()
+    url = base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    assert string.base64(raw) == standard and string.base64(raw, url=True) == url
+    assert string.unbase64(standard, url=False, canonical=True) == raw
+    assert string.unbase64(url, url=True, canonical=True) == raw
+
+strict_base64_matches_reference_encoding()
+
+print("fuzz string  properties=30  ok")

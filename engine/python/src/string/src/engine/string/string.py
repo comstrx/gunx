@@ -1,17 +1,19 @@
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, Literal, cast
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from typing import Literal, cast
+from itertools import filterfalse, islice
 
 from rapidfuzz import fuzz, process
 from rapidfuzz.distance import Levenshtein
 from engine.error import Code, Fault
 from engine.func import func
 from .arch import (
-    ANSI, ARABIC, CAMEL, DIACRITICS, DIGITS, EASTERN, HTML, INVERSE, IRREGULAR, LATIN, MINOR, NUMBER, OTHERS, PLURALS,
-    ROMAN, RTL, SENTENCE, SHORT, Side, SIMPLE, SINGULARS, SLUG, SPACES, SYMBOL, TAG, TOKEN, UNCOUNTABLE, URLSAFE, WIDE,
-    WORD, WPM,
+    BASE64_PLAIN, BASE64_URL,
+    ANSI, ARABIC, CAMEL, DIACRITICS, DIGITS, EASTERN, HTML, INVERSE, IRREGULAR, LATIN, MINOR, NUMBER, OTHERS,
+    PLURALS, ROMAN, SENTENCE, SHORT, Side, SIMPLE, SINGULARS, SLUG, SPACES, SYMBOL, TAG, TATWEEL, TOKEN, UNCOUNTABLE,
+    URLSAFE, WIDE, WORD, WPM, TEMPLATE_NAME, TEMPLATE_LIMIT, DELIMITER_LIMIT, DELIMITER_COUNT, DEFAULT_TEMPLATE,
 )
 from .fluent import Fluent
-import base64, binascii, difflib, fnmatch, html, re, textwrap, unicodedata
+import binascii, difflib, fnmatch, html, re, textwrap, unicodedata
 
 class String:
 
@@ -23,13 +25,112 @@ class String:
 
         return Fluent(text, self)
 
+    def split (
+        self, text: str, separator: str = ",", *, strip: bool = True, empty: bool = False,
+    ) -> list[str]:
+
+        if not separator: raise Fault(Code.BAD_REQUEST, reason="string.separator")
+
+        parts = text.split(separator)
+
+        if strip and not empty: return [made for part in parts if (made := part.strip())]
+        if strip: return [part.strip() for part in parts]
+
+        return parts if empty else [part for part in parts if part]
+
+    def keys ( self, text: str, delimiters: tuple[str, str] = ("{", "}") ) -> list[str]:
+
+        return list(dict.fromkeys(name for _, _, name in self._tokens_(text, delimiters)))
+
+    def template (
+        self, text: str, values: Mapping[str, object], strict: bool = True,
+        *, delimiters: tuple[str, str] = ("{", "}"),
+    ) -> str:
+
+        parts: list[str] = []
+        position = 0
+        size = len(text)
+
+        for start, end, name in self._tokens_(text, delimiters):
+
+            made = self._fill_(name, values, text[start:end], strict)
+            size += len(made) - (end - start)
+
+            if size > TEMPLATE_LIMIT: raise Fault(Code.TOO_LARGE, reason="string.template")
+
+            parts.extend((text[position:start], made))
+            position = end
+
+        if not parts: return text
+
+        parts.append(text[position:])
+
+        return "".join(parts)
+
+    def _fill_ ( self, name: str, values: Mapping[str, object], raw: str, strict: bool ) -> str:
+
+        found: object = values
+
+        for key in name.split("."):
+
+            if not isinstance(found, (dict, Mapping)):
+
+                if not strict: return raw
+
+                raise Fault(Code.BAD_REQUEST, reason="string.template", errors={"key": [name]})
+
+            try: found = found[key]
+            except KeyError as error:
+
+                if not strict: return raw
+
+                raise Fault(Code.BAD_REQUEST, reason="string.template", errors={"key": [name]}) from error
+
+        try: return str(found)
+        except ValueError as error:
+
+            if not strict: return raw
+
+            raise Fault(Code.BAD_REQUEST, reason="string.template") from error
+
+    def _tokens_ ( self, text: str, delimiters: tuple[str, str] ) -> Iterator[tuple[int, int, str]]:
+
+        if len(text) > TEMPLATE_LIMIT: raise Fault(Code.TOO_LARGE, reason="string.template")
+
+        if delimiters == ("{", "}"):
+
+            for match in DEFAULT_TEMPLATE.finditer(text): yield match.start(), match.end(), match.group(1)
+
+            return
+
+        if not isinstance(cast("object", delimiters), tuple) or len(delimiters) != DELIMITER_COUNT or any(
+            not isinstance(cast("object", part), str) or not part or len(part) > DELIMITER_LIMIT for part in delimiters
+        ):
+
+            raise Fault(Code.BAD_REQUEST, reason="string.delimiters")
+
+        opening, closing = delimiters
+        position = 0
+
+        while (start := text.find(opening, position)) >= 0:
+
+            begin = start + len(opening)
+            end = text.find(closing, begin)
+
+            if end < 0: return
+
+            name = text[begin:end].strip(" \t")
+            position = end + len(closing)
+
+            if TEMPLATE_NAME.fullmatch(name): yield start, position, name
+
     def blank ( self, text: str | None ) -> bool:
 
         return not text or not text.strip()
 
     def squish ( self, text: str ) -> str:
 
-        return SPACES.sub(" ", text).strip()
+        return " ".join(text.split())
 
     def trim ( self, text: str, chars: str | None = None, side: Side = "both" ) -> str:
 
@@ -38,20 +139,23 @@ class String:
 
         return text.strip(chars)
 
-    def truncate ( self, text: str, limit: int, ellipsis: str = "…" ) -> str:
+    def truncate ( self, text: str, limit: int, ellipsis: str = "…", *, graphemes: bool = False ) -> str:
 
         if len(text) <= limit: return text
+        if graphemes: return self._truncate_(text, limit, ellipsis)
         if limit <= len(ellipsis): return ellipsis[:max(0, limit)]
 
         return text[:limit - len(ellipsis)].rstrip() + ellipsis
 
     def shorten ( self, text: str, words: int, ellipsis: str = "…" ) -> str:
 
-        parts = text.split()
+        parts = text.split(maxsplit=min(len(text), max(0, words)))
 
         if len(parts) <= words: return text
 
-        return " ".join(parts[:max(0, words)]) + ellipsis
+        del parts[max(0, words):]
+
+        return " ".join(parts) + ellipsis
 
     def excerpt ( self, text: str, phrase: str, radius: int = 100, omission: str = "…" ) -> str | None:
 
@@ -74,7 +178,9 @@ class String:
 
             haystack = self._bytes_(haystack)
 
-        return cast("int", self._find(haystack, self._bytes_(needle), start))
+        if isinstance(needle, str): needle = self._bytes_(needle)
+
+        return self._find(haystack, needle, start)
 
     def contains ( self, haystack: bytes | str, needle: bytes | str ) -> bool:
 
@@ -166,7 +272,14 @@ class String:
 
     def between ( self, text: str, open_: str, close: str ) -> str:
 
-        return self.before(self.after(text, open_), close)
+        start = text.find(open_)
+
+        if start < 0: return ""
+
+        start += len(open_)
+        end = text.find(close, start)
+
+        return text[start:] if end < 0 else text[start:end]
 
     def take ( self, text: str, count: int ) -> str:
 
@@ -174,7 +287,9 @@ class String:
 
     def substr ( self, text: str, start: int, length: int | None = None ) -> str:
 
-        return text[start:] if length is None else text[start:start + length]
+        start, end = self._range_(len(text), start, length)
+
+        return text[start:end]
 
     def chunk ( self, text: str, size: int ) -> list[str]:
 
@@ -198,7 +313,11 @@ class String:
 
     def word_count ( self, text: str ) -> int:
 
-        return len(TOKEN.findall(text))
+        return TOKEN.subn("", text)[1]
+
+    def graphemes ( self, text: str ) -> Iterator[str]:
+
+        return map(str, unicodedata.iter_graphemes(text))
 
     def char_count ( self, text: str, spaces: bool = False ) -> int:
 
@@ -232,8 +351,13 @@ class String:
 
         if not olds: return text
 
-        parts       = re.split(f"({'|'.join(map(re.escape, olds))})", text)
-        parts[1::2] = [changes[part] for part in parts[1::2]]
+        if len(olds) == 1: return text.replace(olds[0], changes[olds[0]])
+
+        if len(olds[0]) == 1: return text.translate({ord(old): changes[old] for old in olds})
+
+        parts = re.split(f"({'|'.join(map(re.escape, olds))})", text)
+
+        for index in range(1, len(parts), 2): parts[index] = changes[parts[index]]
 
         return "".join(parts)
 
@@ -321,7 +445,7 @@ class String:
 
         if text.isascii(): return text.casefold()
 
-        return DIACRITICS.sub("", self._strip_marks_(text)).casefold()
+        return self._strip_marks_(text).replace(TATWEEL, "").casefold()
 
     def normalize ( self, text: str, form: Literal["NFC", "NFD", "NFKC", "NFKD"] = "NFC" ) -> str:
 
@@ -329,23 +453,26 @@ class String:
 
     def slug ( self, text: str, separator: str = "-", limit: int = 96 ) -> str:
 
+        if limit < 1: return ""
+
         folded = text.casefold() if text.isascii() else self.fold(self.digits(text))
-        pieces = [piece for piece in SLUG.split(folded) if piece]
-        joined = separator.join(pieces)
+        gap    = len(separator)
 
-        if len(joined) <= limit: return joined
+        if len(folded) <= limit and gap <= 1: return separator.join(SLUG.findall(folded))
 
-        kept = ""
+        pieces: list[str] = []
+        room = limit
 
-        for piece in pieces:
+        for found in SLUG.finditer(folded):
 
-            room = limit - len(kept) - (len(separator) if kept else 0)
+            piece = folded[found.start():min(found.end(), found.start() + room)]
+
+            pieces.append(piece)
+            room -= len(piece) + gap
 
             if room <= 0: break
 
-            kept += (separator if kept else "") + piece[:room]
-
-        return kept
+        return separator.join(pieces)
 
     def ascii ( self, text: str ) -> str:
 
@@ -360,6 +487,8 @@ class String:
         return self._strip_marks_(plain).translate(LATIN)
 
     def digits ( self, text: str ) -> str:
+
+        if text.isascii(): return text
 
         plain = text.translate(DIGITS)
 
@@ -396,7 +525,16 @@ class String:
 
     def direction ( self, text: str ) -> str:
 
-        return "rtl" if RTL.match(text) else "ltr"
+        if text.isascii(): return "ltr"
+
+        for char in text:
+
+            kind = unicodedata.bidirectional(char)
+
+            if kind in ("R", "AL"): return "rtl"
+            if kind == "L": return "ltr"
+
+        return "ltr"
 
     def snake ( self, text: str ) -> str:
 
@@ -452,7 +590,7 @@ class String:
 
     def lacks ( self, text: str, needles: str | Iterable[str] ) -> bool:
 
-        parts = [needles] if isinstance(needles, str) else list(needles)
+        parts = (needles,) if isinstance(needles, str) else needles
 
         return not any(part and part in text for part in parts)
 
@@ -468,17 +606,20 @@ class String:
 
         if found is None: return None
 
-        return found.group(1) if found.groups() else found.group(0)
+        return found.group(1 if found.re.groups else 0)
 
     def matches ( self, text: str, pattern: str ) -> list[str]:
 
-        found = self._pattern_(pattern).finditer(text)
+        compiled = self._pattern_(pattern)
+        group    = 1 if compiled.groups else 0
 
-        return [item.group(1) if item.groups() else item.group(0) for item in found]
+        return [item.group(group) or "" for item in compiled.finditer(text)]
 
-    def test ( self, text: str, pattern: str ) -> bool:
+    def test ( self, text: str, pattern: str, *, full: bool = False ) -> bool:
 
-        return self._pattern_(pattern).search(text) is not None
+        compiled = self._pattern_(pattern)
+
+        return (compiled.fullmatch(text) if full else compiled.search(text)) is not None
 
     def replace_array ( self, text: str, search: str, replacements: Sequence[str] ) -> str:
 
@@ -502,18 +643,17 @@ class String:
 
     def reverse ( self, text: str ) -> str:
 
-        clusters: list[str] = []
+        if text.isascii():
 
-        for char in text:
+            flipped = text[::-1]
 
-            if clusters and unicodedata.combining(char): clusters[-1] += char
-            else: clusters.append(char)
+            return flipped if "\r" not in text else flipped.replace("\n\r", "\r\n")
 
-        return "".join(reversed(clusters))
+        return "".join(reversed(list(self.graphemes(text))))
 
     def splice ( self, text: str, replacement: str, start: int, length: int | None = None ) -> str:
 
-        end = len(text) if length is None else start + length if length >= 0 else len(text) + length
+        start, end = self._range_(len(text), start, length)
 
         return text[:start] + replacement + text[end:]
 
@@ -607,22 +747,52 @@ class String:
 
     def initials ( self, text: str, limit: int = 2 ) -> str:
 
-        return "".join(word[0] for word in text.split()[:limit]).upper()
+        if limit < 1: return ""
+
+        letters: list[str] = []
+        space = True
+
+        for char in text:
+
+            if char.isspace(): space = True
+            elif space:
+
+                letters.append(char)
+
+                if len(letters) == limit: break
+
+                space = False
+
+        return "".join(letters).upper()
 
     def base64 ( self, text: str | bytes, url: bool = False ) -> str:
 
         raw = self._bytes_(text)
 
-        return (base64.urlsafe_b64encode(raw).rstrip(b"=") if url else base64.b64encode(raw)).decode()
+        alphabet = BASE64_URL if url else BASE64_PLAIN
 
-    def unbase64 ( self, text: str ) -> bytes:
+        return binascii.b2a_base64(raw, alphabet=alphabet, padded=not url, newline=False).decode()
+
+    def unbase64 ( self, text: str, *, url: bool | None = None, canonical: bool = False ) -> bytes:
+
+        if url is not None:
+
+            alphabet = BASE64_URL if url else BASE64_PLAIN
+
+            try:
+
+                return binascii.a2b_base64(
+                    text, alphabet=alphabet, padded=not url, strict_mode=True, canonical=canonical,
+                )
+
+            except (binascii.Error, ValueError) as error: raise self._refuse_("base64") from error
 
         safe  = "-" in text or "_" in text
         plain = text.translate(URLSAFE) if safe else text
 
         if safe and ("+" in text or "/" in text): raise self._refuse_("base64")
 
-        try: return base64.b64decode(plain + "=" * (-len(plain) % 4), validate=True)
+        try: return binascii.a2b_base64(plain + "=" * (-len(plain) % 4), strict_mode=True, canonical=canonical)
         except (binascii.Error, ValueError) as error: raise self._refuse_("base64") from error
 
     def ratio ( self, left: str, right: str ) -> float:
@@ -633,35 +803,65 @@ class String:
 
         return int(Levenshtein.distance(left, right))
 
-    def closest ( self, needle: str, choices: Sequence[str], floor: float = 0.6 ) -> str | None:
+    def closest ( self, needle: str, choices: Iterable[str], floor: float = 0.6 ) -> str | None:
 
-        if not choices: return None
+        self._floor_(floor)
 
-        found = process.extractOne(self.fold(needle), [self.fold(choice) for choice in choices], scorer=fuzz.WRatio)
+        found = process.extractOne(needle, iter(choices), processor=self.fold, scorer=fuzz.WRatio, score_cutoff=0.0)
 
-        if found[1] / 100.0 < floor: return None
+        return None if found is None or found[1] / 100.0 < floor else found[0]
 
-        return choices[found[2]]
+    def rank (
+        self, needle: str, choices: Iterable[str], limit: int = 5, *, floor: float = 0.0,
+    ) -> list[tuple[str, float]]:
 
-    def rank ( self, needle: str, choices: Iterable[str], limit: int = 5 ) -> list[tuple[str, float]]:
+        self._floor_(floor)
 
         if limit < 1: return []
 
-        items  = list(choices)
+        items  = choices if isinstance(choices, Sequence) else list(choices)
         folded = [self.fold(item) for item in items]
-        scored = process.extract(self.fold(needle), folded, scorer=fuzz.WRatio, limit=limit)
+        scored = process.extract(
+            self.fold(needle), folded, scorer=fuzz.WRatio, limit=min(limit, len(items)),
+        )
 
-        return [(items[index], score / 100.0) for _, score, index in scored]
+        return [(items[index], score / 100.0) for _, score, index in scored if score / 100.0 >= floor]
 
-    def _native_find_ ( self ) -> Any:
+    def _truncate_ ( self, text: str, limit: int, ellipsis: str ) -> str:
 
-        from stringzilla import Str
+        if limit <= 0: return ""
 
-        def find ( haystack: bytes, needle: bytes, start: int ) -> int:
+        pieces = list(islice(self.graphemes(text), min(limit, len(text)) + 1))
 
-            return cast("int", Str(haystack).find(needle, start))
+        if len(pieces) <= limit: return text
 
-        return find
+        suffix = list(islice(self.graphemes(ellipsis), min(limit, len(ellipsis))))
+
+        if len(suffix) >= limit: return "".join(suffix)
+
+        del pieces[limit - len(suffix):]
+
+        while pieces and pieces[-1].isspace(): pieces.pop()
+
+        return "".join(pieces) + ellipsis
+
+    def _range_ ( self, size: int, start: int, length: int | None ) -> tuple[int, int]:
+
+        if start < 0: start = max(0, size + start)
+
+        end = size if length is None else start + length if length >= 0 else max(start, size + length)
+
+        return start, end
+
+    def _floor_ ( self, floor: float ) -> None:
+
+        if not 0.0 <= floor <= 1.0: raise Fault(Code.INTERNAL, reason="string.floor")
+
+    def _native_find_ ( self ) -> Callable[[bytes, bytes, int], int]:
+
+        from stringzilla import find
+
+        return cast("Callable[[bytes, bytes, int], int]", find)
 
     @staticmethod
     def _pure_find_ ( haystack: bytes, needle: bytes, start: int ) -> int:
@@ -687,7 +887,7 @@ class String:
 
         decomposed = unicodedata.normalize("NFKD", text)
 
-        return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+        return "".join(filterfalse(unicodedata.combining, decomposed))
 
     def _untag_ ( self, text: str ) -> str:
 
@@ -697,7 +897,9 @@ class String:
 
     def _run_ ( self, char: str, size: int ) -> str:
 
-        return (char * (size // len(char) + 1))[:size]
+        count, tail = divmod(size, len(char))
+
+        return char * count + char[:tail]
 
     def _width_ ( self, width: int, least: int ) -> int:
 

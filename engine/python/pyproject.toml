@@ -10,11 +10,14 @@ dependencies = ["engine"]
 dev = [
     "asyncpg-stubs",
     "griffe",
+    "hatchling",
+    "tomli-w",
     "hypothesis",
     "mypy",
     "pip-audit",
     "pyjwt",
     "pytest",
+    "types-pyyaml",
     "pytest-asyncio",
     "pytest-randomly",
     "pytest-timeout",
@@ -42,9 +45,13 @@ constraint-dependencies = [
     "hiredis==3.5.0",
     "dnspython==2.9.2",
     "griffe==2.4.1",
+    "hatchling==1.33.0",
+    "tomli-w==1.2.0",
+    "tzdata==2026.6",
     "hypothesis==6.170.15",
     "jinja2==3.1.6",
     "msgspec==0.22.0",
+    "multidict==6.9.1",
     "mypy==2.4.1",
     "obstore==0.12.1",
     "orjson==3.13.0",
@@ -52,14 +59,20 @@ constraint-dependencies = [
     "pillow==13.0.0",
     "pip-audit==2.10.1",
     "pyjwt==2.15.1",
-    "pymongo==4.19.0",
+    "pyseto==1.10.0",
+    "pycryptodomex==3.24.2",
+    "iso8601==2.1.0",
+    "pyyaml==6.0.3",
+    "types-pyyaml==6.0.12.20261113",
+    "pymongo==4.20.0",
     "pyroaring==1.2.0",
     "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
     "pytest-randomly==5.1.0",
     "pytest-timeout==2.4.0",
     "rapidfuzz==3.14.6",
     "redis==8.1.0",
-    "ruff==0.17.4",
+    "ruff==0.17.5",
     "sanic==25.12.1",
     "stringzilla==5.3.2",
     "structlog==26.1.0",
@@ -69,7 +82,7 @@ constraint-dependencies = [
     "websockets==17.4",
     "yarl==1.25.1",
 ]
-build-constraint-dependencies = ["hatchling==1.33.0"]
+build-constraint-dependencies = ["hatchling==1.33.0", "tomli-w==1.2.0"]
 
 [tool.uv.workspace]
 members = ["src/*"]
@@ -83,6 +96,7 @@ engine-auth = { workspace = true }
 engine-broadcast = { workspace = true }
 engine-broker = { workspace = true }
 engine-cache = { workspace = true }
+engine-cast = { workspace = true }
 engine-cli = { workspace = true }
 engine-config = { workspace = true }
 engine-context = { workspace = true }
@@ -160,6 +174,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"tests/test_engine.py" = ["S603"]
 "tests/**" = [
     "INP001",
     "S101",
@@ -202,6 +217,7 @@ ignore = [
 "src/database/src/engine/database/session.py" = ["ASYNC109"]
 "src/database/src/engine/database/sql.py" = ["S608"]
 "src/database/src/engine/database/sqlitedriver.py" = ["ASYNC109", "PLR0911"]
+"src/date/src/engine/date/date.py" = ["DTZ007"]
 "src/domain/src/engine/domain/registrar.py" = ["ARG002"]
 "src/event/src/engine/event/events.py" = ["ASYNC109", "BLE001"]
 "src/exception/src/engine/exception/exceptions.py" = ["BLE001"]
@@ -231,6 +247,7 @@ ignore = [
 "src/test/src/engine/test/reply.py" = ["PLR2004"]
 "src/test/src/engine/test/stage.py" = ["ARG001"]
 "src/thread/src/engine/thread/cluster.py" = ["PLC0415"]
+"src/token/src/engine/token/token.py" = ["A002", "PLR0913"]
 "src/thread/src/engine/thread/thread.py" = ["ASYNC109", "BLE001", "PLR0913", "PLR0917"]
 "src/video/src/engine/video/driver.py" = ["ARG002"]
 "src/video/src/engine/video/videos.py" = ["C901", "PLC0415", "PLR0912"]
@@ -262,8 +279,8 @@ enable_error_code = [
     "unimported-reveal",
     "unused-awaitable",
 ]
-mypy_path = "src/engine/src:src/adapter/src:src/ai/src:src/array/src:src/auth/src:src/broadcast/src:src/broker/src:src/cache/src:src/cli/src:src/config/src:src/context/src:src/crypto/src:src/database/src:src/date/src:src/domain/src:src/error/src:src/event/src:src/exception/src:src/fake/src:src/fs/src:src/func/src:src/gateway/src:src/geo/src:src/health/src:src/http/src:src/json/src:src/log/src:src/mail/src:src/metric/src:src/net/src:src/notify/src:src/number/src:src/parse/src:src/queue/src:src/rag/src:src/rand/src:src/schedule/src:src/search/src:src/sms/src:src/socket/src:src/storage/src:src/stream/src:src/string/src:src/test/src:src/thread/src:src/token/src:src/translate/src:src/validate/src:src/video/src:src/view/src"
-files = ["src/*/src/engine", "tests", "benches", "fuzz"]
+mypy_path = "src/engine/src:src/adapter/src:src/ai/src:src/array/src:src/auth/src:src/broadcast/src:src/broker/src:src/cache/src:src/cast/src:src/cli/src:src/config/src:src/context/src:src/crypto/src:src/database/src:src/date/src:src/domain/src:src/error/src:src/event/src:src/exception/src:src/fake/src:src/fs/src:src/func/src:src/gateway/src:src/geo/src:src/health/src:src/http/src:src/json/src:src/log/src:src/mail/src:src/metric/src:src/net/src:src/notify/src:src/number/src:src/parse/src:src/queue/src:src/rag/src:src/rand/src:src/schedule/src:src/search/src:src/sms/src:src/socket/src:src/storage/src:src/stream/src:src/string/src:src/test/src:src/thread/src:src/token/src:src/translate/src:src/validate/src:src/video/src:src/view/src"
+files = ["src/*/src/engine", "tests", "benches", "fuzz", "metadata.py", "distribution.py"]
 
 [[tool.mypy.overrides]]
 module = ["stringzilla", "pyroaring", "aiokafka", "aiokafka.*", "ray", "ray.*"]
@@ -272,6 +289,10 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["engine.http.app", "engine.cache.channel", "engine.video.videos"]
 disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = ["engine.broker.cursor"]
+disallow_subclassing_any = false
 
 [tool.pytest]
 testpaths = ["tests"]

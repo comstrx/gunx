@@ -35,3 +35,12 @@ test:core:validate:refs-and-urls () {
     @fails core:validate:url 'https://github.com/x;rm'
 
 }
+test:core:validate:judges-mail-addresses () {
+
+    core:validate:email ops@example.com
+    core:validate:email first.last+tag@mail.example.co
+    @fails core:validate:email 'ops@example'
+    @fails core:validate:email 'a b@example.com'
+    @fails core:validate:email $'ops@example.com\nBcc: x@y.com'
+
+}

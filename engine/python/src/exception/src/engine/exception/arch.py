@@ -6,6 +6,7 @@ from engine.error import Code, Fault
 type Factory = Callable[[BaseException], Fault]
 type Reporter = Callable[[Fault, BaseException], object]
 type Context = Callable[[], Mapping[str, Any]]
+type Rule = Factory | tuple[Code, str, bool]
 
 LEVELS   = ("debug", "info", "warning", "error", "critical")
 MARK     = "_engine_reported_"

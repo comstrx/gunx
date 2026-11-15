@@ -14,20 +14,35 @@ core:log:secret () {
 }
 core:log:redact () {
 
-    local text="${1-}" key="" value=""
+    local text=""
 
-    declare -p CONFIG >/dev/null 2>&1 || { printf '%s' "${text}"; return 0; }
-
-    for key in "${!CONFIG[@]}"; do
-
-        core:log:secret "${key}" || continue
-
-        value="${CONFIG[${key}]}"
-        [[ -z "${value}" ]] || text="${text//"${value}"/[redacted]}"
-
-    done
+    core:log:scrub text "${1-}"
 
     printf '%s' "${text}"
+
+}
+core:log:scrub () {
+
+    local -n _clean="${1}"
+    local _line="${2-}" _key="" _secret=""
+
+    if declare -p CONFIG >/dev/null 2>&1; then
+
+        for _key in "${!CONFIG[@]}"; do
+
+            core:log:secret "${_key}" || continue
+
+            _secret="${CONFIG[${_key}]}"
+            [[ -z "${_secret}" ]] || _line="${_line//"${_secret}"/[redacted]}"
+
+        done
+
+    fi
+
+    _line="${_line//$'\e'/^[}"
+    _line="${_line//$'\r'/^M}"
+
+    _clean="${_line}"
 
 }
 core:log:color () {
@@ -53,17 +68,17 @@ core:log:level () {
 }
 core:log:emit () {
 
-    local color="${1}" tag="${2}" rank="${3}" text="" floor=1
+    local color="${1}" tag="${2}" rank="${3}" text="" icon="" floor=1
 
     shift 3
     core:log:level floor
     (( rank >= floor )) || return 0
 
-    text="$(core:log:redact "$*")"
+    core:log:scrub text "$*"
 
     if ! core:log:color; then printf '%s %s\n' "${tag}" "${text}" >&2
     elif [[ "${tag}" == '[.]' ]]; then printf '  \033[%sm%s\033[0m\n' "${color}" "${text}" >&2
-    else printf '  \033[1;%sm%s\033[0m  %s\n' "${color}" "$(core:log:icon "${tag}")" "${text}" >&2
+    else core:log:glyph icon "${tag}"; printf '  \033[1;%sm%s\033[0m  %s\n' "${color}" "${icon}" "${text}" >&2
     fi
 
     return 0
@@ -71,14 +86,26 @@ core:log:emit () {
 }
 core:log:icon () {
 
-    [[ "${LANG:-}${LC_ALL:-}" == *[Uu][Tt][Ff]-8* || "${LANG:-}${LC_ALL:-}" == *[Uu][Tt][Ff]8* ]] || { core:log:print "${1}"; return 0; }
+    local icon=""
 
-    case "${1}" in
-        '[+]') core:log:print '✓' ;;
-        '[-]') core:log:print '✗' ;;
-        '[!]') core:log:print '▲' ;;
-        '[*]') core:log:print '●' ;;
-        *)     core:log:print "${1}" ;;
+    core:log:glyph icon "${1}"
+
+    core:log:print "${icon}"
+
+}
+core:log:glyph () {
+
+    local -n _icon="${1}"
+
+    _icon="${2}"
+
+    [[ "${LANG:-}${LC_ALL:-}" == *[Uu][Tt][Ff]-8* || "${LANG:-}${LC_ALL:-}" == *[Uu][Tt][Ff]8* ]] || return 0
+
+    case "${2}" in
+        '[+]') _icon='✓' ;;
+        '[-]') _icon='✗' ;;
+        '[!]') _icon='▲' ;;
+        '[*]') _icon='●' ;;
     esac
 
 }

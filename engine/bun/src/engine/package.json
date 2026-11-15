@@ -5,7 +5,11 @@
   "description": "The one door into the engine: one subpath per member.",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
+    ".": {
+      "browser": "./src/runtime.ts",
+      "react-native": "./src/runtime.ts",
+      "default": "./src/index.ts"
+    },
     "./adapter": "./src/adapter.ts",
     "./api": "./src/api.ts",
     "./auth": "./src/auth.ts",

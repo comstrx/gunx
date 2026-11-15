@@ -7,7 +7,7 @@ from functools import partial
 from hypothesis import HealthCheck, given, settings, strategies as st
 from pathlib import Path
 from typing import Any, cast
-import asyncio, inspect, math
+import asyncio, inspect, math, os
 
 type Mark = tuple[str, str, str, str | None]
 type Plan = tuple[bool, bool, bool]
@@ -208,7 +208,7 @@ STEPS    = st.lists(st.tuples(
 ), max_size=14)
 loop     = asyncio.new_event_loop()
 
-log.setup("debug", "json", Path("/dev/null"))
+log.setup("debug", "json", Path(os.devnull))
 
 def tried ( work: Callable[[], Any] ) -> Any:
 

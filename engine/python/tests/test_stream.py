@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator
+from typing import cast
+from collections.abc import AsyncGenerator, AsyncIterator
 from engine.error import Code, Fault
 from engine.fs import dir, file
 from engine.http import App, Request, Response, Route
@@ -253,3 +254,33 @@ async def test_ranged_files_flow_through_http ( tmp_path: Path ) -> None:
         async with http.get(f"{url}/song", headers={ "Range": "bytes=999-" }) as bad:
 
             assert bad.status == 416 and bad.headers["Content-Range"] == "bytes */512"
+
+
+async def test_closing_a_full_pipe_releases_blocked_writers_and_drains_readers () -> None:
+
+    pipe = Pipe(1)
+
+    await pipe.write(b"kept")
+
+    blocked = asyncio.create_task(pipe.write(b"refused"))
+
+    await asyncio.sleep(0)
+    await pipe.close()
+
+    with pytest.raises(Fault) as closed: await asyncio.wait_for(blocked, 0.5)
+
+    assert closed.value.reason == "stream.closed"
+    assert await pipe.read() == b"kept"
+    assert all(piece is None for piece in await asyncio.gather(pipe.read(), pipe.read()))
+
+async def test_negative_chunk_size_is_refused_without_an_endless_stream () -> None:
+
+    pieces = stream.chunks(feed([b"ab"]), -1)
+
+    try:
+
+        with pytest.raises(Fault) as refused: await anext(pieces)
+
+        assert refused.value.reason == "stream.chunk"
+
+    finally: await cast("AsyncGenerator[bytes]", pieces).aclose()

@@ -1,13 +1,4 @@
-export type Parsed = { dir: string; base: string; name: string; ext: string };
-export type Glob = { dot?: boolean | undefined; insensitive?: boolean | undefined };
-export type Matcher = ( path: string ) => boolean;
-
-type Split = { root: string; parts: string[] };
-type Class = { not: boolean; loose: boolean; singles: Set<string>; ranges: number[] };
-type Unit = string | number | Class;
-type Piece = readonly Unit[] | null;
-type Plan = { rooted: boolean; pieces: Piece[] };
-
+import type { Class, Glob, Matcher, Parsed, Piece, Plan, Split, Unit } from "./arch.ts";
 export const separator = "/";
 
 const one = 0;

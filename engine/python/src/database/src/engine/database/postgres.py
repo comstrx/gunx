@@ -28,6 +28,13 @@ class Postgres(Dialect):
     })
 
     @override
+    def literal ( self, value: str ) -> str:
+
+        if "\\" in value: return "E" + super().literal(value.replace("\\", "\\\\"))
+
+        return super().literal(value)
+
+    @override
     def policy ( self, table: Table ) -> list[str]:
 
         if not table.guarded(): return []

@@ -2,7 +2,6 @@ from typing import Any
 from .arch import Connection
 from .lane import Lane
 
-
 class Listener:
 
     __slots__ = ("_channel", "_connection", "_lane", "_relay")

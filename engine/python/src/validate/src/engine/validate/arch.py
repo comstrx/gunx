@@ -1,9 +1,10 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import re
 
+type Spec = Mapping[str, str | Sequence[str]]
 type Check = Callable[[Any, str, Mapping[str, Any]], str | None]
 type Plain = Callable[[Any, str], str | None]
 

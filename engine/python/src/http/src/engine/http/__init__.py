@@ -1,19 +1,19 @@
-from .action import Action
-from .app import App
-from .arch import Answer, Guard, Handler, Lifecycle, Limits, Middleware, Mountable, Next, Renderer
-from .binder import Binder
-from .channel import Channel
-from .docs import Docs
-from .edge import Edge
-from .envelope import Envelope
-from .form import Form
-from .group import Group
-from .layer import Layer
-from .request import Request
-from .response import Response
-from .route import Route
-from .router import Router
-from .throttle import Throttle
+lazy from .action import Action
+lazy from .app import App
+lazy from .arch import Answer, Guard, Handler, Lifecycle, Limits, Middleware, Mountable, Next, Renderer
+lazy from .binder import Binder
+lazy from .channel import Channel
+lazy from .docs import Docs
+lazy from .edge import Edge
+lazy from .envelope import Envelope
+lazy from .form import Form
+lazy from .group import Group
+lazy from .layer import Layer
+lazy from .request import Request
+lazy from .response import Response
+lazy from .route import Route
+lazy from .router import Router
+lazy from .throttle import Throttle
 
 __all__ = [
     "Action", "Answer", "App", "Binder", "Channel", "Docs", "Edge", "Envelope", "Form", "Group", "Guard", "Handler",

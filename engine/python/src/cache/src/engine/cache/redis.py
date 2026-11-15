@@ -4,12 +4,14 @@ from typing import Any
 from engine.crypto import crypto
 from engine.error import Code, Fault
 from engine.json import json
-from .arch import BUCKET, COUNT, DROP, GLOB, life, name, RAW, SWAP, whole
+from .arch import BUCKET, COUNT, DROP, GLOB, life, name, RAW, SCAN_BATCH, SWAP, whole
 from .wire import Wire
+import heapq, itertools
 
 class Redis:
 
-    name = "redis"
+    name   = "redis"
+    shared = True
 
     def __init__ ( self, url: str, prefix: str = "", pool: int = 32, wait: float = 2.0 ) -> None:
 
@@ -35,14 +37,16 @@ class Redis:
 
     async def many ( self, keys: Iterable[str] ) -> dict[str, Any]:
 
-        names = [key for key in keys if type(key) is str]
-
-        if not names: return {}
-
+        source = (key for key in keys if type(key) is str)
+        found: dict[str, Any] = {}
         prefix = self._prefix
-        values = await self._wire.send("MGET", *([prefix + name for name in names] if prefix else names))
 
-        return { key: self._decode_(raw) for key, raw in zip(names, values, strict=True) if raw is not None }
+        while names := list(itertools.islice(source, SCAN_BATCH)):
+
+            values = await self._wire.send("MGET", *([prefix + name for name in names] if prefix else names))
+            found.update((key, self._decode_(raw)) for key, raw in zip(names, values, strict=True) if raw is not None)
+
+        return found
 
     async def set ( self, key: str, value: Any, ttl: float | None = None ) -> None:
 
@@ -67,6 +71,17 @@ class Redis:
         if type(key) is not str: return False
 
         return bool(await self._wire.send("DEL", self.key(key)))
+
+    async def delete_many ( self, keys: Iterable[str] ) -> int:
+
+        source  = (self._prefix + key for key in keys if type(key) is str)
+        removed = 0
+
+        while batch := list(itertools.islice(source, SCAN_BATCH)):
+
+            removed += int(await self._wire.send("DEL", *batch))
+
+        return removed
 
     async def take ( self, key: str ) -> Any:
 
@@ -137,28 +152,56 @@ class Redis:
 
         if not items: return
 
-        await self._wire.many([("SET", self.key(key), self._encode_(value), *tail) for key, value in items.items()])
+        source = iter(items.items())
+
+        while batch := list(itertools.islice(source, SCAN_BATCH)):
+
+            await self._wire.many([("SET", self.key(key), self._encode_(value), *tail) for key, value in batch])
 
     async def keys ( self, prefix: str = "", limit: int = 1000 ) -> list[str]:
 
+        if limit <= 0: return []
+
         found: list[str] = []
+        kept: set[str] = set()
         width = len(self._prefix)
 
         async for held in self._scan_(self._glob_(prefix)):
 
-            found.append(held[width:])
+            key = held[width:]
 
-            if len(found) >= limit: break
+            if key in kept: continue
+
+            if len(found) < limit:
+
+                heapq.heappush_max(found, key)
+                kept.add(key)
+
+            elif key < found[0]:
+
+                kept.remove(heapq.heappop_max(found))
+                heapq.heappush_max(found, key)
+                kept.add(key)
 
         return sorted(found)
 
     async def clear ( self, prefix: str = "" ) -> int:
 
-        names = [held async for held in self._scan_(self._glob_(prefix))]
+        pending: list[str] = []
+        removed = 0
 
-        if not names: return 0
+        async for key in self._scan_(self._glob_(prefix)):
 
-        return sum(int(count) for count in await self._wire.many([("DEL", name) for name in names]))
+            pending.append(key)
+
+            if len(pending) >= SCAN_BATCH:
+
+                removed += int(await self._wire.send("DEL", *pending))
+                pending.clear()
+
+        if pending: removed += int(await self._wire.send("DEL", *pending))
+
+        return removed
 
     async def ping ( self ) -> bool:
 
@@ -175,7 +218,7 @@ class Redis:
 
         while True:
 
-            cursor, names = await self._wire.send("SCAN", cursor, "MATCH", pattern, "COUNT", 500)
+            cursor, names = await self._wire.send("SCAN", cursor, "MATCH", pattern, "COUNT", SCAN_BATCH)
 
             for held in names: yield held.decode() if isinstance(held, bytes) else str(held)
 

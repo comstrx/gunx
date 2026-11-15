@@ -1,40 +1,7 @@
 import * as adapter from "engine-adapter";
-import type * as cache from "engine-cache";
 import * as event from "engine-event";
-import { named, css as sheetOf, type Tokens, valued } from "./tokens.ts";
-
-export type Scheme = "light" | "dark";
-export type Preference = Scheme | "system";
-export type Appearance = { scheme: () => Scheme; watch: ( listener: () => void ) => () => void };
-export type Schemes<T extends Tokens> = { light: T; dark: T };
-export type ThemeState<T extends Tokens> = { preference: Preference; system: Scheme; scheme: Scheme; palette: T; ready: boolean };
-export type Readable<T> = { getState: () => T; subscribe: ( listener: ( state: T, previous: T ) => void ) => () => void };
-export type Root = { lang?: string; dir?: string; dataset?: Record<string, string | undefined>; style?: { colorScheme?: string } };
-export type ThemeOptions<T extends Tokens> = {
-    tokens: Schemes<T>;
-    preference?: Preference | undefined;
-    system?: (() => Scheme) | undefined;
-    watch?: (( listener: () => void ) => () => void) | undefined;
-    box?: cache.Box | undefined;
-    key?: string | undefined;
-    prefix?: string | undefined;
-    selector?: string | undefined;
-    sync?: boolean | undefined;
-    fail?: (( cause: unknown ) => void) | undefined;
-};
-export type Theme<T extends Tokens> = Readable<ThemeState<T>> & {
-    preference: () => Preference;
-    scheme: () => Scheme;
-    palette: () => T;
-    set: ( preference: Preference ) => void;
-    toggle: () => void;
-    cycle: () => void;
-    css: () => string;
-    variables: ( scheme?: Scheme ) => Readonly<Record<string, string>>;
-    apply: ( root: Root | undefined, speak?: { lang: string; dir: string } | undefined ) => void;
-    hydrate: () => Promise<void>;
-    destroy: () => void;
-};
+import type { Appearance, Preference, Scheme, Theme, ThemeOptions, ThemeState, Tokens } from "./arch.ts";
+import { named, css as sheetOf, valued } from "./tokens.ts";
 
 const marked = 16;
 

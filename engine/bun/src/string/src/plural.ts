@@ -69,15 +69,23 @@ export function pluralize ( count: number, one: string, many?: string, locale = 
 
     const amount = Math.abs(count);
 
-    if ( locale.startsWith("ar") ) {
+    const language = (locale.split(/[-_]/)[0] ?? "").toLowerCase();
+
+    if ( language === "ar" ) {
 
         if ( amount === 1 ) return one;
         if ( amount === 2 ) return dual(one);
 
-        return many ?? plural(one);
+        if ( many === undefined ) throw new RangeError("a plural form is required");
+
+        return many;
 
     }
 
-    return amount === 1 ? one : (many ?? plural(one));
+    if ( amount === 1 ) return one;
+    if ( many !== undefined ) return many;
+    if ( language !== "en" && language !== "" ) throw new RangeError("a plural form is required");
+
+    return plural(one);
 
 }

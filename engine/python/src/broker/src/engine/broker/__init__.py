@@ -1,9 +1,9 @@
-from .arch import Message
+lazy from .arch import Message
 from .broker import Broker
-from .driver import Driver
-from .kafka import Kafka
-from .memory import Memory
-from .rabbit import Rabbit
+lazy from .driver import Driver
+lazy from .kafka import Kafka
+lazy from .memory import Memory
+lazy from .rabbit import Rabbit
 
 broker = Broker()
 

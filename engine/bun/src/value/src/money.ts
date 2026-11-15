@@ -1,11 +1,9 @@
 import * as json from "engine-json";
 import * as number from "engine-number";
-import { type Decimal, fromUnits, type Input } from "./decimal.ts";
-import { type Factor, factor, product, quotient, type Rounding, safe, scaled, sum, ten, unmarked, type Whole, write } from "./exact.ts";
+import type { Decimal, Factor, Input, Money, Rounding, Whole, Wire } from "./arch.ts";
+import { fromUnits } from "./decimal.ts";
+import { factor, product, quotient, safe, scaled, sum, ten, unmarked, write } from "./exact.ts";
 import { currency as coded, patterns } from "./typed.ts";
-
-export type Money = { readonly minor: number; readonly currency: string };
-export type Wire = { amount: string; currency: string; minor: number };
 
 const none = "BIF CLP DJF GNF ISK JPY KMF KRW PYG RWF UGX UYI VND VUV XAF XOF XPF";
 const three = "BHD IQD JOD KWD LYD OMR TND";

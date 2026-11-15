@@ -342,3 +342,36 @@ describe("fuzz net", () => {
     });
 
 });
+
+it("SSE ids and UTF-8 data survive arbitrary byte chunk boundaries", async () => {
+
+    const word = fc.string({ unit: "grapheme", maxLength: 20 }).filter(( text ) => !/[\r\n\0]/.test(text));
+
+    await fc.assert(fc.asyncProperty(fc.array(fc.record({ id: fc.option(word, { nil: undefined }), data: word }), { maxLength: 10 }), fc.integer({ min: 1, max: 30 }), async ( rows, size ) => {
+
+        let last: string | undefined;
+        const expected = rows.map(( row ) => {
+
+            if ( row.id !== undefined ) last = row.id;
+
+            return { id: last, data: JSON.stringify(row.data) };
+
+        });
+        const text = rows.map(( row ) => `${row.id === undefined ? "" : `id: ${row.id}\n`}data: ${JSON.stringify(row.data)}\n\n`).join("");
+        const bytes = new TextEncoder().encode(text);
+        const stream = new ReadableStream<Uint8Array>({ start ( controller ) {
+
+            for ( let at = 0; at < bytes.length; at += size ) controller.enqueue(bytes.slice(at, at + size));
+
+            controller.close();
+
+        } });
+        const found: { id: string | undefined; data: string }[] = [];
+
+        for await ( const item of net.events("https://test.example/events", { fetcher: async () => new Response(stream, { headers: { "content-type": "text/event-stream" } }) }) ) found.push({ id: item.id, data: item.data });
+
+        expect(found).toEqual(expected);
+
+    }), { numRuns: 1000 });
+
+});

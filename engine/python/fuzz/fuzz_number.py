@@ -1,7 +1,8 @@
 from engine.error import Fault
 from engine.number import Money, number
 from contextlib import suppress
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP, localcontext
+from fractions import Fraction
 from hypothesis import HealthCheck, given, settings, strategies as st
 from typing import Any, cast
 import pytest
@@ -106,4 +107,144 @@ money_keeps_every_minor_unit()
 decimals_survive_their_own_text()
 formats_never_crash()
 
-print(f"fuzz number  examples={EXAMPLES * 5}  ok")
+
+
+@settings(max_examples=1000, deadline=None, database=None)
+@given(st.text(alphabet="IVXLCDMivxlcdm !", max_size=80))
+def roman_forms_are_canonical_or_refused ( raw: str ) -> None:
+
+    try: value = number.from_roman(raw)
+    except Fault: return
+
+    assert 1 <= value <= 3999 and number.roman(value) == raw.strip().upper()
+
+roman_forms_are_canonical_or_refused()
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.integers(-10**18, 10**18), st.integers(-10**8, 10**8), st.integers(0, 6))
+def scaling_matches_exact_rational_arithmetic ( minor: int, coefficient: int, places: int ) -> None:
+
+    with localcontext() as ctx:
+
+        ctx.prec = 80
+        factor = Decimal(coefficient).scaleb(-places)
+
+    held = Money(minor, "USD")
+    exact = Fraction(minor) * Fraction(factor)
+
+    assert held.multiply(factor).minor == round(exact)
+    assert held.percent(factor).minor == round(exact / 100)
+    assert number.tax(held, abs(coefficient)).minor == round(Fraction(minor * abs(coefficient), 10000))
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.integers(-10**12, 10**12), st.lists(st.integers(0, 100), min_size=1, max_size=25))
+def allocation_preserves_units_and_remainder_order ( minor: int, ratios: list[int] ) -> None:
+
+    held = Money(minor, "USD")
+
+    if not sum(ratios):
+
+        with pytest.raises(Fault): held.allocate(ratios)
+
+        return
+
+    parts = held.allocate(ratios)
+    exact = [Fraction(abs(minor) * ratio, sum(ratios)) for ratio in ratios]
+    assert sum(part.minor for part in parts) == minor
+    assert all(part.currency == held.currency for part in parts)
+    assert [part.minor for part in held.negate().allocate(ratios)] == [-part.minor for part in parts]
+
+    for part, ideal, ratio in zip(parts, exact, ratios, strict=True):
+
+        assert abs(abs(part.minor) - ideal) < 1
+        if ratio == 0: assert part.minor == 0
+
+    fractions = [item % 1 for item in exact]
+    rounded_up = [index for index, part in enumerate(parts) if abs(part.minor) > exact[index] // 1]
+    rounded_down = [index for index, part in enumerate(parts) if abs(part.minor) == exact[index] // 1]
+
+    for higher in rounded_up:
+
+        for lower in rounded_down:
+
+            assert fractions[higher] >= fractions[lower]
+            if fractions[higher] == fractions[lower]: assert higher < lower
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.integers(-100000, 100000), st.integers(1, 10000), st.integers(0, 8))
+def decimal_quotients_match_high_precision_reference ( numerator: int, denominator: int, places: int ) -> None:
+
+    with localcontext() as ctx:
+
+        ctx.prec = 100
+        quantum = Decimal(1).scaleb(-places)
+        quotient = (Decimal(numerator) / Decimal(denominator)).quantize(quantum, rounding=ROUND_HALF_UP)
+        percent = (Decimal(numerator) * 100 / Decimal(denominator)).quantize(quantum, rounding=ROUND_HALF_UP)
+        change = ((Decimal(numerator) - denominator) * 100 / denominator).quantize(quantum, rounding=ROUND_HALF_UP)
+
+    assert number.divide(numerator, denominator, places=places) == quotient
+    assert number.percent(numerator, denominator, places=places) == percent
+    assert number.change(denominator, numerator, places=places) == change
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.integers(-10**20, 10**20), st.integers(1, 50), st.sampled_from(["USD", "JPY", "KWD", "CLF"]))
+def caller_context_cannot_change_money ( minor: int, precision: int, currency: str ) -> None:
+
+    held = Money(minor, currency)
+    expected = held.major()
+    text = held.text()
+    split = held.split(3)
+
+    with localcontext() as ctx:
+
+        ctx.prec = precision
+        ctx.Emin = -2
+        ctx.Emax = 2
+        ctx.clamp = 1
+        for signal in ctx.traps: ctx.traps[signal] = True
+
+        flags = ctx.flags.copy()
+        assert held.major() == expected and held.text() == text and held.split(3) == split
+        assert number.money(expected, currency) == held
+        assert number.parse_money(text) == held
+        assert ctx.flags == flags
+
+@settings(max_examples=1000, deadline=None, database=None)
+@given(st.integers(-10000, 10000), st.integers(40, 160))
+def monetary_half_boundaries_are_not_double_rounded ( whole: int, digits: int ) -> None:
+
+    raw = f"{abs(whole)}.004" + "9" * digits
+    value = Decimal(("-" if whole < 0 else "") + raw)
+
+    with localcontext() as ctx:
+
+        ctx.prec = 256
+        expected = int((value * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+    assert number.money(value, "USD").minor == expected
+
+scaling_matches_exact_rational_arithmetic()
+allocation_preserves_units_and_remainder_order()
+decimal_quotients_match_high_precision_reference()
+caller_context_cannot_change_money()
+monetary_half_boundaries_are_not_double_rounded()
+
+@settings(max_examples=1500, deadline=None, database=None)
+@given(st.integers(min_value=-(10**12), max_value=10**12))
+def exchanging_with_identity_rate_preserves_money ( minor: int ) -> None:
+
+    made = number.minor(minor, "KWD")
+    assert number.exchange(made, "KWD", "1") == made
+
+exchanging_with_identity_rate_preserves_money()
+
+@settings(max_examples=1500, deadline=None, database=None)
+@given(st.integers(min_value=-(10**100), max_value=10**100), st.sampled_from(("USD", "JPY", "KWD", "CLF")))
+def money_text_matches_decimal_formatting ( minor: int, currency: str ) -> None:
+
+    held = Money(minor, currency)
+    assert held.text() == f"{held.major():.{held.digits()}f} {currency}"
+
+money_text_matches_decimal_formatting()
+
+print("fuzz number  properties=13  ok")

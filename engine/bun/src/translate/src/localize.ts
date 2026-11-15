@@ -3,22 +3,8 @@ import * as error from "engine-error";
 import * as json from "engine-json";
 import * as number from "engine-number";
 import * as value from "engine-value";
-import type { Translate } from "./dictionary.ts";
-import { type Direction, direction, formatList, held, language, split, tried } from "./locale.ts";
-
-export type Localizer = {
-    readonly locale: string;
-    readonly direction: Direction;
-    number: ( value: number, options?: number.FormatOptions ) => string;
-    percent: ( value: number, options?: number.FormatOptions ) => string;
-    money: ( amount: value.Money, options?: number.FormatOptions ) => string;
-    date: ( value: date.Input, style?: date.Style | string ) => string;
-    range: ( from: date.Input, to: date.Input, options?: Intl.DateTimeFormatOptions ) => string;
-    relative: ( value: date.Input, reference?: date.Input ) => string;
-    list: ( items: readonly string[], kind?: "and" | "or" ) => string;
-    reason: ( failure: unknown ) => string;
-    field: ( failure: unknown, name: string ) => string | undefined;
-};
+import type { Localizer, Translate } from "./arch.ts";
+import { direction, formatList, held, language, split, tried } from "./locale.ts";
 
 const digits = /-u-(?:[a-z0-9]{2,8}-)*?nu-(arab|latn)(?:-|$)/i;
 const sized = /^-?\d+(?:\.\d+)?$/;

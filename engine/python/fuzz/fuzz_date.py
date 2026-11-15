@@ -1,11 +1,12 @@
-from engine.date import date, DateTime, TimeDelta, UTC
+from engine.date import date, Date, DateTime, Span, TimeDelta, UTC
 from engine.error import Fault
 from hypothesis import HealthCheck, given, settings, strategies as st
 from contextlib import suppress
+from itertools import pairwise
 from zoneinfo import ZoneInfo
 import calendar
 
-EXAMPLES = 1500
+EXAMPLES = 2000
 WORDS    = (
     "in", "ago", "next", "last", "after", "before", "from", "now", "today", "tomorrow", "at", "pm", "am", "a", "an",
     "day", "days", "week", "month", "years", "hour", "mins", "s", "0", "1", "7", "12", "99", "10:30", "25:61", "¹", "٣",
@@ -185,4 +186,174 @@ spans_agree()
 business_days_match_a_walk()
 units_follow_the_wall_clock()
 
-print(f"fuzz date  examples={EXAMPLES * 6 + EXAMPLES // 3}  ok")
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(MOMENTS, st.integers(-400, 400), st.sets(st.integers(0, 6), max_size=6), st.lists(st.integers(-20, 20), max_size=4))
+def business_day_addition_matches_daily_walk ( start: DateTime, count: int, weekend: set[int], off: list[int] ) -> None:
+
+    holidays = {(start + TimeDelta(days=day)).date() for day in off}
+    expected = start
+    remaining = abs(count)
+    step = TimeDelta(days=1 if count >= 0 else -1)
+
+    while remaining:
+
+        expected += step
+
+        if expected.weekday() not in weekend and expected.date() not in holidays: remaining -= 1
+
+    assert date.add_business_days(start, count, tuple(weekend), holidays) == expected
+
+business_day_addition_matches_daily_walk()
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(MOMENTS, st.integers(0, 365), st.integers(0, 23), st.booleans())
+def compound_phrases_preserve_amounts ( moment: DateTime, days: int, hours: int, past: bool ) -> None:
+
+    clock = Date()
+    clock.freeze(moment)
+    delta = TimeDelta(days=days, hours=hours)
+    suffix = " ago" if past else ""
+
+    assert clock.parse(f"{days}d{hours}h{suffix}") == moment + (-delta if past else delta)
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(MOMENTS, MOMENTS)
+def calendar_differences_preserve_direction ( left: DateTime, right: DateTime ) -> None:
+
+    for unit in ("months", "years"):
+
+        assert date.diff(left, right, unit) == -date.diff(right, left, unit)
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(MOMENTS, MOMENTS, MOMENTS, MOMENTS)
+def spans_match_interval_sets ( a: DateTime, b: DateTime, c: DateTime, d: DateTime ) -> None:
+
+    first, last = Span(*sorted((a, b))), Span(*sorted((c, d)))
+    overlap = max(first.start, last.start) < min(first.end, last.end)
+
+    assert first.overlaps(last) == last.overlaps(first) == overlap
+    assert (first.intersect(last) is not None) == overlap
+    assert not first.overlaps(Span(first.start, first.start))
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(MOMENTS, st.integers(-800, 800))
+def custom_offset_formats_preserve_instants ( moment: DateTime, minutes: int ) -> None:
+
+    offset = f"{'+' if minutes >= 0 else '-'}{abs(minutes) // 60:02}{abs(minutes) % 60:02}"
+    wall = moment + TimeDelta(minutes=minutes)
+    text = f"{wall:%d/%m/%Y %H:%M:%S} {offset}"
+
+    assert date.parse(text, ("%d/%m/%Y %H:%M:%S %z",)) == moment.replace(microsecond=0)
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(MOMENTS, MOMENTS, st.sampled_from(SHIFTY))
+def zoned_spans_measure_elapsed_time ( a: DateTime, b: DateTime, name: str ) -> None:
+
+    first, last = sorted((a, b))
+    zone = ZoneInfo(name)
+    span = Span(first.astimezone(zone), last.astimezone(zone))
+
+    assert span.seconds() == (last - first).total_seconds()
+    assert span.start == first and span.end == last
+    assert span.contains(first) == (first < last)
+    assert not span.contains(last)
+
+compound_phrases_preserve_amounts()
+calendar_differences_preserve_direction()
+spans_match_interval_sets()
+custom_offset_formats_preserve_instants()
+
+zoned_spans_measure_elapsed_time()
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.datetimes(DateTime(1900, 1, 1), DateTime(2200, 1, 1), timezones=st.just(UTC)), st.integers(1, 259200000000))
+def flooring_matches_integer_microseconds ( moment: DateTime, micros: int ) -> None:
+
+    epoch = DateTime(1970, 1, 1, tzinfo=UTC)
+    elapsed = moment - epoch
+    total = (elapsed.days * 86400 + elapsed.seconds) * 1000000 + elapsed.microseconds
+    expected = epoch + TimeDelta(microseconds=total - total % micros)
+
+    assert date.floor(moment, micros / 1000000) == expected
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(MOMENTS, st.integers(0, 100), st.integers(1, 1000000), st.integers(0, 1000000))
+def split_spans_partition_without_gaps ( start: DateTime, count: int, micros: int, tail: int ) -> None:
+
+    step = TimeDelta(microseconds=micros)
+    span = Span(start, start + step * count + TimeDelta(microseconds=tail % micros))
+    parts = list(span.split(step))
+
+    assert len(parts) <= count + 1
+    assert sum((part.end - part.start for part in parts), TimeDelta(0)) == span.end - span.start
+    assert all(TimeDelta(0) < part.end - part.start <= step for part in parts)
+    assert all(left.end == right.start for left, right in pairwise(parts))
+
+    if parts: assert parts[0].start == span.start and parts[-1].end == span.end
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.datetimes(timezones=st.just(UTC)))
+def compact_formats_preserve_fields ( moment: DateTime ) -> None:
+
+    day = f"{moment.year:04}{moment.month:02}{moment.day:02}"
+    clock = f"{moment.hour:02}{moment.minute:02}{moment.second:02}"
+
+    assert date.parse(day) == moment.replace(hour=0, minute=0, second=0, microsecond=0)
+    assert date.parse(day + clock) == moment.replace(microsecond=0)
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.sampled_from(SHIFTS), st.timedeltas(TimeDelta(hours=-50), TimeDelta(hours=2)), st.sampled_from(["minute", "hour", "day", "month"]))
+def periods_cover_the_full_wall_label ( shift: tuple[str, DateTime], drift: TimeDelta, unit: str ) -> None:
+
+    zone, moment = shift[0], shift[1] + drift
+    span = date.period(unit, moment, zone)
+    named = label(moment, zone, unit)
+
+    assert span.contains(moment)
+    assert label(span.start, zone, unit) == label(span.end - TICK, zone, unit) == named
+    assert label(span.start - TICK, zone, unit) != named
+    assert label(span.end, zone, unit) != named
+
+flooring_matches_integer_microseconds()
+split_spans_partition_without_gaps()
+compact_formats_preserve_fields()
+periods_cover_the_full_wall_label()
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.datetimes(DateTime(1900, 1, 1), DateTime(2200, 1, 1), timezones=st.just(UTC)),
+       st.sampled_from(SHIFTY), st.integers(-2, 2))
+def scoped_calendars_are_isolated ( moment: DateTime, name: str, shift: int ) -> None:
+
+    root = Date()
+    root.freeze(moment)
+    clock = root.options(zone=name, pattern="%Y-%m-%d %H:%M")
+    local = moment.astimezone(ZoneInfo(name))
+    keyword = "today" if shift == 0 else "tomorrow" if shift > 0 else "yesterday"
+
+    assert clock.local(moment) == local
+    assert clock.format(moment) == local.strftime("%Y-%m-%d %H:%M")
+    assert clock.today() == local.date()
+    assert clock.parse("now") == moment
+    assert clock.parse(keyword) == date.start_of("day", date.add(local, days=(shift > 0) - (shift < 0)), name)
+    assert root.format(moment) == moment.strftime("%Y-%m-%d %H:%M")
+    assert clock.start_of("hour", moment) == date.start_of("hour", moment, name)
+    assert clock.iso(moment) == root.iso(moment)
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.sampled_from([DateTime.min.replace(tzinfo=UTC), DateTime.max.replace(tzinfo=UTC)]),
+       st.sampled_from(["today", "tomorrow", "yesterday", "بكرة", "أمس", "tomorrow at 12:30"]))
+def keyword_boundaries_return_a_value_or_fault ( moment: DateTime, text: str ) -> None:
+
+    clock = Date()
+    clock.freeze(moment)
+
+    with suppress(Fault): assert clock.parse(text).utcoffset() == ZERO
+
+    assert clock.now() == moment
+
+scoped_calendars_are_isolated()
+keyword_boundaries_return_a_value_or_fault()
+
+print(f"fuzz date  properties=19  max_examples={EXAMPLES} per full property  ok")

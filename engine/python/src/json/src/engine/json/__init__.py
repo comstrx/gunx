@@ -1,4 +1,4 @@
-from .arch import JsonValue
+lazy from .arch import JsonValue
 from .json import Json
 
 json = Json()

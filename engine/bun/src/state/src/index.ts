@@ -1,6 +1,7 @@
-export { type Action, type ActionOptions, type ActionState, action, type Status as ActionStatus } from "./action.ts";
-export { type Binding, bind } from "./bind.ts";
-export { type Actions, type Defined, type Definition, define, type Getter, type Guard, type Instance, keyOf, type Persist, type Setter, type State } from "./define.ts";
-export { type Combined, combine, derive, type Equal, type Readable, type Readables, readable, type Source, shallow, type Watched } from "./derive.ts";
-export { type Feed, type FeedOptions, type FeedState, type FeedStatus, feed, type Page } from "./feed.ts";
-export { type Handle as ResourceHandle, type Resource, type ResourceOptions, resource } from "./resource.ts";
+export { action } from "./action.ts";
+export type { Action, ActionOptions, ActionState, Actions, Binding, Combined, Defined, Definition, Equal, Feed, FeedOptions, FeedState, FeedStatus, Getter, Guard, Handle as ResourceHandle, Instance, Page, Persist, Readable, Readables, Renderer, Resource, ResourceOptions, Setter, Source, State, Status as ActionStatus, Watched } from "./arch.ts";
+export { bind } from "./bind.ts";
+export { define, inspect, keyOf } from "./define.ts";
+export { combine, derive, readable, shallow } from "./derive.ts";
+export { feed } from "./feed.ts";
+export { resource } from "./resource.ts";

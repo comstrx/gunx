@@ -2,54 +2,74 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-from .gate import Gate
+from .arch import DRAIN, bounds, seconds
+from .capacity import Capacity
 from .pool import Pool
-import asyncio, math, threading
+import asyncio, threading
 
 class Lane:
 
-    __slots__ = ("_gate", "_idle", "_lock", "_pools", "mode", "workers")
+    __slots__ = ("_capacity", "_idle", "_lock", "_pools", "mode", "workers")
 
     def __init__ ( self, mode: str, workers: int ) -> None:
+
+        bounds(mode, workers)
 
         self.mode    = mode
         self.workers = workers
         self._lock   = threading.Lock()
         self._pools: list[Pool] = []
         self._idle: deque[Pool] = deque()
-        self._gate: tuple[asyncio.AbstractEventLoop, Gate] | None = None
+        self._capacity = Capacity(workers)
 
     async def submit ( self, handler: Callable[..., Any], item: Any ) -> Any:
 
-        gate = self._gated_()
+        capacity = self._capacity
 
-        await gate.acquire(math.inf)
+        await capacity.acquire()
 
-        with self._lock: pool = self._picked_()
+        pool: Pool | None = None
 
-        try: return await pool.submit(handler, item)
+        try:
+
+            with self._lock: pool = self._picked_()
+
+            return await pool.submit(handler, item)
         except asyncio.CancelledError:
 
-            if self.mode == "process": pool.close(kill=True)
+            if self.mode == "process" and pool is not None: pool.close(kill=True)
 
             raise
 
         finally:
 
-            with self._lock:
+            if pool is not None:
 
-                if pool.busy(): self._idle.appendleft(pool)
-                else: self._idle.append(pool)
+                with self._lock:
 
-            gate.release()
+                    if pool.busy(): self._idle.appendleft(pool)
+                    else: self._idle.append(pool)
+
+            capacity.release()
 
     def live ( self ) -> bool:
 
         return any(pool.live() for pool in self._pools)
 
+    async def join ( self, grace: float = DRAIN ) -> None:
+
+        loop = asyncio.get_running_loop()
+        until = loop.time() + seconds(grace)
+
+        with self._lock: pools = tuple(self._pools)
+
+        for pool in pools: await pool.join(max(0.0, until - loop.time()))
+
     def close ( self, kill: bool = False ) -> None:
 
-        for pool in self._pools: pool.close(kill)
+        with self._lock: pools = tuple(self._pools)
+
+        for pool in pools: pool.close(kill)
 
     def describe ( self ) -> dict[str, Any]:
 
@@ -80,11 +100,3 @@ class Lane:
 
         return made
 
-    def _gated_ ( self ) -> Gate:
-
-        loop = asyncio.get_running_loop()
-        held = self._gate
-
-        if held is None or held[0] is not loop: held = self._gate = (loop, Gate(self.workers))
-
-        return held[1]

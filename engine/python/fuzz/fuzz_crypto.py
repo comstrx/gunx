@@ -1,4 +1,4 @@
-from engine.crypto import Crypto, Key, Password, Sealed
+from engine.crypto import Crypto, Key, Sealed
 from engine.error import Fault
 from hypothesis import HealthCheck, given, settings, strategies as st
 from collections.abc import Callable
@@ -32,7 +32,7 @@ COSTS    = st.one_of(st.integers(min_value=0, max_value=3), st.integers(min_valu
 SIZES    = st.one_of(st.integers(min_value=0, max_value=64), st.integers(min_value=(1 << 20) + 1, max_value=1 << 40))
 STORED   = st.one_of(WILD, st.builds("$argon2{}$v=19$m={},t={},p={}${}${}".format, st.sampled_from(("id", "i", "d", "x")), SIZES, COSTS, COSTS, LOOSE, LOOSE))
 VAULT    = Crypto()
-QUICK    = Password(1, 8, 1)
+QUICK    = Crypto().options(time_cost=1, memory_cost=8, parallelism=1)
 
 VAULT.setup([Key("k1", bytes(range(32)))])
 
@@ -139,7 +139,7 @@ def sealed_texts_decode_only_when_canonical ( head: str, name: str, body: str, w
 
         assert (found.key, found.nonce + found.body) == (name, plain)
         assert found.encode() == text
-        assert VAULT.stale(text) == (name != "k1")
+        assert VAULT.stale(text)
         assert reason(partial(VAULT.open, text, aad)) in ("crypto.unknown_key", "crypto.tampered")
 
     if not whole and "." not in body:
@@ -170,7 +170,7 @@ def frames_open_only_as_sealed ( name: str, secret: bytes, plain: bytes, aad: by
     bent  = frame[:index] + bytes([frame[index] ^ flip]) + frame[index + 1:]
 
     assert vault.open_bytes(frame, aad) == plain
-    assert len(frame) == 3 + len(name) + 12 + len(plain) + 16
+    assert len(frame) == 4 + len(name) + 12 + len(plain) + 16
     assert vault.seal_bytes(plain, aad) != frame
     assert reason(partial(vault.open_bytes, bent, aad)) in REFUSED
     assert reason(partial(vault.open_bytes, frame[:index], aad)) in REFUSED
@@ -342,29 +342,95 @@ def attestations_bind_the_data ( data: bytes | str, other: bytes, wild: str, dra
 
 @settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
 @given(WORDS, WORDS, STORED)
-def passwords_verify_only_their_own ( plain: str, other: str, stored: str ) -> None:
+def slow_hashes_verify_exact_data ( plain: str, other: str, stored: str ) -> None:
 
-    worded = unicodedata.normalize("NFKC", plain) if len(plain) <= MOST else plain
-    wrong  = "short" if len(worded) < LEAST else "long" if len(worded) > MOST else "encoding" if raw_of(worded) is None else None
+    if raw_of(plain) is None:
 
-    assert not QUICK.verify(stored, plain)
-    assert not QUICK.verify(stored, "correct horse battery")
-    assert QUICK.stale(stored)
-
-    if wrong is not None:
-
-        assert reason(partial(QUICK.hash, plain)) == f"password.{wrong}"
+        assert reason(partial(QUICK.hash, plain, "argon2id")) == "crypto.encoding"
 
         return
 
-    hashed = QUICK.hash(plain)
+    assert not QUICK.check(plain, stored, "argon2id")
+    assert QUICK.rehash(stored)
+
+    hashed = QUICK.hash(plain, "argon2id")
 
     assert hashed.startswith("$argon2id$v=19$m=8,t=1,p=1$")
-    assert QUICK.verify(hashed, plain)
-    assert QUICK.verify(hashed, worded)
-    assert not QUICK.stale(hashed)
-    assert QUICK.verify(hashed, other) == (0 < len(other) <= MOST and unicodedata.normalize("NFKC", other) == worded)
-    assert not QUICK.verify(hashed[:-1], plain)
+    assert QUICK.check(plain, hashed) and not QUICK.rehash(hashed)
+    assert not QUICK.check(plain, hashed[:-1])
+
+    if raw_of(other) is not None: assert QUICK.check(other, hashed) == (other == plain)
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@given(st.sampled_from(("aes-gcm", "chacha20-poly1305", "aes-gcm-siv")), SECRET, BLOB, BLOB, st.data())
+def ciphers_reject_altered_metadata ( algorithm: str, key: bytes, plain: bytes, aad: bytes, drawn: st.DataObject ) -> None:
+
+    vault = Crypto().options(cipher=algorithm)
+
+    vault.setup([Key("first", key), Key("other", key)])
+
+    text  = vault.seal(plain, aad)
+    frame = vault.seal_bytes(plain, aad)
+    index = drawn.draw(st.integers(min_value=0, max_value=len(frame) - 1))
+    flip  = drawn.draw(st.integers(min_value=1, max_value=255))
+    bent  = frame[:index] + bytes([frame[index] ^ flip]) + frame[index + 1:]
+
+    assert vault.open(text, aad) == plain and vault.open_bytes(frame, aad) == plain
+    assert reason(partial(vault.open, text.replace(".first.", ".other."), aad)) == "crypto.tampered"
+    assert reason(partial(vault.open_bytes, bent, aad)) in REFUSED
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@given(BLOB, st.integers(min_value=1, max_value=96))
+def limits_apply_to_each_operation ( plain: bytes, limit: int ) -> None:
+
+    vault = VAULT.options(limit=limit)
+
+    if len(plain) > limit:
+
+        assert reason(partial(vault.seal, plain)) == "crypto.size"
+        assert reason(partial(vault.hash, plain)) == "crypto.size"
+
+        return
+
+    assert vault.open(vault.seal(plain)) == plain
+    assert vault.open_bytes(vault.seal_bytes(plain)) == plain
+    assert vault.check(plain, vault.hash(plain))
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@given(st.lists(BLOB, max_size=20), st.sampled_from(("sha256", "sha512", "blake3")))
+def incremental_hashes_equal_whole_data ( chunks: list[bytes], algorithm: str ) -> None:
+
+    hashed = VAULT.hasher(algorithm)
+
+    for chunk in chunks: hashed.update(chunk)
+
+    assert hashed.hexdigest() == VAULT.hash(b"".join(chunks), algorithm)
+    assert hashed.copy().update(b"tail").hexdigest() == VAULT.hash(b"".join(chunks) + b"tail", algorithm)
+
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.binary(min_size=1, max_size=128), st.lists(BLOB, max_size=20), ALGOS, BLOB, WILD)
+def streaming_macs_bind_chunks_and_branch_without_sharing (
+    key: bytes, chunks: list[bytes], algorithm: str, tail: bytes, wild: str,
+) -> None:
+
+    stream = VAULT.signer(key, algorithm)
+    plain  = b"".join(chunks)
+    want   = hmac.digest(key, plain, algorithm)
+
+    for chunk in chunks: stream.update(chunk)
+
+    copied = stream.copy().update(tail)
+
+    assert stream.check(want) and stream.check(want.hex())
+    assert copied.check(hmac.digest(key, plain + tail, algorithm))
+    assert stream.check(want)
+    assert VAULT.verify(plain, want, key, algorithm)
+    assert stream.check(wild) == (wild == want.hex())
+    assert not stream.check(want + b"\x00")
+    assert not VAULT.verify(plain, bytes([want[0] ^ 1]) + want[1:], key, algorithm)
+
 
 seals_open_only_as_sealed()
 sealed_texts_decode_only_when_canonical()
@@ -377,6 +443,12 @@ totp_secrets_decode_or_are_refused()
 fingerprints_tell_parts_apart()
 keys_parse_or_are_refused()
 attestations_bind_the_data()
-passwords_verify_only_their_own()
+slow_hashes_verify_exact_data()
 
-print(f"fuzz crypto  examples={EXAMPLES * 12}  ok")
+ciphers_reject_altered_metadata()
+limits_apply_to_each_operation()
+incremental_hashes_equal_whole_data()
+
+streaming_macs_bind_chunks_and_branch_without_sharing()
+
+print(f"fuzz crypto  properties=16 max_examples={EXAMPLES * 16}  ok")

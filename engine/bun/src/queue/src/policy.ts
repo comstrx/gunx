@@ -1,14 +1,5 @@
 import * as rand from "engine-rand";
-import type { Outbox, Outcome } from "./outbox.ts";
-
-export type Backoff = { delay?: number | undefined; factor?: number | undefined; max?: number | undefined; jitter?: number | undefined };
-export type Schedule = {
-    every?: number | undefined;
-    immediate?: boolean | undefined;
-    when?: (() => boolean) | undefined;
-    onFlush?: (( result: Outcome ) => void) | undefined;
-    fail?: (( cause: unknown ) => void) | undefined;
-};
+import type { Backoff, Outbox, Schedule } from "./arch.ts";
 
 export const longest = 86_400_000;
 

@@ -1,7 +1,5 @@
+import type { FlagPlace } from "./arch.ts";
 import { rootOf, word } from "./lazy.ts";
-
-export type FlagFormat = "svg" | "webp";
-export type FlagPlace = { folder?: string | undefined; format?: FlagFormat | undefined };
 
 export const flagFolder = "/world/flag";
 

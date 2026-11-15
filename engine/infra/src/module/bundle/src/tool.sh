@@ -56,7 +56,7 @@ module:bundle:tool:unpack () {
         *)        core:error:fail "Unknown archive kind: ${url##*/}"; return ;;
     esac
 
-    core:fs:file:read "${staging}/${inner}" | core:fs:file:write "${target}" 755 || return
+    core:fs:file:write "${target}" 755 core:fs:file:read "${staging}/${inner}" || return
 
     rm -rf -- "${staging}"
 
@@ -88,9 +88,9 @@ module:bundle:tool:download () {
     digest="$(config:manifest:get "downloads.${name}_${kernel}_${arch}")" || return
     home="$(module:bundle:tool:home)" || return
 
-    url="${url//\{version\}/${version}}"
+    url="${url//\{version\}/"${version}"}"
     inner="$(config:tools:get "${name}" binary "${name}")"
-    inner="${inner//\{version\}/${version}}"
+    inner="${inner//\{version\}/"${version}"}"
 
     core:sys:need tar gzip || return
     core:fs:dir:new "${home}" 755 || return
@@ -112,9 +112,20 @@ module:bundle:tool:download () {
 }
 module:bundle:tool:run () {
 
-    local name="${1}" binary="" version=""
+    local name="${1}" binary="" version="" runner=""
 
     shift
+
+    runner="$(config:tools:get "${name}" runner)" || return
+
+    if [[ -n "${runner}" ]]; then
+
+        core:sys:need "${runner}" || return
+
+        core:process:timeout "${CONFIG[RUN_TIMEOUT]:-300}" "${runner}" "${name}@$(config:tools:version "${name}")" "$@"
+        return
+
+    fi
 
     binary="$(module:bundle:tool:binary "${name}")" || return
     version="$(module:bundle:tool:version "${binary}")" || return
@@ -123,5 +134,16 @@ module:bundle:tool:run () {
         || core:log:warn "${name} ${version} differs from the pinned $(config:tools:version "${name}"); run fetch"
 
     "${binary}" "$@"
+
+}
+module:bundle:tool:ready () {
+
+    local name="${1}" runner=""
+
+    runner="$(config:tools:get "${name}" runner 2>/dev/null)" || return 1
+
+    if [[ -n "${runner}" ]]; then core:sys:has "${runner}"
+    else module:bundle:tool:binary "${name}" >/dev/null 2>&1
+    fi
 
 }

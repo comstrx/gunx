@@ -1,24 +1,7 @@
 import * as auth from "engine-auth";
 import * as json from "engine-json";
 import * as string from "engine-string";
-import type { Reference, Scalar, Test, Value, When } from "./shapes.ts";
-
-export type Context = {
-    params: Record<string, string>;
-    query: Record<string, string | string[]>;
-    signals: json.Dictionary;
-    form: json.Dictionary;
-    user: json.Dictionary | null;
-    device: json.Dictionary;
-    settings: json.Dictionary;
-    locale: string;
-    event: json.Dictionary;
-    flow: Flow;
-};
-export type Flow = { step: string; index: number; first: boolean; last: boolean; done: boolean };
-export type Translate = ( key: string ) => string;
-
-type Cut = { at: number; mark: string };
+import type { Context, Cut, Reference, Scalar, Test, Translate, Value, When } from "./arch.ts";
 
 const words: readonly string[] = [" in ", " has ", " like "];
 const kinds: ReadonlySet<string> = new Set(["param", "query", "signal", "form", "user", "setting", "path", "text"]);

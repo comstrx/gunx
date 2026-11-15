@@ -4,12 +4,14 @@ from typing import Any, TYPE_CHECKING, override
 from engine.error import Code, Fault
 from engine.json import json
 from engine.log import log
-from .arch import Message, RESERVED, WILD
+from engine.thread import Gate
+from .arch import KAFKA_INFLIGHT, Message, RESERVED, WILD
 from .driver import Driver
-import asyncio, re
+import asyncio, dataclasses, re
 
 if TYPE_CHECKING:
 
+    from .cursor import Cursor
     from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
     from aiokafka.admin import AIOKafkaAdminClient
 
@@ -39,6 +41,11 @@ class Kafka(Driver):
         self._topics: dict[str, list[str]] = {}
         self._failures: tuple[type[BaseException], ...] = (OSError, TimeoutError)
         self._lock = asyncio.Lock()
+        self._reading = asyncio.Lock()
+        self._ordering = asyncio.Lock()
+        self._creating = asyncio.Lock()
+        self._cursors: dict[str, Cursor] = {}
+        self._publishing = Gate(KAFKA_INFLIGHT)
 
     async def producer ( self ) -> AIOKafkaProducer:
 
@@ -62,6 +69,12 @@ class Kafka(Driver):
                 await made.stop()
 
                 raise Fault(Code.UNAVAILABLE, reason="broker.connect", unknown=True) from error
+
+            except BaseException:
+
+                await made.stop()
+
+                raise
 
             self._producer = made
 
@@ -97,20 +110,68 @@ class Kafka(Driver):
     @override
     async def publish ( self, message: Message ) -> None:
 
-        producer = await self.producer()
-        headers  = [(key, str(value).encode()) for key, value in message.headers.items() if key not in RESERVED]
+        try: await self._publishing.acquire(self._wait)
+        except TimeoutError as error: raise self._down_("broker.busy") from error
 
-        headers += [("id", message.id.encode()), ("attempts", str(message.attempts).encode())]
+        delivery: asyncio.Future[Any] | None = None
 
-        try: await producer.send_and_wait(message.topic, value=json.encode(message.payload), headers=headers)
+        try:
+
+            async with asyncio.timeout(self._wait):
+
+                producer = await self.producer()
+                headers = [(key, str(value).encode()) for key, value in message.headers.items() if key not in RESERVED]
+                headers += [("id", message.id.encode()), ("attempts", str(message.attempts).encode())]
+                delivery = await producer.send(message.topic, value=json.encode(message.payload), headers=headers)
+
+                await asyncio.shield(delivery)
+
         except self._failures as error: raise self._down_("broker.publish") from error
+        finally:
+
+            if delivery is None: self._publishing.release()
+            elif delivery.done(): self._published_(delivery)
+            else: delivery.add_done_callback(self._published_)
+
+    def _published_ ( self, delivery: asyncio.Future[Any] ) -> None:
+
+        if not delivery.cancelled(): delivery.exception()
+
+        self._publishing.release()
 
     @override
     async def pull ( self, queue: str, limit: int, wait: float ) -> list[Message]:
 
-        consumer = await self._consumer_(queue)
+        async with self._reading:
 
-        try: batches = await consumer.getmany(timeout_ms=int(wait * 1000), max_records=limit)
+            try: return await self._pull_(queue, limit, wait)
+            except BaseException:
+
+                async with self._creating:
+
+                    consumer = self._consumers.pop(queue, None)
+
+                    self._cursors.pop(queue, None)
+
+                    if consumer is not None: await consumer.stop()
+
+                raise
+
+    async def _pull_ ( self, queue: str, limit: int, wait: float ) -> list[Message]:
+
+        from aiokafka import TopicPartition
+
+        consumer = await self._consumer_(queue)
+        cursor = self._cursors[queue]
+        room = KAFKA_INFLIGHT - cursor.count()
+
+        if room <= 0:
+
+            await asyncio.sleep(min(wait, self._wait))
+
+            return []
+
+        try: batches = await consumer.getmany(timeout_ms=int(wait * 1000), max_records=min(limit, room))
         except self._failures as error: raise self._down_("broker.consume") from error
 
         taken: list[Message] = []
@@ -119,21 +180,42 @@ class Kafka(Driver):
 
             for record in records:
 
-                try: taken.append(self.message(record, queue))
-                except Fault: log.warning("broker.malformed", queue=queue, topic=record.topic, offset=record.offset)
+                tag = cursor.seen(TopicPartition(record.topic, record.partition), int(record.offset))
+
+                try: message = self.message(record, queue)
+                except Fault:
+
+                    log.warning("broker.malformed", queue=queue, topic=record.topic, offset=record.offset)
+
+                    await self.ack(Message("", record.topic, {}, {}, 1, tag, queue))
+
+                    continue
+
+                taken.append(dataclasses.replace(message, tag=tag))
 
         return taken
 
     @override
     async def ack ( self, *messages: Message ) -> None:
 
-        try:
+        async with self._ordering:
 
-            for queue, offsets in self.marks(messages).items():
+            try:
 
-                if queue in self._consumers: await self._consumers[queue].commit(offsets)
+                for queue in dict.fromkeys(message.queue for message in messages):
 
-        except self._failures as error: raise self._down_("broker.ack") from error
+                    cursor = self._cursors.get(queue)
+
+                    if cursor is None: raise Fault(Code.CONFLICT, reason="broker.stale")
+
+                    marks = cursor.mark([message for message in messages if message.queue == queue])
+
+                    if marks:
+
+                        await self._consumers[queue].commit(marks)
+                        cursor.committed(marks)
+
+            except self._failures as error: raise self._down_("broker.ack") from error
 
     @override
     async def nack ( self, message: Message, requeue: bool = True ) -> None:
@@ -163,6 +245,7 @@ class Kafka(Driver):
         consumer = self._consumers.pop(queue, None)
 
         self._topics.pop(queue, None)
+        self._cursors.pop(queue, None)
 
         if consumer is not None: await consumer.stop()
 
@@ -191,7 +274,12 @@ class Kafka(Driver):
     @override
     async def close ( self ) -> None:
 
+        async with self._lock, self._creating: await self._close_()
+
+    async def _close_ ( self ) -> None:
+
         consumers, self._consumers = list(self._consumers.values()), {}
+        self._cursors = {}
 
         for consumer in consumers: await consumer.stop()
 
@@ -204,7 +292,9 @@ class Kafka(Driver):
     def message ( self, record: Any, queue: str ) -> Message:
 
         pairs = record.headers or ()
-        raw: dict[str, str] = { str(key): bytes(value).decode("utf-8", "replace") for key, value in pairs }
+        raw: dict[str, str] = {
+            str(key): bytes(value).decode("utf-8", "replace") for key, value in pairs if value is not None
+        }
         headers  = { key: value for key, value in raw.items() if key not in RESERVED }
         counted  = raw.get("attempts", "")
         attempts = int(counted) if counted.isdecimal() else 1
@@ -241,13 +331,17 @@ class Kafka(Driver):
 
             if message.tag is None: continue
 
-            partition, offset = message.tag
+            partition, offset = message.tag[:2]
             held              = found.setdefault(message.queue, {})
             held[partition]   = max(held.get(partition, 0), offset + 1)
 
         return found
 
     async def _consumer_ ( self, queue: str ) -> AIOKafkaConsumer:
+
+        async with self._creating: return await self._created_(queue)
+
+    async def _created_ ( self, queue: str ) -> AIOKafkaConsumer:
 
         found = self._consumers.get(queue)
 
@@ -268,8 +362,14 @@ class Kafka(Driver):
             request_timeout_ms=int(self._wait * 1000), **self._security,
         )
 
-        if any(WILD & set(topic) for topic in topics): made.subscribe(pattern=self.pattern(topics))
-        else: made.subscribe(topics=list(topics))
+        from .cursor import Cursor
+
+        cursor = Cursor()
+
+        if any(WILD & set(topic) for topic in topics):
+
+            made.subscribe(pattern=self.pattern(topics), listener=cursor)
+        else: made.subscribe(topics=list(topics), listener=cursor)
 
         try: await asyncio.wait_for(made.start(), self._wait)
         except self._failures as error:
@@ -278,13 +378,24 @@ class Kafka(Driver):
 
             raise Fault(Code.UNAVAILABLE, reason="broker.connect", unknown=True) from error
 
+        except BaseException:
+
+            await made.stop()
+
+            raise
+
         self._consumers[queue] = made
+        self._cursors[queue] = cursor
 
         log.debug("broker.consuming", queue=queue, driver=self.name)
 
         return made
 
     async def _admin_ ( self ) -> AIOKafkaAdminClient:
+
+        async with self._lock: return await self._administrator_()
+
+    async def _administrator_ ( self ) -> AIOKafkaAdminClient:
 
         if self._admin is not None: return self._admin
 
@@ -304,6 +415,12 @@ class Kafka(Driver):
             await made.close()
 
             raise Fault(Code.UNAVAILABLE, reason="broker.connect", unknown=True) from error
+
+        except BaseException:
+
+            await made.close()
+
+            raise
 
         self._admin = made
 

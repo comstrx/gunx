@@ -14,7 +14,7 @@ local = Cache(Memory())
 store = Memory()
 wide  = { f"k{at}": { "n": at } for at in range(32) }
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 
 def run ( work: Any ) -> Any:
 
@@ -44,6 +44,11 @@ async def many ( cache: Cache ) -> None: await cache.many(list(wide))
 
 async def put_many ( cache: Cache ) -> None: await cache.set_many(wide, 60)
 
+async def forget ( cache: Cache ) -> None:
+
+    await cache.forget(*wide)
+    await cache.set_many(wide, 60)
+
 async def count ( cache: Cache ) -> None: await cache.increment("count", 1, 60)
 
 async def gate ( cache: Cache ) -> None: await cache.add("k", 1, 60)
@@ -67,7 +72,7 @@ async def lock ( cache: Cache ) -> None:
 async def tagged ( cache: Cache ) -> None: await cache.tags("users").get("u1")
 
 LINES: tuple[tuple[str, Any, int], ...] = (
-    ("get", get, 1), ("get.miss", miss, 1), ("set", put, 1), ("many32", many, 4), ("set_many32", put_many, 4),
+    ("forget_set32", forget, 4), ("get", get, 1), ("get.miss", miss, 1), ("set", put, 1), ("many32", many, 4), ("set_many32", put_many, 4),
     ("increment", count, 1), ("add.taken", gate, 1), ("swap", swap, 1), ("remember.hit", remember, 1),
     ("remember_many32.hit", remember_many, 4), ("hit", hit, 1), ("bucket", bucket, 1), ("lock.unlock", lock, 2),
     ("tags.get", tagged, 2),
@@ -83,6 +88,7 @@ def lines ( cache: Cache, tag: str, rounds: int ) -> None:
 
 run(warm(local))
 lines(local, "memory", 5000)
+run(bench.measure_async("cache.memory.keys.small", lambda: local.keys("", 3), rounds=1000))
 run(local.close())
 
 redis = Redis(REDIS, prefix="engine-bench:")

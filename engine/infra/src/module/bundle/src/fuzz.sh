@@ -1,6 +1,6 @@
 module:bundle:fuzz:run () {
 
-    local seconds="${1:-10}" file="" name="" input="" status=0 runs=0 started=0 failed=0
+    local seconds="${1:-10}" file="" name="" input="" result="" runs="" code="" status=0 verdict="" saved="" crashes="" failed=0
     local -a names=()
 
     seconds="$(core:process:seconds "${seconds}" Seconds)" || return
@@ -13,38 +13,61 @@ module:bundle:fuzz:run () {
     mapfile -t names < <({ module:bundle:expect:discover fuzz:; module:bundle:cfg:sources fuzz; } | sort -u)
 
     (( ${#names[@]} > 0 )) || { core:error:fail "No fuzz targets"; return; }
+
     input="$(core:fs:temp:file)" || return
+    crashes="${TOOL_ROOT}/${MANIFEST[paths.build]}/fuzz"
 
     for name in "${names[@]}"; do
 
-        runs=0
-        started="${EPOCHSECONDS}"
+        status=0
+        result="$(core:process:timeout "$(( seconds + 5 ))" module:bundle:fuzz:loop "${name}" "${input}" "${seconds}")" || status=$?
 
-        while (( EPOCHSECONDS - started < seconds )); do
+        read -r runs code <<< "${result:-? 124}"
 
-            head -c "$(( RANDOM % 513 ))" /dev/urandom > "${input}"
-            status=0
+        case "${status}" in
+            0)   verdict=ok ;;
+            124) verdict=HANG ;;
+            *)   verdict="CRASH exit ${code}" ;;
+        esac
 
-            ( "${name}" "${input}" ) >/dev/null 2>&1 || status=$?
+        if [[ "${verdict}" != ok ]]; then
 
-            (( status <= 1 )) || {
+            saved="${crashes}/${name//:/-}-$(core:fs:file:hash "${input}")"
 
-                core:error:fail "${name}: exit ${status} on $(core:fs:file:hash "${input}")"
-                cp -- "${input}" "${TOOL_ROOT}/${MANIFEST[paths.build]}/fuzz-${name//:/-}-crash" 2>/dev/null
+            if ! core:fs:dir:new "${crashes}" 755 || ! cp -- "${input}" "${saved}"; then
+                core:error:fail "${name}: cannot keep the input that broke it under ${crashes}"
+                return
+            fi
 
-                failed=1
-                break
+            verdict+=" ${saved#"${TOOL_ROOT}/"}"
+            failed=1
 
-            }
+        fi
 
-            runs=$(( runs + 1 ))
-
-        done
-
-        core:log:print "${name}  runs=${runs}  seconds=${seconds}  $( (( failed == 0 )) && printf ok || printf CRASH )"
+        core:log:print "${name}  runs=${runs}  seconds=${seconds}  ${verdict}"
 
     done
 
-    (( failed == 0 )) || { core:error:fail "Fuzz found a crash; inputs saved under ${MANIFEST[paths.build]}"; return; }
+    (( failed == 0 )) || { core:error:fail "Fuzz broke a target; the inputs are under ${crashes#"${TOOL_ROOT}/"}"; return; }
+
+}
+module:bundle:fuzz:loop () {
+
+    local name="${1}" input="${2}" seconds="${3}" runs=0 started="${EPOCHSECONDS}" status=0
+
+    while (( EPOCHSECONDS - started < seconds )); do
+
+        head -c "$(( RANDOM % 513 ))" /dev/urandom > "${input}"
+        status=0
+
+        ( "${name}" "${input}" ) >/dev/null 2>&1 || status=$?
+
+        (( status <= 1 )) || { core:log:print "${runs} ${status}"; return 2; }
+
+        runs=$(( runs + 1 ))
+
+    done
+
+    core:log:print "${runs} 0"
 
 }

@@ -1,9 +1,6 @@
+import type { Held, Names, Width } from "./arch.ts";
 import { mod, utc } from "./calendar.ts";
-import { type Held, held, tongue } from "./intl.ts";
-
-export type Names = { months: readonly string[]; monthsShort: readonly string[]; days: readonly string[]; daysShort: readonly string[]; meridiem: readonly [string, string] };
-
-type Width = "long" | "short";
+import { held, tongue } from "./intl.ts";
 
 const english: Names = {
     months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],

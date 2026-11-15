@@ -1,29 +1,11 @@
 import * as error from "engine-error";
 import * as json from "engine-json";
-import * as socket from "engine-socket";
-
-export type Caller = { id: string; token: string | undefined };
-export type LiveOptions = {
-    auth?: (( token: string | undefined ) => boolean) | undefined;
-    gate?: (( channel: string, from: Caller ) => boolean) | undefined;
-    onFrame?: (( frame: socket.Frame, reply: ( frame: socket.Frame ) => void, from: Caller ) => boolean | undefined | Promise<boolean | undefined>) | undefined;
-};
-export type Live = {
-    url: string;
-    port: number;
-    clients: () => number;
-    broadcast: ( frame: socket.Frame ) => void;
-    received: () => socket.Frame[];
-    drop: ( code?: number, reason?: string ) => void;
-    stop: () => void;
-};
-
-type Data = { id: string; token: string | undefined; passed: boolean; channels: Set<string> };
-type Client = { send: ( text: string ) => unknown; close: ( code?: number, reason?: string ) => void; data: Data };
+import type * as socket from "engine-socket";
+import type { Caller, Client, Data, Live, LiveOptions } from "./arch.ts";
 
 const kept = 10_000;
 
-export function live ( options: LiveOptions = {} ): Live {
+export function live ( options: LiveOptions ): Live {
 
     const received: socket.Frame[] = [];
     const sockets = new Set<Client>();
@@ -49,7 +31,7 @@ export function live ( options: LiveOptions = {} ): Live {
         const held = client.data;
         const reply = ( out: socket.Frame ): void => {
 
-            if ( sockets.has(client) ) client.send(socket.encode(out));
+            if ( sockets.has(client) ) client.send(options.codec.encode(out));
 
         };
         const refuse = ( code: string, reason: string ): void => reply({ event: "error", data: { code, reason }, channel: frame.channel, id: frame.id });
@@ -148,7 +130,7 @@ export function live ( options: LiveOptions = {} ): Live {
             open ( client ) {
 
                 sockets.add(client);
-                client.send(socket.encode({ event: "connected", data: { id: client.data.id } }));
+                client.send(options.codec.encode({ event: "connected", data: { id: client.data.id } }));
 
             },
             close ( client ) {
@@ -158,7 +140,7 @@ export function live ( options: LiveOptions = {} ): Live {
             },
             message ( client, raw ) {
 
-                const frame = socket.decode(raw);
+                const frame = options.codec.decode(raw);
 
                 if ( frame ) heard(client, frame);
 
@@ -173,7 +155,7 @@ export function live ( options: LiveOptions = {} ): Live {
         received: () => [...received],
         broadcast: ( frame ) => {
 
-            const text = socket.encode(frame);
+            const text = options.codec.encode(frame);
 
             for ( const client of sockets ) {
 

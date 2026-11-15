@@ -1,11 +1,11 @@
-from .arch import Representation, Segment, Served, Upload, Variant
-from .dash import Dash
-from .hls import Hls
-from .pipe import Pipe
-from .range import Range
+lazy from .arch import Representation, Segment, Served, Upload, Variant
+lazy from .dash import Dash
+lazy from .hls import Hls
+lazy from .pipe import Pipe
+lazy from .range import Range
 from .stream import Stream
-from .tee import Tee
-from .uploads import Uploads
+lazy from .tee import Tee
+lazy from .uploads import Uploads
 
 stream = Stream()
 

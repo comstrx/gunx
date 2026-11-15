@@ -575,7 +575,13 @@ def retried ( script: list[Step], tries: int, backoff: float, ceiling: float, ji
 
     for count, (kind, unknown, asked) in enumerate([*script, ("ok", False, None)], 1):
 
-        floor = asked if asked is not None and asked > 0 else 0.0
+        if kind not in ("ok", "raw") and asked is not None and (not math.isfinite(asked) or asked < 0):
+
+            want = "error.payload"
+
+            break
+
+        floor = asked if asked is not None else 0.0
         again = kind == "busy" and (idempotent or not unknown) and count < tries and floor <= ceiling
         want  = count if kind == "ok" else ValueError if kind == "raw" else f"step{count}"
 
@@ -690,7 +696,7 @@ def flowed ( script: list[int | None], seed: int, pairs: list[tuple[int, int]], 
 
     timed = settle(tool.timeout(span, seven))
 
-    assert timed == 7 if span < math.inf else refused(timed, "func.timeout")
+    assert timed == 7 if math.isfinite(span) else refused(timed, "func.timeout")
 
 @settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
 @given(st.one_of(st.none(), st.integers(0, 12)), st.sampled_from([0.25, 0.5, 1.0, math.nan, -1.0]), st.sampled_from([0.0, 0.25, 1.0, 2.5, 8.0, math.nan, math.inf]), st.booleans())
@@ -727,7 +733,7 @@ def polled ( ready: int | None, every: float, timeout: float, plain: bool ) -> N
         if ready is not None and count > ready: landed = True
         if landed or spent >= timeout: break
 
-        spent += every
+        spent = min(spent + every, timeout)
 
     assert checks[0] == count
     assert clock.now - started == spent
@@ -759,6 +765,40 @@ def held ( script: list[int | None], span: float ) -> None:
 
     assert took == (None, round(span * 1000, 3))
 
+
+@settings(max_examples=150, deadline=None, database=None)
+@given(st.sampled_from(["forget", "clear", "set"]), st.integers(), st.integers())
+def invalidated ( verb: str, previous: int, replacement: int ) -> None:
+
+    async def scenario () -> None:
+
+        memo = tool.memo()
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def old () -> int:
+
+            entered.set()
+
+            await release.wait()
+
+            return previous
+
+        flight = asyncio.create_task(memo.remember("key", old))
+
+        await entered.wait()
+
+        if verb == "forget": memo.forget("key")
+        elif verb == "clear": memo.clear()
+        else: memo.set("key", replacement)
+
+        release.set()
+
+        assert await flight == previous
+        assert memo.get("key", MARK) == (replacement if verb == "set" else MARK)
+
+    run(scenario())
+
 for part in ("func", "memo", "limiter", "breaker"): vars(sys.modules[f"engine.func.{part}"])["time"] = clock
 
 vars(asyncio)["sleep"] = nap
@@ -782,5 +822,6 @@ unwrapped()
 flowed()
 polled()
 held()
+invalidated()
 loop.close()
-print(f"fuzz func  examples={EXAMPLES * 14 + len(WILDS) * len(COUNTS) * 6}  ok")
+print("fuzz func  properties=15  max_examples=per-property settings  ok")

@@ -6,13 +6,13 @@ from engine.socket import Frame, Hub, Socket, Sockets
 from engine.test import Bench
 from pathlib import Path
 from typing import Any
-import aiohttp, asyncio
+import aiohttp, asyncio, os
 
 bench = Bench()
 loop  = asyncio.new_event_loop()
 raw   = json.encode({ "event": "echo", "channel": "room", "data": { "n": 1, "text": "hello" }, "id": "m1" })
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 cache.use(Memory())
 
 class Quiet:
@@ -97,6 +97,13 @@ bench.measure("socket.frame.encode", encoding)
 run(bench.measure_async("socket.send.quiet", sending))
 run(bench.measure_async("socket.dispatch.echo", dispatching))
 run(bench.measure_async("socket.hub.100.emit+broadcast", hubbing, rounds=300))
+history = Hub(history=8)
+
+async def recording () -> None: await history.emit("room", "tick", { "n": 1 })
+
+run(bench.measure_async("socket.history.no_recipients", recording))
+bench.measure("socket.route.custom", lambda: SOCKETS._builtin_(FRAME))
+bench.measure("socket.route.ping", lambda: SOCKETS._builtin_(Frame(event="ping")))
 run(live())
 loop.close()
 log.close()

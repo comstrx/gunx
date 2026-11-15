@@ -1,34 +1,7 @@
 import * as date from "engine-date";
 import * as error from "engine-error";
 import * as json from "engine-json";
-
-type Scope = { masking: boolean; extra: ReadonlySet<string> };
-type Verdict = { flat: string; secret: boolean };
-
-export type Level = "debug" | "info" | "warn" | "error" | "silent";
-export type Facts = Record<string, unknown>;
-export type Entry = { at: number; level: Exclude<Level, "silent">; name: string; message: string; facts: Facts };
-export type Sink = ( entry: Entry ) => void;
-export type Options = {
-    name?: string | undefined;
-    level?: Level | (() => Level) | undefined;
-    sinks?: readonly Sink[] | undefined;
-    facts?: Facts | undefined;
-    redact?: boolean | readonly string[] | undefined;
-    onFail?: (( failure: unknown, entry: Entry ) => void) | undefined;
-};
-export type Logger = {
-    readonly name: string;
-    readonly level: Level;
-    debug: ( message: string, facts?: Facts ) => void;
-    info: ( message: string, facts?: Facts ) => void;
-    warn: ( message: string, facts?: Facts ) => void;
-    error: ( message: string, failure?: unknown, facts?: Facts ) => void;
-    child: ( name: string, facts?: Facts ) => Logger;
-    time: ( label: string ) => () => number;
-    measure: <T>( label: string, work: () => Promise<T> | T, facts?: Facts ) => Promise<T>;
-    enabled: ( level: Level ) => boolean;
-};
+import type { Entry, Facts, Level, Logger, Options, Scope, Verdict } from "./arch.ts";
 
 export const levels: Record<Level, number> = { debug: 10, info: 20, warn: 30, error: 40, silent: 100 };
 

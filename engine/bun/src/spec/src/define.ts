@@ -1,38 +1,5 @@
-import type * as world from "engine-world";
-import type { Binding, Block, Effect, Feature, Hooks, Listing, Platform, Reference, Screen, Surface, Trigger, Value, When } from "./shapes.ts";
-import { type Flow, when as parseWhen } from "./when.ts";
-
-export type FeatureOptions = {
-    id?: string | undefined;
-    ports?: Record<string, Binding> | undefined;
-    when?: When | string | undefined;
-    watch?: Record<string, Effect[]> | undefined;
-    on?: Hooks | undefined;
-    triggers?: Trigger[] | undefined;
-    access?: string[] | undefined;
-    form?: Record<string, string> | undefined;
-};
-export type BlockOptions = { id?: string | undefined; when?: When | string | undefined };
-export type ScreenOptions = {
-    name: string;
-    path: string;
-    title: Record<string, string> | string;
-    role?: string | undefined;
-    menu?: boolean | undefined;
-    icon?: string | undefined;
-    auth?: boolean | undefined;
-    access?: string[] | undefined;
-    query?: string[] | undefined;
-    signals?: string[] | undefined;
-    features?: Feature[] | undefined;
-    blocks?: Block[] | undefined;
-    on?: Hooks | undefined;
-    triggers?: Trigger[] | undefined;
-    flow?: string[] | undefined;
-};
-export type SurfaceOptions = { name: string; role: string; platform?: Platform | undefined; world?: world.Catalog[] | undefined; locales?: string[] | undefined; locale?: string | undefined; screens: Screen[]; signals?: string[] | undefined };
-
-type Input = Record<string, Value>;
+import type { Binding, Block, BlockOptions, Effect, Feature, FeatureOptions, Flow, Input, Listing, Reference, Screen, ScreenOptions, Surface, SurfaceOptions, Trigger, Value, When } from "./arch.ts";
+import { when as parseWhen } from "./when.ts";
 
 export const built: unique symbol = Symbol.for("engine.spec.built");
 

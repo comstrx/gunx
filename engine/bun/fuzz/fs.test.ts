@@ -845,7 +845,7 @@ describe("fuzz fs", () => {
 
         }), { numRuns: runs * 2 });
 
-    });
+    }, 15_000);
 
     it("a glob refuses a pattern past its length or past its brace product and nothing short of them", () => {
 

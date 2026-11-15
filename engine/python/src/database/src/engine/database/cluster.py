@@ -2,7 +2,7 @@ from typing import Any
 
 from engine.error import Code, Fault
 from engine.log import log
-from .arch import POSTGRES_FAILURES, Provision
+from .arch import POSTGRES_FAILURES, PROVISION_ROLE, Provision
 from .postgres import POSTGRES
 from .postgresdriver import PostgresDriver
 import asyncpg
@@ -28,13 +28,11 @@ class Cluster:
 
             if not await admin.fetchval("SELECT 1 FROM pg_roles WHERE rolname = $1", plan.role):
 
-                flags = "LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE"
-
-                await admin.execute(f"CREATE ROLE {role} {flags} PASSWORD {secret}")
+                await admin.execute(f"CREATE ROLE {role} {PROVISION_ROLE} PASSWORD {secret}")
 
                 made["role"] = True
 
-            else: await admin.execute(f"ALTER ROLE {role} NOSUPERUSER NOBYPASSRLS PASSWORD {secret}")
+            else: await admin.execute(f"ALTER ROLE {role} {PROVISION_ROLE} PASSWORD {secret}")
 
             if not await admin.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", plan.database):
 
@@ -47,7 +45,10 @@ class Cluster:
 
         await self.extensions(plan, wait)
 
-        log.info("database.provisioned", role=plan.role, database=plan.database, **made)
+        log.info(
+            "database.provisioned", role=plan.role, database=plan.database,
+            created_role=made["role"], created_database=made["database"],
+        )
 
         return made
 
@@ -89,4 +90,4 @@ class Cluster:
 
     def _literal_ ( self, text: str ) -> str:
 
-        return "'" + text.replace("'", "''") + "'"
+        return "E'" + text.replace("\\", "\\\\").replace("'", "''") + "'"

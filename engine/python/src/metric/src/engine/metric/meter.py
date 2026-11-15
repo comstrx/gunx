@@ -7,7 +7,9 @@ import math, threading
 
 class Meter:
 
-    kind     : ClassVar[str]             = "meter"
+    __slots__ = ("_cells", "_dropped", "_limit", "_lock", "_series", "_warned", "help", "name")
+
+    kind     : ClassVar[str]             = "untyped"
     family   : ClassVar[str]             = ""
     suffixes : ClassVar[tuple[str, ...]] = ("",)
     reserved : ClassVar[frozenset[str]]  = frozenset()
@@ -54,15 +56,19 @@ class Meter:
 
     def lines ( self, prefix: str = "" ) -> list[str]:
 
+        if prefix or type(prefix) is not str: self._named_(prefix)
+
         name = f"{prefix}_{self.name}" if prefix else self.name
 
-        with self._lock: held = [(text, list(cell)) for text, cell in self._series.items()]
+        with self._lock: held = [(text, cell.copy()) for text, cell in self._series.items()]
+
+        held.sort()
 
         lines = [f"# HELP {name}{self.family} {self.help.translate(HELPED)}"] if self.help else []
 
         lines.append(f"# TYPE {name}{self.family} {self.kind}")
 
-        for text, cell in sorted(held): lines.extend(self._rows_(name, text, cell))
+        for text, cell in held: lines.extend(self._rows_(name, text, cell))
 
         return lines
 
@@ -78,7 +84,13 @@ class Meter:
 
         if math.isinf(value): return "+Inf" if value > 0 else "-Inf"
 
-        return str(int(value)) if -EXACT <= value <= EXACT and value == int(value) else repr(value)
+        if -EXACT <= value <= EXACT:
+
+            whole = int(value)
+
+            if value == whole: return str(whole)
+
+        return repr(value)
 
     def _fresh_ ( self ) -> Cell:
 
@@ -92,11 +104,15 @@ class Meter:
 
     def _key_ ( self, labels: dict[str, str] ) -> Key:
 
-        return tuple(sorted(labels.items())) if labels else ()
+        count = len(labels)
+
+        if count > LABELS: raise self._refused_("label", "count")
+
+        return tuple(labels.items())
 
     def _cell_ ( self, labels: dict[str, str], *, read: bool = False ) -> Cell | None:
 
-        key: Key = tuple(sorted(labels.items())) if labels else ()
+        key = self._key_(labels) if labels else ()
 
         try: cell = self._cells.get(key)
         except TypeError: raise self._refused_("label", "value") from None
@@ -117,7 +133,9 @@ class Meter:
             cell = self._series.get(text)
 
             if cell is None and len(self._series) < self._limit: cell = self._series.setdefault(text, self._fresh_())
-            if cell is not None and all(value for _, value in key): self._cells[key] = cell
+            if cell is not None and len(self._cells) < self._limit and all(type(value) is str for _, value in key):
+
+                self._cells[key] = cell
 
         if cell is None: self._drop_()
 
@@ -142,7 +160,7 @@ class Meter:
             if not self._word_(name) or name in self.reserved: raise self._refused_("label", name[:WORD])
             if not isinstance(cast("object", value), str): raise self._refused_("label", name)
 
-        pairs = [(name, str.__str__(value)) for name, value in key]
+        pairs = [(name, str.__str__(value)) for name, value in sorted(key)]
 
         if any(len(value) > VALUE or not self._plain_(value) for _, value in pairs): return None
 

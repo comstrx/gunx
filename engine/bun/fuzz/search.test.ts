@@ -165,12 +165,12 @@ describe("fuzz search", () => {
 
                 if ( matched === 0 || (all && matched < wanted.length) ) return [];
 
-                return [{ key: one.id, score: Math.round(score * 1000) / 1000, terms: wanted.filter(( term ) => terms.has(term)).sort() }];
+                return [{ key: one.id, score, terms: wanted.filter(( term ) => terms.has(term)).sort() }];
 
             }).sort(( x, y ) => y.score - x.score || (x.key < y.key ? -1 : 1));
             const hits = made.query(asked.join(" "), { prefix: false, all, limit: 100 });
 
-            expect(hits.map(( hit ) => [hit.key, hit.score, hit.terms])).toEqual(expected.map(( hit ) => [hit.key, hit.score, hit.terms]));
+            expect(hits.map(( hit ) => [hit.key, hit.score, hit.terms])).toEqual(expected.map(( hit ) => [hit.key, Math.round(hit.score * 1000) / 1000, hit.terms]));
 
             for ( const hit of hits ) expect(hit.item).toBe(held.get(hit.key) as Doc);
 

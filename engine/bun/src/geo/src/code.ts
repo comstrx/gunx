@@ -1,7 +1,6 @@
-import { type Bounds, turned } from "./path.ts";
-import { deg, type Point, rad, sure } from "./point.ts";
-
-export type Tile = { x: number; y: number; z: number };
+import type { Bounds, Point, Tile } from "./arch.ts";
+import { turned } from "./path.ts";
+import { deg, rad, sure } from "./point.ts";
 
 const base32 = "0123456789bcdefghjkmnpqrstuvwxyz";
 const mercator = 85.05112878;

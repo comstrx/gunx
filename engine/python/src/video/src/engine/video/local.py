@@ -1,4 +1,5 @@
 from pathlib import Path
+from itertools import islice
 from typing import Any, override
 
 from engine.error import Code, Fault
@@ -89,4 +90,6 @@ class Local(Driver):
     @override
     async def assets ( self, limit: int = 100 ) -> list[Asset]:
 
-        return list(self._assets.values())[:limit]
+        stop = max(0, len(self._assets) + limit) if limit < 0 else limit
+
+        return list(islice(self._assets.values(), stop))

@@ -15,6 +15,7 @@
     "engine-list": "workspace:*",
     "engine-number": "workspace:*",
     "engine-string": "workspace:*",
+    "engine-translate": "workspace:*",
     "engine-value": "workspace:*"
   }
 }

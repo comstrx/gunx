@@ -1,4 +1,4 @@
-export type Page<T> = { items: T[]; page: number; limit: number; total: number; pages: number };
+import type { Page } from "./arch.ts";
 
 function inside ( items: readonly unknown[], index: number ): boolean {
 

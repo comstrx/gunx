@@ -1,10 +1,11 @@
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from engine.error import Code, Fault
 from .arch import roomed, whole
 from .socket import Socket
+from .frame import Frame
 import asyncio
 
 class Hub:
@@ -82,9 +83,7 @@ class Hub:
 
         targets = [socket for socket in self._sockets.values() if socket.id != skip]
 
-        await asyncio.gather(*(socket.send(event, data) for socket in targets))
-
-        return len(targets)
+        return await self._send_(targets, event, data)
 
     async def whisper ( self, sender: Socket, target: str, event: str, data: Mapping[str, Any] | None = None ) -> bool:
 
@@ -108,19 +107,36 @@ class Hub:
         self, channel: str, event: str, data: Mapping[str, Any] | None = None, skip: str | None = None,
     ) -> int:
 
-        targets = [socket for socket in self.members(channel) if socket.id != skip]
+        targets = self.members(channel)
 
-        if self._keep: self._history.setdefault(channel, deque(maxlen=self._keep)).append((event, dict(data or {})))
+        if skip is not None: targets = [socket for socket in targets if socket.id != skip]
 
-        await asyncio.gather(*(socket.send(event, data, channel) for socket in targets))
+        if self._keep:
 
-        return len(targets)
+            history = self._history.get(channel)
+
+            if history is None: history = self._history[channel] = deque(maxlen=self._keep)
+
+            history.append((event, dict(data or {})))
+
+        return await self._send_(targets, event, data, channel)
 
     async def send_to ( self, actor: Any, event: str, data: Mapping[str, Any] | None = None ) -> int:
 
         targets = [socket for socket in self._sockets.values() if socket.actor == actor]
 
-        await asyncio.gather(*(socket.send(event, data) for socket in targets))
+        return await self._send_(targets, event, data)
+
+    async def _send_ (
+        self, targets: Sequence[Socket], event: str, data: Mapping[str, Any] | None, channel: str | None = None,
+    ) -> int:
+
+        if not targets: return 0
+
+        frame = Frame(event=event, channel=channel, data=dict(data or {})).encode().decode()
+
+        if len(targets) == 1: await targets[0].write(frame)
+        else: await asyncio.gather(*(socket.write(frame) for socket in targets))
 
         return len(targets)
 

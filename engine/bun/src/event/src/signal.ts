@@ -1,23 +1,7 @@
 import * as error from "engine-error";
-import { awaited, linked, type Wait } from "./abort.ts";
-import { type Fail, raise, tried } from "./emitter.ts";
-
-export type Listener<T> = ( value: T, previous: T ) => void;
-export type Watch = { replay?: boolean | undefined; signal?: AbortSignal | undefined };
-export type Readable<T> = {
-    get: () => T;
-    watch: ( listener: Listener<T>, options?: Watch ) => () => void;
-    until: ( test: ( value: T ) => boolean, options?: number | Wait ) => Promise<T>;
-};
-export type Signal<T> = Readable<T> & {
-    set: ( value: T | (( current: T ) => T) ) => void;
-    reset: () => void;
-    count: () => number;
-    readonly read: Readable<T>;
-};
-export type SignalOptions<T> = { equal?: (( a: T, b: T ) => boolean) | undefined; fail?: Fail | undefined };
-
-type Row<T> = { listener: Listener<T>; live: boolean };
+import { awaited, linked } from "./abort.ts";
+import type { Readable, SignalRow as Row, Signal, SignalOptions } from "./arch.ts";
+import { raise, tried } from "./emitter.ts";
 
 const deepest = 1024;
 

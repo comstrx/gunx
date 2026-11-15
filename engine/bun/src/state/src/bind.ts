@@ -1,14 +1,6 @@
-import { useRef, useSyncExternalStore } from "react";
-import { type Equal, readable, type Source, shallow } from "./derive.ts";
-
-export type Binding<T> = {
-    useSelect: <R>( select: ( state: T ) => R, equal?: Equal<R> ) => R;
-    usePick: <K extends keyof T>( ...keys: readonly K[] ) => Pick<T, K>;
-    useState: () => T;
-    select: <R>( select: ( state: T ) => R ) => R;
-};
-
-type Memo<T, R> = { state: T; select: ( state: T ) => R; value: R };
+import * as error from "engine-error";
+import type { Binding, Equal, Memo, Renderer, Source } from "./arch.ts";
+import { readable, shallow } from "./derive.ts";
 
 function part<T, K extends keyof T> ( state: T, keys: readonly K[] ): Pick<T, K> {
 
@@ -19,14 +11,16 @@ function part<T, K extends keyof T> ( state: T, keys: readonly K[] ): Pick<T, K>
     return out;
 
 }
-export function bind<T> ( source: Source<T>, server?: () => T ): Binding<T> {
+export function bind<T> ( source: Source<T>, server?: () => T, using?: Renderer ): Binding<T> {
 
     const store = readable(source);
     const first = server ?? store.getState;
 
     const useSelect = <R>( select: ( state: T ) => R, equal: Equal<R> = Object.is ): R => {
 
-        const last = useRef<Memo<T, R> | undefined>(undefined);
+        if ( using === undefined ) throw error.fault("unavailable", "state.renderer", { message: "a state binding needs a surface renderer" });
+
+        const last = using.ref<Memo<T, R> | undefined>(undefined);
         const read = ( state: T ): R => {
 
             const memo = last.current;
@@ -42,7 +36,7 @@ export function bind<T> ( source: Source<T>, server?: () => T ): Binding<T> {
 
         };
 
-        return useSyncExternalStore(store.subscribe, () => read(store.getState()), () => read(first()));
+        return using.read(store.subscribe, () => read(store.getState()), () => read(first()));
 
     };
 

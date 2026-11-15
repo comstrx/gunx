@@ -2,21 +2,7 @@ import * as crypto from "engine-crypto";
 import * as date from "engine-date";
 import * as json from "engine-json";
 import * as string from "engine-string";
-
-export type SameSite = "strict" | "lax" | "none";
-export type CookieOptions = {
-    maxAge?: number | undefined;
-    expires?: Date | undefined;
-    path?: string | undefined;
-    domain?: string | undefined;
-    secure?: boolean | undefined;
-    httpOnly?: boolean | undefined;
-    sameSite?: SameSite | undefined;
-    partitioned?: boolean | undefined;
-};
-export type Jar = { get: ( name: string ) => string | undefined; set: ( name: string, value: string, options?: CookieOptions ) => void; remove: ( name: string, options?: CookieOptions ) => void; names: () => string[] };
-export type HeaderJar = Jar & { outgoing: () => string[] };
-export type CookieDocument = { cookie: string };
+import type { CookieDocument, CookieOptions, HeaderJar, Jar, } from "./arch.ts";
 
 const namePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const valuePattern = /^[\x21\x23\x24\x26-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]*$/;

@@ -1,7 +1,8 @@
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import Coroutine, AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any, Self
+from functools import partial
+from typing import Any, Literal, Self, cast
 
 from sanic import Blueprint, HTTPResponse, Sanic
 from sanic.exceptions import SanicException
@@ -10,6 +11,7 @@ from engine.exception import exception
 from engine.health import health
 from engine.log import log
 from engine.thread import Gate
+from engine.token import Issuer
 from .arch import Answer, Bound, INSTANCES, Lifecycle, Limits, Middleware, Mountable, Next, PHASES, Renderer
 from .binder import Binder
 from .channel import Channel
@@ -20,7 +22,8 @@ from .request import Request
 from .response import Response
 from .route import Route
 from .router import Router
-import asyncio, socket
+from .throttle import Throttle
+import asyncio, multiprocessing, socket, sys
 
 class App:
 
@@ -47,13 +50,28 @@ class App:
         self._sealed  = False
         self._docs    = Docs(name, version) if docs else None
         self._sanic   = Sanic(self._unique_(name), request_class=Request, env_prefix=None, configure_logging=False)
+        self._sanic.ctx.engine_app = self
         self._configure_()
 
     def sanic ( self ) -> Sanic[Any, Any]:
 
         return self._sanic
 
-    def throttles ( self, **policies: str ) -> Self:
+    def tokens ( self, issuer: Issuer ) -> Self:
+
+        self._open_("tokens")
+
+        held: object = issuer
+
+        if not isinstance(held, Issuer) or held.purpose != "access":
+
+            raise Fault(Code.INTERNAL, reason="http.tokens")
+
+        self.edge.issuer = issuer
+
+        return self
+
+    def throttles ( self, **policies: str | Throttle ) -> Self:
 
         for name, text in policies.items(): self.router.policy(name, text)
 
@@ -211,19 +229,48 @@ class App:
 
         self._sealed = True
 
-    def serve ( self, host: str = "127.0.0.1", port: int = 8000, workers: int = 1, debug: bool = False ) -> None:
+    def serve (
+        self, host: str = "127.0.0.1", port: int = 8000, workers: int = 1, debug: bool = False,
+        *, start: str | None = None,
+    ) -> None:
+
+        if type(workers) is not int or workers < 1: raise Fault(Code.INTERNAL, reason="http.workers")
+        if start is not None and start not in multiprocessing.get_all_start_methods():
+
+            raise Fault(Code.INTERNAL, reason="http.start")
 
         self.seal()
 
         self._sanic.config.TOUCHUP    = True
-        self._sanic.config.USE_UVLOOP = True
+        self._sanic.config.USE_UVLOOP = sys.platform != "win32"
 
-        if workers > 1: Sanic.start_method = "fork"
+        if workers > 1:
 
-        self._sanic.run(
-            host=host, port=port, workers=workers, debug=debug, access_log=False, motd=False,
-            single_process=workers == 1,
-        )
+            method = start or ("fork" if sys.platform == "linux" else "spawn")
+
+            Sanic.start_method = cast("Literal['fork', 'forkserver', 'spawn']", method)
+
+        if workers == 1:
+
+            self._sanic.run(
+                host=host, port=port, debug=debug, access_log=False, motd=False, single_process=True,
+            )
+
+            return
+
+        self._sanic.prepare(host=host, port=port, workers=workers, debug=debug, access_log=False, motd=False)
+
+        Sanic.serve(primary=self._sanic, factory=partial(self._worker_, self._sanic.name))
+
+    @staticmethod
+    def _worker_ ( name: str ) -> Sanic[Any, Any]:
+
+        server = Sanic.get_app(name)
+        owner: App = server.ctx.engine_app
+
+        owner.seal()
+
+        return server
 
     @asynccontextmanager
     async def listen ( self, host: str = "127.0.0.1", port: int = 0 ) -> AsyncIterator[str]:
@@ -385,13 +432,16 @@ class App:
         handler = self._binder.bind(route.handler, route.methods)
         guards  = route.guards
         layers  = (*self._layers, *route.layers)
-        policy  = self.router.throttle(route.throttle) if route.throttle else None
+        names   = (route.throttle,) if isinstance(route.throttle, str) else route.throttle or ()
+        policies = tuple((name, self.router.throttle(name)) for name in names)
         scope   = route.name or route.path
         piped   = self._chain_(layers, self._inner_(handler)) if layers else None
 
         async def served ( request: Request, **params: Any ) -> Answer:
 
-            if policy is not None: await policy.check(request, scope)
+            for name, policy in policies:
+
+                await policy.check(request, scope if len(policies) == 1 else f"{scope}:policy:{name}")
 
             for guard in guards: await guard(request)
 
@@ -399,7 +449,7 @@ class App:
 
             return await handler(request, **params)
 
-        wrapped = policy is not None or guards or piped is not None
+        wrapped = bool(policies) or guards or piped is not None
         target  = served if wrapped else handler
 
         async def admitted ( request: Request, **params: Any ) -> Answer:
@@ -414,21 +464,41 @@ class App:
             finally: gate.release()
 
         chosen: Callable[..., Any] = admitted if self.limits.concurrency else target
+        edged = self._edged_(chosen)
+
+        edged.__name__ = self._identifier_(route.name or route.path) or "root"
+
+        self._sanic.add_route(edged, route.path, methods=list(route.methods), name=route.name, strict_slashes=False)
+
+    def _edged_ ( self, chosen: Bound ) -> Callable[..., Coroutine[Any, Any, Any]]:
+
         edge = self.edge
 
         async def edged ( request: Request, **params: Any ) -> Any:
 
-            early  = edge.trace(request)
-            answer = early if early is not None else await chosen(request, **params)
-            late   = edge.stamp(request, answer)
+            early = edge.trace(request)
+
+            try:
+
+                if early is None and edge.issuer is not None: await edge.identify(request)
+
+                answer = early if early is not None else await chosen(request, **params)
+
+            except asyncio.CancelledError:
+
+                late = edge.cancel(request)
+
+                if late is not None: await late
+
+                raise
+
+            late = edge.stamp(request, answer)
 
             if late is not None: await late
 
             return answer
 
-        edged.__name__ = self._identifier_(route.name or route.path) or "root"
-
-        self._sanic.add_route(edged, route.path, methods=list(route.methods), name=route.name, strict_slashes=False)
+        return edged
 
     def _upgrade_ ( self, edged: Blueprint, channel: Channel ) -> None:
 

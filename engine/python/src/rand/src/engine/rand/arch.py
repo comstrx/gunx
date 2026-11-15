@@ -1,4 +1,6 @@
 from random import SystemRandom
+from threading import Lock
+from typing import Literal
 import string
 
 ALPHABET     = string.ascii_lowercase + string.digits
@@ -21,3 +23,19 @@ LOW          = (1 << 30) - 1
 TAIL         = (1 << 32) - 1
 CROCKFORD    = bytes.maketrans(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", b"0123456789ABCDEFGHJKMNPQRSTVWXYZ")
 SYSTEM       = SystemRandom()
+
+NUMERIC  = (int, float)
+MAX_BITS = MAX_BYTES * 8
+MAX_TIME = (1 << 48) - 1
+WORDS    = MAX_BYTES // 8
+PICK_SMALL: tuple[int, int, Literal["B", "H"]] = (BYTE, 1, "B")
+PICK_WIDE: tuple[int, int, Literal["B", "H"]] = (1 << 16, 2, "H")
+ID_LOCK  = Lock()
+ENCODERS = {
+    letters: (
+        bytes(ord(letters[index % len(letters)]) for index in range(BYTE)),
+        bytes(range(BYTE - BYTE % len(letters), BYTE)),
+        BYTE - BYTE % len(letters),
+    )
+    for letters in (ALPHABET, DIGITS, PASSWORD, UNAMBIGUOUS)
+}

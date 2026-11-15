@@ -1,0 +1,46 @@
+import type * as date from "engine-date";
+import type * as number from "engine-number";
+import type * as value from "engine-value";
+
+export type Direction = "rtl" | "ltr";
+export type Tag = { language: string; script: string | undefined; region: string | undefined; text: string };
+export type Wish = { tag: string; language: string; script: string | undefined; region: string | undefined };
+export type Offer = Wish & { item: string };
+export type Naming = "language" | "region" | "currency";
+export type Param = string | number | bigint | boolean | null | undefined | { readonly [key: string]: Param };
+export type Span = { low: number; high: number; text: string };
+export type Forms = { exact: Map<number, string>; ranged: Span[]; labeled: Map<string, string>; plain: string[]; last: string };
+export type Entry = string | Forms;
+export type Sheet = Map<string, Entry>;
+export type Slot = { name: string; whole: string; deep: boolean };
+export type Template = readonly (string | Slot)[];
+export type Params = { readonly [key: string]: Param };
+export type Messages = { [key: string]: string | Messages };
+export type Dictionaries = Record<string, Messages>;
+export type Translate = {
+    readonly locale: string;
+    readonly fallback: string;
+    t: ( key: string, params?: Params, count?: number ) => string;
+    find: ( key: string, params?: Params, count?: number ) => string | undefined;
+    has: ( key: string, locale?: string ) => boolean;
+    use: ( locale: string ) => Translate;
+    missing: () => string[];
+    locales: () => string[];
+};
+export type Localizer = {
+    readonly locale: string;
+    readonly direction: Direction;
+    number: ( value: number, options?: number.FormatOptions ) => string;
+    percent: ( value: number, options?: number.FormatOptions ) => string;
+    money: ( amount: value.Money, options?: number.FormatOptions ) => string;
+    date: ( value: date.Input, style?: date.Style | string ) => string;
+    range: ( from: date.Input, to: date.Input, options?: Intl.DateTimeFormatOptions ) => string;
+    relative: ( value: date.Input, reference?: date.Input ) => string;
+    list: ( items: readonly string[], kind?: "and" | "or" ) => string;
+    reason: ( failure: unknown ) => string;
+    field: ( failure: unknown, name: string ) => string | undefined;
+};
+export type Routing = { locales: readonly string[]; default: string; hide?: boolean | undefined };
+export type Routed = { locale: string; path: string };
+export type Shape = { locale: string | undefined; segments: string[]; slash: boolean; tail: string };
+export type Index = { exact: Map<string, string>; spoken: Map<string, string> };

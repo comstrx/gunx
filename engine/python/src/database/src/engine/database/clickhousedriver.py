@@ -8,6 +8,7 @@ from .clickhouse import CLICKHOUSE
 from .dialect import Dialect
 from .driver import Driver
 from .vector import Vector
+import asyncio
 
 if TYPE_CHECKING:
 
@@ -69,19 +70,23 @@ class ClickhouseDriver(Driver):
     @override
     async def execute ( self, connection: Any, sql: str, params: Sequence[Any], timeout: float | None = None ) -> int:
 
-        result = await connection.command(self._text_(sql, params), parameters=list(params) or None)
+        async with asyncio.timeout(self._wait if timeout is None else timeout):
 
-        return int(getattr(result, "written_rows", 0) or 0)
+            result = await connection.command(self._text_(sql, params), parameters=list(params) or None)
+
+            return int(getattr(result, "written_rows", 0) or 0)
 
     @override
     async def fetch (
         self, connection: Any, sql: str, params: Sequence[Any], timeout: float | None = None,
     ) -> list[Mapping[str, Any]]:
 
-        result = await connection.query(self._text_(sql, params), parameters=list(params) or None)
-        names  = list(result.column_names)
+        async with asyncio.timeout(self._wait if timeout is None else timeout):
 
-        return [dict(zip(names, row, strict=True)) for row in result.result_rows]
+            result = await connection.query(self._text_(sql, params), parameters=list(params) or None)
+            names  = list(result.column_names)
+
+            return [dict(zip(names, row, strict=True)) for row in result.result_rows]
 
     @override
     def bind ( self, value: Any ) -> Any:

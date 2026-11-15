@@ -9,6 +9,7 @@ core:load:use core::sys || return
 core:load:use core::process || return
 core:load:use core::pkg || return
 core:load:use core::fs || return
+core:load:use core::json || return
 core:load:use core::net || return
 core:load:use core::git || return
 core:load:use core::toml || return

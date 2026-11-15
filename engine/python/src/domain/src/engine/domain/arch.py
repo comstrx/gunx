@@ -6,6 +6,7 @@ import dns.resolver, re
 
 HOST     = re.compile(r"^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})$")
 RESERVED = ("localhost", "example.com", "example.net", "example.org", "test", "invalid")
+SUFFIXES = tuple(f".{host}" for host in RESERVED)
 PREFIX   = "_engine-verify"
 SILENT   = (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers, dns.resolver.LifetimeTimeout)
 LABEL    = r"[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?"

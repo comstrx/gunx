@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from typing import Any
 
 from .arch import Fields, LEVELS
@@ -47,7 +47,9 @@ class Logger:
 
     def at ( self, level: str, event: str, **fields: Any ) -> None:
 
-        chosen = level.lower() if level.lower() in LEVELS else "info"
+        chosen = level.lower()
+
+        if chosen not in LEVELS: chosen = "info"
 
         getattr(self._inner, chosen)(event, **fields)
 
@@ -60,11 +62,23 @@ class Logger:
         try: yield extra
         except BaseException as error:
 
-            self.at("error", f"{event}.failed", ms=Logger.ms(started), error=type(error).__name__, **fields, **extra)
+            fields.update(extra)
+            fields["error"] = type(error).__name__
+
+            with suppress(Exception): self._span_(f"{event}.failed", "error", started, fields)
 
             raise
 
-        self.at(level, event, ms=Logger.ms(started), **fields, **extra)
+        fields.update(extra)
+        self._span_(event, level, started, fields)
+
+    def _span_ ( self, event: str, level: str, started: float, fields: Fields ) -> None:
+
+        fields.pop("event", None)
+        fields.pop("level", None)
+        fields["ms"] = Logger.ms(started)
+
+        self.at(level, event, **fields)
 
     @staticmethod
     def ms ( started: float ) -> float:

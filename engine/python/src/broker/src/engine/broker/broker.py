@@ -87,18 +87,37 @@ class Broker:
         return True
 
     async def consume (
-        self, queue: str, handler: Handler, limit: int = 16, wait: float = 1.0, tries: int = 5,
+        self, queue: str, handler: Handler, limit: int = 16, wait: float = 1.0, tries: int = 5, concurrency: int = 1,
     ) -> int:
 
+        if type(concurrency) is not int or concurrency < 1: raise Fault(Code.INTERNAL, reason="broker.concurrency")
+
+        messages = await self.pull(queue, limit, wait)
         done = 0
 
-        for message in await self.pull(queue, limit, wait):
+        if concurrency == 1:
 
-            done += 1 if await self.handle(message, handler, tries) else 0
+            for message in messages: done += 1 if await self.handle(message, handler, tries) else 0
+
+            return done
+
+        remaining = iter(messages)
+
+        async def worker () -> None:
+
+            nonlocal done
+
+            for message in remaining:
+
+                if await self.handle(message, handler, tries): done += 1
+
+        async with asyncio.TaskGroup() as group:
+
+            for _ in range(min(concurrency, len(messages))): group.create_task(worker())
 
         return done
 
-    def subscribe ( self, queue: str, handler: Handler, limit: int = 16, tries: int = 5 ) -> None:
+    def subscribe ( self, queue: str, handler: Handler, limit: int = 16, tries: int = 5, concurrency: int = 1 ) -> None:
 
         if self._loops.get(queue): return
 
@@ -110,7 +129,7 @@ class Broker:
 
             while self._loops.get(queue) is token:
 
-                try: await self.consume(queue, handler, limit, 1.0, tries)
+                try: await self.consume(queue, handler, limit, 1.0, tries, concurrency)
                 except Exception as error:
 
                     log.warning("broker.loop", queue=queue, reason=Fault.wrap(error).reason)

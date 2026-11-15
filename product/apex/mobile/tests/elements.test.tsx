@@ -89,3 +89,12 @@ describe("elements", () => {
     });
 
 });
+
+
+it("data text can isolate mixed direction content explicitly", () => {
+
+    const markup = renderToStaticMarkup(<Text isolate>USD 12 · القاهرة</Text>);
+
+    expect(markup).toContain("\u2066USD 12 · القاهرة\u2069");
+
+});

@@ -740,7 +740,7 @@ describe("cache", () => {
             pass(1);
             expect(limit.peek("a")).toEqual({ allowed: true, limit: 3, remaining: 3, retryAfter: 0 });
             expect(limit.take("a")).toEqual({ allowed: true, limit: 3, remaining: 2, retryAfter: 0 });
-            expect([limit.take("c", 0), limit.take("c", -5)].map(( taken ) => [taken.allowed, taken.remaining])).toEqual([[true, 3], [true, 3]]);
+            expect([limit.take("c", 0), limit.take("c", -5)].map(( taken ) => [taken.allowed, taken.remaining])).toEqual([[true, 3], [false, 3]]);
             expect([limit.take("c", 2.5), limit.take("c", 0.5), limit.take("c", 0.1)].map(( taken ) => [taken.allowed, taken.remaining])).toEqual([[true, 0.5], [true, 0], [false, 0]]);
             expect(limit.take("n", Number.NaN)).toEqual({ allowed: false, limit: 3, remaining: 3, retryAfter: 1 });
             expect(limit.take("n", Number.POSITIVE_INFINITY).allowed).toBe(false);
@@ -782,13 +782,13 @@ describe("cache", () => {
             pass(59_499);
             expect(long.take("k").retryAfter).toBe(1);
             jest.setSystemTime(origin - 5000);
-            expect(long.take("k")).toEqual({ allowed: true, limit: 1, remaining: 0, retryAfter: 0 });
+            expect(long.take("k")).toEqual({ allowed: false, limit: 1, remaining: 0, retryAfter: 1 });
 
             const few = cache.limiter(1, 1000, 2);
 
             few.take("a");
             few.take("b");
-            expect([few.take("a").allowed, few.take("c").allowed, few.take("b").allowed, few.take("a").allowed]).toEqual([false, true, false, true]);
+            expect([few.take("a").allowed, few.take("c").allowed, few.take("b").allowed, few.take("a").allowed]).toEqual([false, false, false, false]);
 
         });
 
@@ -796,6 +796,36 @@ describe("cache", () => {
         expect(shape((() => { try { return cache.limiter(3, Number.NaN); } catch ( failure ) { return failure; } })())).toBe("RangeError: not a limit");
         expect([cache.limiter(0.2, 0.2).take("a").limit, cache.limiter(-9, 5).take("a").remaining, cache.limiter(2.9, 5).peek("a").limit, cache.limiter(Number.POSITIVE_INFINITY, 5).take("a", 10 ** 9).allowed]).toEqual([1, 0, 2, true]);
         expect([cache.limiter(1, 1000, Number.NaN).take("a").allowed, cache.limiter(1, 1000, 0).take("a").allowed]).toEqual([true, true]);
+
+    });
+    it("limiter saturation preserves active identities and releases only expired windows", async () => {
+
+        await faked(() => {
+
+            const limit = cache.limiter(2, 1000, 2);
+
+            expect(limit.take("a", 2).allowed).toBe(true);
+            pass(100);
+            expect(limit.take("b").allowed).toBe(true);
+
+            for ( let index = 0; index < 1000; index += 1 ) expect(limit.take(String(index)).allowed).toBe(false);
+
+            expect(limit.peek("new").allowed).toBe(false);
+            expect(limit.take("b").allowed).toBe(true);
+            expect(limit.take("a").allowed).toBe(false);
+            pass(900);
+            expect(limit.take("new").allowed).toBe(true);
+            expect(limit.take("b").allowed).toBe(false);
+            pass(100);
+            expect(limit.take("b").allowed).toBe(true);
+
+            const unbounded = cache.limiter(Number.POSITIVE_INFINITY, 1000);
+
+            for ( const cost of [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN, -1] ) expect(unbounded.take("a", cost).allowed).toBe(false);
+
+            expect(unbounded.take("a").remaining).toBe(Number.POSITIVE_INFINITY);
+
+        });
 
     });
     it("cookie lines are lenient on the way in, strict on the way out and never split by a value", () => {
@@ -937,7 +967,8 @@ describe("cache", () => {
         const stopLast = memory.watch("k", ( value ) => { seen.push(`b:${value}`); });
         const stopOther = memory.watch("j", ( value ) => { seen.push(`j:${value}`); });
 
-        expect(shape(await caught(() => memory.set("k", "1")))).toBe("Error: listener");
+        await memory.set("k", "1");
+        expect(shape(await caught(() => memory.flush()))).toBe("Error: listener");
         expect([await memory.get("k"), seen]).toEqual(["1", ["a:1", "b:1"]]);
         stopBroken();
         stopBroken();
@@ -1247,6 +1278,31 @@ describe("cache", () => {
             expect(shape(await caught(() => box.touch("c", { ttl: Number.NaN })))).toBe("RangeError: not a ttl");
             expect(shape(await caught(() => cache.open({ storage: inner, ttl: Number.NaN }).set("x", 1)))).toBe("RangeError: not a ttl");
             expect([await box.has("x"), await box.get("c")]).toEqual([false, 3]);
+
+        });
+
+    });
+    it("touch and exclusive updates preserve a per-entry expiry without a replacement ttl", async () => {
+
+        await faked(async () => {
+
+            const box = cache.open({ storage: cache.memory() });
+
+            for ( const key of ["touch", "update", "increment", "forever", "renew"] ) await box.set(key, 1, { ttl: 1 });
+
+            pass(500);
+            await box.touch("touch");
+            await box.update<number>("update", ( value ) => (value ?? 0) + 1, { exclusive: true });
+            await box.increment("increment", 1, { exclusive: true });
+            await box.touch("forever", { ttl: Number.POSITIVE_INFINITY });
+            await box.touch("renew", { ttl: 2 });
+            pass(500);
+
+            expect(await box.all()).toEqual({ forever: 1, renew: 1 });
+
+            pass(1500);
+
+            expect(await box.all()).toEqual({ forever: 1 });
 
         });
 

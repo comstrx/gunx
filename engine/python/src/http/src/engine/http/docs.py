@@ -4,7 +4,8 @@ from typing import Any, get_type_hints
 from engine.error import Code
 from engine.validate import Shape, validator
 from .action import Action
-from .arch import BODIES, ENVELOPE, KINDS, PARAM, SCHEMA, TRACED, WAIT
+from .arch import BODIES, ENVELOPE, KINDS, PARAM, SCHEMA, SPREAD, TRACED, WAIT
+from .request import Request
 from .route import Route
 import inspect
 
@@ -19,7 +20,7 @@ class Docs:
     def build ( self, routes: Sequence[Route], servers: Sequence[str] = () ) -> dict[str, Any]:
 
         paths: dict[str, Any] = {}
-        shapes: list[type[Shape]] = []
+        shapes: list[Any] = []
 
         for route in routes:
 
@@ -37,7 +38,7 @@ class Docs:
                     "operationId" : route.name or fallback,
                     "summary"     : route.summary or (route.name or "").replace(".", " "),
                     "tags"        : list(route.tags) or ["default"],
-                    "parameters"  : self._params_(route, bodied),
+                    "parameters"  : self._params_(route, bodied, shapes),
                     "responses"   : self._answers_(route, bodied),
                     "security"    : [{ "bearer": [] }] if route.guards else [],
                 }
@@ -88,33 +89,62 @@ class Docs:
             "content"     : { "application/json": { "schema": { "$ref": ENVELOPE } } },
         }
 
-    def _params_ ( self, route: Route, bodied: bool ) -> list[dict[str, Any]]:
+    def _params_ ( self, route: Route, bodied: bool, shapes: list[Any] ) -> list[dict[str, Any]]:
 
-        found = [
+        found: list[dict[str, Any]] = [
             { "name": f.group(1), "in": "path", "required": True, "schema": { "type": self._kind_(f.group(2)) } }
             for f in PARAM.finditer(route.path)
         ]
+        named = { param["name"] for param in found }
 
-        if bodied or not isinstance(route.handler, Action): return found
+        if isinstance(route.handler, Action):
 
-        schema   = route.handler.form.schema()
-        defined  = next(iter(schema.get("$defs", {}).values()), schema)
-        required = set(defined.get("required", ()))
-        named    = { param["name"] for param in found }
+            if not bodied: found.extend(self._query_(route.handler.form, named))
 
-        for name, kind in defined.get("properties", {}).items():
+            return found
 
-            if name in named: continue
+        hints = get_type_hints(route.handler)
 
-            found.append({ "name": name, "in": "query", "required": name in required, "schema": kind })
+        for name, parameter in inspect.signature(route.handler).parameters.items():
+
+            kind = hints.get(name, Any)
+
+            if name in named or name == "request" or kind is Request or parameter.kind in SPREAD: continue
+
+            if isinstance(kind, type) and issubclass(kind, Shape):
+
+                if not bodied: found.extend(self._query_(kind, named))
+
+                continue
+
+            schema = validator.schema(kind, "#/components/schemas/{name}")
+
+            schema.pop("$defs", None)
+
+            if kind not in shapes: shapes.append(kind)
+
+            found.append({
+                "name": name, "in": "query", "required": parameter.default is inspect.Parameter.empty, "schema": schema,
+            })
 
         return found
+
+    def _query_ ( self, kind: type[Shape], named: set[str] ) -> list[dict[str, Any]]:
+
+        schema   = validator.schema(kind, "#/components/schemas/{name}")
+        defined  = schema.get("$defs", {}).get(kind.__name__, schema)
+        required = set(defined.get("required", ()))
+
+        return [
+            { "name": name, "in": "query", "required": name in required, "schema": field }
+            for name, field in defined.get("properties", {}).items() if name not in named
+        ]
 
     def _kind_ ( self, converter: str | None ) -> str:
 
         return KINDS.get(converter or "str", "string")
 
-    def _body_ ( self, route: Route, shapes: list[type[Shape]] ) -> dict[str, Any] | None:
+    def _body_ ( self, route: Route, shapes: list[Any] ) -> dict[str, Any] | None:
 
         if isinstance(route.handler, Action): return self._shape_(route.handler.form, shapes)
 
@@ -124,7 +154,7 @@ class Docs:
 
         return None
 
-    def _shape_ ( self, kind: type[Shape], shapes: list[type[Shape]] ) -> dict[str, Any]:
+    def _shape_ ( self, kind: type[Shape], shapes: list[Any] ) -> dict[str, Any]:
 
         if kind not in shapes: shapes.append(kind)
 

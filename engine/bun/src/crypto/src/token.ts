@@ -1,33 +1,7 @@
 import * as json from "engine-json";
 import * as string from "engine-string";
+import type { Claims, SignOptions, VerifyOptions } from "./arch.ts";
 import { equal, keyed, mac } from "./digest.ts";
-
-export type Claims = json.Dictionary & {
-    sub?: string | undefined;
-    iss?: string | undefined;
-    aud?: string | string[] | undefined;
-    exp?: number | undefined;
-    iat?: number | undefined;
-    nbf?: number | undefined;
-    jti?: string | undefined;
-};
-export type SignOptions = {
-    expiresIn?: number | undefined;
-    notBefore?: number | undefined;
-    issuer?: string | undefined;
-    audience?: string | string[] | undefined;
-    subject?: string | undefined;
-    id?: string | undefined;
-    now?: number | undefined;
-};
-export type VerifyOptions = {
-    issuer?: string | undefined;
-    audience?: string | string[] | undefined;
-    subject?: string | undefined;
-    leeway?: number | undefined;
-    maxAge?: number | undefined;
-    now?: number | undefined;
-};
 
 const header = string.base64url(json.stringify({ alg: "HS256", typ: "JWT" }));
 const shape = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;

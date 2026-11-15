@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import AsyncIterator, Awaitable, Iterator
 from engine.crypto import crypto
 from engine.date import date
 from engine.error import Code, Fault
@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from PIL import Image as Pil
 from typing import BinaryIO
-import asyncio, gzip, os, pytest, struct, sys, tarfile, zipfile, zlib
+import asyncio, gzip, os, pytest, struct, sys, tarfile, threading, zipfile, zlib
 
 CHUNK = 1024 * 1024
 RED   = (200, 30, 30)
@@ -81,7 +81,7 @@ def test_path_shapes_names_without_touching_the_disk ( monkeypatch: pytest.Monke
     assert out.value.code is Code.FORBIDDEN and out.value.reason == "fs.escape"
 
     assert path.safe("../../etc/pass wd;rm.txt") == "pass_wd_rm.txt" and path.safe("...") == "file" and path.safe("") == "file"
-    assert path.safe("a" * 300) == "a" * 128 and path.safe("x" * 300, 10) == "x" * 10 and path.safe("مرحبا.txt") == "مرحبا.txt"
+    assert path.safe("a" * 300) == "a" * 128 and path.safe("x" * 300, 10) == "x" * 10 and path.safe("\u0645\u0631\u062d\u0628\u0627.txt") == "\u0645\u0631\u062d\u0628\u0627.txt"
     assert path.is_safe("a.txt") and not path.is_safe("..") and not path.is_safe("a/b") and not path.is_safe("") and not path.is_safe("a" * 129)
 
     hostile = (
@@ -1194,3 +1194,55 @@ async def test_image_refuses_junk_bombs_and_bad_shapes ( tmp_path: Path ) -> Non
     await refused(image.read(tmp_path), "fs.kind", Code.CONFLICT)
 
     assert not await path.has(tmp_path / "shot.txt")
+
+async def test_tail_reads_long_lines_without_repeated_prefix_copies ( tmp_path: Path ) -> None:
+
+    target = tmp_path / "tail.txt"
+    long = "x" * (CHUNK * 3) + "نهاية"
+
+    await file.write(target, f"first\n{long}\nlast\n", durable=False)
+
+    assert await file.tail(target, 2) == [long, "last"]
+    assert await file.tail(target, 0) == [] and await file.tail(target, -1) == []
+
+async def test_write_lines_streams_once_off_loop_and_preserves_atomicity ( tmp_path: Path ) -> None:
+
+    target = tmp_path / "lines.txt"
+    owner = threading.get_ident()
+    visited: list[int] = []
+
+    def lines () -> Iterator[str]:
+
+        for item in ("hello", "\u0645\u0631\u062d\u0628\u0627", ""):
+
+            assert threading.get_ident() != owner
+            visited.append(len(visited))
+
+            yield item
+
+    assert await file.write_lines(target, lines(), durable=False) == len("hello\n\u0645\u0631\u062d\u0628\u0627\n\n".encode())
+    assert await file.read_text(target) == "hello\n\u0645\u0631\u062d\u0628\u0627\n\n" and visited == [0, 1, 2]
+
+    def broken () -> Iterator[str]:
+
+        yield "partial"
+
+        raise RuntimeError("line source failed")
+
+    with pytest.raises(RuntimeError, match="line source failed"):
+
+        await file.write_lines(target, broken(), durable=False)
+
+    assert await file.read_text(target) == "hello\n\u0645\u0631\u062d\u0628\u0627\n\n"
+    assert await asyncio.to_thread(held, tmp_path) == ["lines.txt"]
+
+@pytest.mark.parametrize("chunk", [0, -1])
+async def test_stream_refuses_unbounded_or_empty_chunk ( tmp_path: Path, chunk: int ) -> None:
+
+    target = tmp_path / "bounded"
+
+    await file.write(target, b"payload")
+
+    with pytest.raises(Fault) as caught: await anext(file.stream(target, chunk=chunk))
+
+    assert caught.value.reason == "fs.range"

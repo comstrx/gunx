@@ -1,9 +1,5 @@
 import * as string from "engine-string";
-
-export type Rounding = "half-even" | "half-up" | "half-down" | "up" | "down" | "ceil" | "floor";
-export type Whole = number | bigint;
-export type Exact = { units: bigint; scale: number };
-export type Factor = { units: Whole; scale: number };
+import type { Exact, Factor, Rounding, Whole } from "./arch.ts";
 
 export const longest = 64;
 export const deepest = 40;

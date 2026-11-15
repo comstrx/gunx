@@ -1,4 +1,4 @@
-from .fluent import Fluent
+lazy from .fluent import Fluent
 from .string import String
 
 string = String()

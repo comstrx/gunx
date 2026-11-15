@@ -3,10 +3,10 @@ from engine.exception import Exceptions
 from engine.log import log
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from functools import partial
-from hypothesis import HealthCheck, given, settings, strategies as st
+from hypothesis import given, settings, strategies as st
 from pathlib import Path
 from typing import Any, cast, override
-import math, sys, warnings
+import math, sys, warnings, os
 
 type Known = tuple[Code, str, bool]
 type Rung = tuple[int, int | None]
@@ -93,7 +93,7 @@ NAMES    = st.one_of(
     st.sampled_from(SAFE), st.sampled_from(RESERVED), st.integers(0, 3), st.none(), st.text(max_size=4),
     st.integers(0, 99).map("k{}".format),
 )
-PACKS    = st.lists(st.dictionaries(NAMES, st.integers(0, 9), max_size=40), max_size=5)
+PACKS    = st.lists(st.dictionaries(NAMES, st.integers(0, 9), max_size=100), max_size=5)
 WILD: st.SearchStrategy[Any] = st.one_of(
     st.none(), st.booleans(), st.integers(-3, 3),
     st.sampled_from([10 ** 5000, 2 ** 1024 - 1, 0.0, 1.5, -1.0, 1e308, math.nan, math.inf, -math.inf]),
@@ -102,7 +102,7 @@ WILD: st.SearchStrategy[Any] = st.one_of(
     st.sampled_from([late, stalled, plain]),
 )
 
-log.setup("debug", "json", Path("/dev/null"))
+log.setup("debug", "json", Path(os.devnull))
 vars(sys.modules["engine.exception.exceptions"])["time"] = clock
 
 def tried ( work: Callable[[], object] ) -> Fault | None:
@@ -190,7 +190,7 @@ def awaited ( crafting: str, stating: list[str], noting: list[str], shown: str, 
 
     failed = [("exception.factory", BROKEN[crafting])] if crafting != "ok" else []
     told   = [("exception.context", BROKEN[mode]) for mode in stating if mode != "ok"]
-    sunk   = [("exception.reporter", "LookupError") for mode in noting if mode == "raises"]
+    sunk   = [("exception.reporter", BROKEN[mode]) for mode in noting if mode != "ok"]
 
     return failed + ([] if quiet else [*told, (shown, "Wild"), *sunk]) + failed * again
 
@@ -204,7 +204,7 @@ def marked ( events: Sequence[Mapping[str, Any]], known: Code, pack: dict[str, i
     assert (report["code"], report["reason"]) == (known.value, "crafted" if known is not Code.INTERNAL else report["reason"])
     assert { name: report[name] for name in SAFE if name in report } == pack
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.sampled_from(list(ROOTS)), LADDERS, st.booleans(), st.booleans())
 def laddered ( root: type[BaseException], rungs: list[Rung], named: bool, backwards: bool ) -> None:
 
@@ -235,7 +235,7 @@ def laddered ( root: type[BaseException], rungs: list[Rung], named: bool, backwa
         assert fault.__cause__ is error
         assert (fault.code, fault.reason, fault.unknown) == (owner or (Code.INTERNAL, kind.__name__.lower(), True))
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(NOTES, STATES, PACK, SCRIPT)
 def handled ( noting: list[str], stating: list[str], pack: dict[str, int], script: list[Step] ) -> None:
 
@@ -280,7 +280,7 @@ def handled ( noting: list[str], stating: list[str], pack: dict[str, int], scrip
     assert not leaked
     assert tool.stats() == { "seen": sum(codes.values()), "reported": sent, "muted": 0, "codes": codes }
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.integers(0, 3), WINDOWS, BEATS)
 def throttled ( burst: int, window: float, beats: list[Beat] ) -> None:
 
@@ -308,7 +308,7 @@ def throttled ( burst: int, window: float, beats: list[Beat] ) -> None:
     assert tool.stats() == { "seen": len(beats), "reported": len(beats) - quiet, "muted": quiet, "codes": tool.stats()["codes"] }
     assert sum(tool.stats()["codes"].values()) == len(beats)
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.sampled_from(VERBS), WILD, WILD, WILD)
 def refused ( verb: str, first: object, second: object, third: object ) -> None:
 
@@ -339,7 +339,7 @@ def refused ( verb: str, first: object, second: object, third: object ) -> None:
     assert not leaked
     assert tool.stats()["seen"] == 2
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(PACKS)
 def fielded ( packs: list[dict[Any, int]] ) -> None:
 
@@ -350,7 +350,7 @@ def fielded ( packs: list[dict[Any, int]] ) -> None:
 
         tool.context(partial(dict, pack))
 
-        for name, value in pack.items():
+        for name, value in list(pack.items())[:FIELDS]:
 
             if not isinstance(name, str) or name in RESERVED: continue
             if name in model or len(model) < FIELDS: model[name] = value
@@ -361,10 +361,118 @@ def fielded ( packs: list[dict[Any, int]] ) -> None:
     assert set(events[0]) - set(STAMPED) == set(model)
     assert all(events[0][name] == model[name] for name in model if name in BASE or name in SAFE or name[1:].isdigit())
 
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.integers(1, 4), st.lists(st.tuples(st.integers(0, 15), st.sampled_from([0, 1, 10])), min_size=1, max_size=90))
+def crowded ( burst: int, steps: list[tuple[int, int]] ) -> None:
+
+    tool = Exceptions()
+    module = vars(sys.modules["engine.exception.exceptions"])
+    capacity = module["KEYS"]
+    model: dict[int, tuple[float, int]] = {}
+    order: list[int] = []
+    sent = 0
+
+    module["KEYS"] = 8
+    tool.throttle(burst, 10)
+
+    try:
+
+        with log.capture() as events:
+
+            for key, wait in steps:
+
+                clock.now += wait
+
+                if key in order: order.remove(key)
+                elif len(order) == 8: del model[order.pop(0)]
+
+                order.append(key)
+
+                opened, count = model.get(key, (clock.now, 0))
+
+                if clock.now - opened >= 10: opened, count = clock.now, 0
+
+                sent += count < burst
+                model[key] = opened, count + 1
+
+                tool.handle(Fault(Code.GONE, reason=f"k{key}"))
+
+        assert len(events) == sent
+        assert tool.stats()["muted"] == len(steps) - sent
+
+    finally: module["KEYS"] = capacity
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.lists(st.booleans(), min_size=1, max_size=50), st.booleans())
+def reconsidered ( visible: list[bool], reporter: bool ) -> None:
+
+    tool = Exceptions()
+    error = Fault(Code.NOT_FOUND)
+    told: list[Fault] = []
+    expected = False
+
+    if reporter: tool.report(lambda fault, _: told.append(fault))
+
+    with log.capture() as events:
+
+        for enabled in visible:
+
+            log.setup("debug" if enabled else "critical", "json", Path(os.devnull))
+            tool.handle(error)
+            expected |= enabled or reporter
+
+            assert tool.stats()["reported"] == int(expected)
+
+    assert len(told) == int(reporter)
+    assert len(events) <= 1
+
+    log.setup("debug", "json", Path(os.devnull))
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.sampled_from(["factory", "context", "reporter"]), st.integers(1, 20))
+def reentered ( stage: str, count: int ) -> None:
+
+    tool = Exceptions()
+    entries = 0
+
+    def again () -> None:
+
+        nonlocal entries
+
+        entries += 1
+
+        for _ in range(count): tool.handle(ValueError())
+
+    def factory ( _: BaseException ) -> Fault:
+
+        again()
+
+        return Fault(Code.GONE)
+
+    def context () -> dict[str, Any]:
+
+        again()
+
+        return { "a": 1 }
+
+    def reporter ( _: Fault, __: BaseException ) -> None: again()
+
+    if stage == "factory": tool.map(ValueError, factory)
+    if stage == "context": tool.context(context)
+    if stage == "reporter": tool.report(reporter)
+
+    with log.capture() as events: tool.handle(ValueError())
+
+    assert entries == 1 and len(events) == 1
+    assert tool.stats()["seen"] == count + 1 and tool.stats()["reported"] == 1
+
 laddered()
 handled()
 throttled()
 refused()
 fielded()
+crowded()
+reconsidered()
+reentered()
 
-print(f"fuzz exception  examples={EXAMPLES * 5}  ok")
+print("fuzz exception  properties=8  max_examples=per-property settings  ok")

@@ -9,7 +9,9 @@ class Bag:
 
     def __init__ ( self, items: Mapping[str, list[str]] | None = None ) -> None:
 
-        self._items: dict[str, list[str]] = { field: list(messages) for field, messages in (items or {}).items() }
+        self._items: dict[str, list[str]] = {
+            field: list(messages) for field, messages in (items or {}).items() if messages
+        }
 
     def add ( self, field: str, message: str ) -> Bag:
 
@@ -19,7 +21,9 @@ class Bag:
 
     def extend ( self, other: Mapping[str, list[str]] ) -> Bag:
 
-        for field, messages in other.items(): self._items.setdefault(field, []).extend(messages)
+        for field, messages in other.items():
+
+            if messages: self._items.setdefault(field, []).extend(messages)
 
         return self
 
@@ -51,11 +55,11 @@ class Bag:
 
     def fault ( self, code: Code = Code.VALIDATION, reason: str = "validation" ) -> Fault:
 
-        return Fault(code, self.text() or None, reason, self.dump())
+        return Fault(code, self.text() or None, reason, self._items)
 
     def raise_if_any ( self, reason: str = "validation" ) -> None:
 
-        if self._items: raise Fault(Code.VALIDATION, reason=reason, errors=self.dump())
+        if self._items: raise Fault(Code.VALIDATION, reason=reason, errors=self._items)
 
     def __iter__ ( self ) -> Iterator[tuple[str, list[str]]]:
 

@@ -3,10 +3,11 @@ from engine.log import log
 from engine.metric import Counter, Gauge, Histogram, Metrics
 from collections.abc import Callable
 from functools import partial
-from hypothesis import HealthCheck, given, settings, strategies as st
+from contextlib import AbstractContextManager
+from hypothesis import given, settings, strategies as st
 from pathlib import Path
 from typing import Any
-import bisect, itertools, math, re, sys
+import bisect, itertools, math, re, sys, os
 
 type Labels = dict[str, str]
 type Pairs  = tuple[tuple[str, str], ...]
@@ -39,7 +40,7 @@ VERBS    = st.sampled_from(("write", "write", "write", "write", "move", "forget"
 STEPS    = st.lists(st.tuples(VERBS, st.sampled_from(POOL), LABELS, AMOUNTS), max_size=40)
 NAMES    = st.one_of(st.text(max_size=8), st.from_regex(WORD, fullmatch=True), st.sampled_from(("__a", "a:b", "a" * 101, "é", "a\n")))
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 
 def tried ( work: Callable[[], Any] ) -> Any:
 
@@ -232,7 +233,7 @@ class Model:
 
         return rows | { (f"app_{name}_sum", key): held[0], (f"app_{name}_count", key): running }
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(STEPS)
 def driven ( steps: list[Step] ) -> None:
 
@@ -259,7 +260,7 @@ def driven ( steps: list[Step] ) -> None:
     assert model.metrics.describe()["series"] == sum(len(series) for series in model.series.values())
     assert model.metrics.describe()["dropped"] == sum(model.dropped.values())
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(NAMES, NAMES, st.one_of(st.text(max_size=300), st.sampled_from(("\ud800", "a" * 257))), st.one_of(st.text(max_size=20), WILD))
 def named ( name: str, label: str, value: str, help_: Any ) -> None:
 
@@ -298,7 +299,7 @@ def named ( name: str, label: str, value: str, help_: Any ) -> None:
     assert calls.forget(**given_) is kept
     assert calls.series() == 0
 
-@settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
 @given(st.one_of(st.floats(allow_nan=False, allow_infinity=False), st.integers(-2 ** 70, 2 ** 70)), st.lists(st.one_of(FINITE, WILD), max_size=8))
 def figured ( value: Any, bounds: list[Any] ) -> None:
 
@@ -332,10 +333,126 @@ def figured ( value: Any, bounds: list[Any] ) -> None:
     assert (rows["took_count", ()], rows["took_sum", ()], made.count()) == (1.0, float(value), 1)
     assert made.buckets() == tuple(float(bound) for bound in bounds)
 
+class Tracking:
+
+    def __init__ ( self, capacity: int ) -> None:
+
+        self.heat = Gauge("active", series=capacity)
+        self.capacity = capacity
+        self.model: dict[str, tuple[int, int]] = {}
+        self.frames: list[tuple[AbstractContextManager[None], str, int | None]] = []
+        self.generation = 0
+
+    def enter ( self, name: str ) -> None:
+
+        manager = self.heat.track(lane=name)
+
+        manager.__enter__()
+
+        owned = None
+
+        if name in self.model or len(self.model) < self.capacity:
+
+            self.generation += 1
+            identity, value = self.model.get(name, (self.generation, 0))
+            self.model[name] = identity, value + 1
+            owned = identity
+
+        self.frames.append((manager, name, owned))
+
+    def leave ( self ) -> None:
+
+        if not self.frames: return
+
+        manager, name, owned = self.frames.pop()
+
+        manager.__exit__(None, None, None)
+
+        if name in self.model and self.model[name][0] == owned:
+
+            identity, value = self.model[name]
+            self.model[name] = identity, value - 1
+
+    def clear ( self ) -> None:
+
+        self.heat.clear()
+        self.model.clear()
+
+    def forget ( self, name: str ) -> None:
+
+        assert self.heat.forget(lane=name) is (self.model.pop(name, None) is not None)
+
+    def set ( self, name: str ) -> None:
+
+        self.heat.set(10, lane=name)
+
+        if name in self.model or len(self.model) < self.capacity:
+
+            self.generation += 1
+            identity = self.model.get(name, (self.generation, 0))[0]
+            self.model[name] = identity, 10
+
+    def check ( self ) -> None:
+
+        assert self.heat.series() == len(self.model) <= self.capacity
+
+        for name in ("a", "b", "c", "d"):
+
+            assert self.heat.value(lane=name) == self.model.get(name, (0, 0))[1]
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(
+    st.integers(1, 4),
+    st.lists(st.tuples(st.sampled_from(("enter", "exit", "clear", "forget", "set")), st.sampled_from(("a", "b", "c", "d"))), max_size=60),
+)
+def tracked ( capacity: int, actions: list[tuple[str, str]] ) -> None:
+
+    track = Tracking(capacity)
+
+    try:
+
+        for verb, name in actions:
+
+            if verb == "enter": track.enter(name)
+            elif verb == "exit": track.leave()
+            elif verb == "clear": track.clear()
+            elif verb == "forget": track.forget(name)
+            elif verb == "set": track.set(name)
+
+            track.check()
+
+        while track.frames:
+
+            track.leave()
+            track.check()
+
+    finally:
+
+        while track.frames: track.frames.pop()[0].__exit__(None, None, None)
+
+
+@settings(max_examples=1000, deadline=None, database=None)
+@given(st.permutations(("a", "b", "c")), st.integers(1, 4), st.integers(1, 50))
+def label_order_does_not_change_identity ( order: list[str], capacity: int, count: int ) -> None:
+
+    calls = Counter("calls", series=capacity)
+    labels: dict[str, Any] = { name: name for name in order }
+
+    for _ in range(count):
+
+        calls.inc(a="a", b="b", c="c")
+        calls.inc(**labels)
+
+    assert calls.series() == 1 and calls.dropped() == 0 and calls.value(**labels) == count * 2
+    assert calls.forget(c="c", a="a", b="b") and calls.value(**labels) == 0
+
+label_order_does_not_change_identity()
+
 driven()
 named()
 figured()
+tracked()
 
 log.close()
 
-print(f"fuzz metric  examples={EXAMPLES * 3}  ok")
+print("fuzz metric  properties=5  max_examples=per-property settings  ok")

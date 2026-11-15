@@ -1,0 +1,44 @@
+export type Field<T> = (keyof T & string) | (string & Record<never, never>);
+export type Options<T> = {
+    fields: readonly Field<T>[];
+    key: ( item: T ) => string;
+    weights?: Readonly<Record<string, number>> | undefined;
+    minLength?: number | undefined;
+    stop?: readonly string[] | undefined;
+    tokenize?: (( text: string ) => readonly string[]) | undefined;
+};
+export type Query<T = unknown> = {
+    limit?: number | undefined;
+    offset?: number | undefined;
+    prefix?: boolean | undefined;
+    fuzzy?: number | undefined;
+    all?: boolean | undefined;
+    expansions?: number | undefined;
+    filter?: (( item: T ) => boolean) | undefined;
+    boost?: (( item: T ) => number) | undefined;
+};
+export type Hit<T> = { key: string; item: T; score: number; terms: string[] };
+export type Index<T> = {
+    add: ( item: T ) => void;
+    addAll: ( items: Iterable<T> ) => void;
+    remove: ( key: string ) => boolean;
+    has: ( key: string ) => boolean;
+    get: ( key: string ) => T | undefined;
+    query: ( text: string, options?: Query<T> ) => Hit<T>[];
+    suggest: ( prefix: string, limit?: number ) => string[];
+    size: () => number;
+    terms: () => number;
+    clear: () => void;
+};
+export type Posting = { rows: number[]; weights: number[] };
+export type Doc<T> = { key: string; item: T; length: number; terms: string[] };
+export type Operator = ":" | "=" | "!=" | ">" | ">=" | "<" | "<=";
+export type Filter = { field: string; operator: Operator; value: string; negated: boolean };
+export type Parsed = { terms: string[]; filters: Filter[]; text: string };
+export type Scope = { fields?: readonly string[] | undefined };
+export type Segment = { text: string; hit: boolean };
+export type Facet = { value: string; count: number };
+export type Piece = { text: string; head: string; literal: boolean };
+export type Wanted = { text: string; number: number | undefined };
+export type Scalar = number | string;
+export type Folded = { text: string; from: number[]; to: number[] };

@@ -5,17 +5,17 @@ module:extract:flows:files () {
 }
 module:extract:flows:action () {
 
-    local root="${1}" name="" spec="" path="" remote="" ref="" sha=""
+    local root="${1}" self="${2}" name="" spec="" path="" remote="" ref="" sha=""
 
     while IFS= read -r name; do
 
-        [[ "$(config:targets:get "${name}" path)" == engine/infra ]] || continue
+        [[ "$(config:targets:get "${name}" path)" == "${self}" ]] || continue
 
         spec="$(config:targets:get "${name}" repo)" || return
 
     done < <(config:targets:list)
 
-    [[ -n "${spec}" ]] || { @err "No target carries engine/infra; the workflows of a tool need it as an action"; return; }
+    [[ -n "${spec}" ]] || { @err "No target carries ${self}; the workflows of a tool need it as an action"; return; }
 
     path="$(module:extract:git:resolve "${spec}" "${root}")" || return
     remote="$(module:extract:git:remote "${path}")" || return
@@ -39,10 +39,11 @@ module:extract:flows:action () {
 }
 module:extract:flows:rewrite () {
 
-    local file="${1}" tree="${2}" action="${3}" line="" wanted=""
+    local file="${1}" tree="${2}" action="${3}" self="${4}" own="${5:-}" line="" wanted=""
 
     core:parse:yaml:erase "${file}" paths || return
     core:parse:yaml:prune "${file}" '^ *- run: infra sync( |$)' 2 || return
+    module:extract:flows:setups "${file}" "${tree}" || return
 
     while IFS= read -r line; do
 
@@ -54,8 +55,45 @@ module:extract:flows:rewrite () {
 
     done < <(grep -E 'version-file: engine/' -- "${file}" || true)
 
-    core:parse:yaml:sub "${file}" -E "s|uses: [$]/engine/infra/src/module/gate/template|uses: ${action}|" || return
+    core:parse:yaml:sub "${file}" -E "s|uses: [$]/${self}/src/module/gate/template|uses: ${action}|" || return
+    module:extract:flows:matrix "${file}" "${own}" || return
     core:parse:yaml:hollow "${file}" || return
+
+}
+module:extract:flows:setups () {
+
+    local file="${1}" tree="${2}" action="" manifest="" found=0
+    local -A needs=( [astral-sh/setup-uv]=pyproject.toml [actions/setup-go]="go.work go.mod" [cargo-bins/cargo-binstall]=Cargo.toml )
+
+    for action in "${!needs[@]}"; do
+
+        found=0
+
+        for manifest in ${needs[${action}]}; do
+            [[ ! -f "${tree}/${manifest}" ]] || found=1
+        done
+
+        (( found == 1 )) || core:parse:yaml:prune "${file}" "^ *- uses: ${action}@" || return
+
+    done
+
+}
+module:extract:flows:matrix () {
+
+    local file="${1}" own="${2}" part=""
+
+    [[ -n "${own}" ]] || return 0
+    grep -qE '^ *part: \[' -- "${file}" || return 0
+
+    core:parse:yaml:sub "${file}" -E "s/^( *part: )\\[[^]]*\\]\$/\\1[${own}, root]/" || return
+
+    while IFS= read -r part; do
+
+        [[ "${part}" == "${own}" || "${part}" == root ]] || core:parse:yaml:prune "${file}" "^ *- part: ${part}\$" || return
+
+    done < <(sed -nE 's/^ *- part: ([a-z]+)$/\1/p' -- "${file}")
+
+    core:parse:yaml:hollow "${file}" include
 
 }
 module:extract:flows:labels () {
@@ -64,7 +102,7 @@ module:extract:flows:labels () {
 
     core:parse:yaml:prune "${tree}/.github/labels.yml" '[(](engine|product|tutor)/' || return
     core:parse:yaml:prune "${tree}/.github/labeler.yml" "'(engine|product|tutor)/" || return
-    core:parse:yaml:hollow "${tree}/.github/labeler.yml" '[a-z]+' || return
+    core:parse:yaml:hollow "${tree}/.github/labeler.yml" '[a-z][a-z0-9-]*' || return
 
 }
 module:extract:flows:dependabot () {
@@ -98,24 +136,27 @@ module:extract:flows:dependabot () {
 }
 module:extract:flows:apply () {
 
-    local tree="${1}" kind="${2}" part="${3}" root="" action="" file=""
+    local tree="${1}" kind="${2}" part="${3}" root="" action="" file="" self="" own=""
 
     [[ -d "${tree}/.github" ]] || return 0
 
     root="$(core:git:root "${TOOL_ENGINE}")" || return
+    self="$(module:extract:self)" || return
 
     module:extract:flows:labels "${tree}" || return
     module:extract:flows:dependabot "${tree}" "${kind}" "${part}" "${root}" || return
 
     [[ "${kind}" != product ]] || return 0
 
-    if [[ "${part}" == engine/infra ]]; then action="$/src/module/gate/template"
-    else action="$(module:extract:flows:action "${root}")" || return
+    if [[ "${part}" == "${self}" ]]; then action="$/src/module/gate/template"
+    else action="$(module:extract:flows:action "${root}" "${self}")" || return
     fi
+
+    own="$(module:extract:gatename "${kind}" "${part}")" || return
 
     for file in "${tree}"/.github/workflows/*.yml; do
         [[ -f "${file}" ]] || continue
-        module:extract:flows:rewrite "${file}" "${tree}" "${action}" || return
+        module:extract:flows:rewrite "${file}" "${tree}" "${action}" "${self}" "${own}" || return
     done
 
     [[ "${action}" == "$/src/module/gate/template" || ! -f "${tree}/.zizmor.yml" ]] \

@@ -3,6 +3,7 @@ from engine.error import Fault
 from hypothesis import HealthCheck, given, settings, strategies as st
 from contextlib import suppress
 from typing import cast
+import pytest
 
 EXAMPLES = 3400
 ITEMS    = st.lists(st.integers(min_value=-50, max_value=50), max_size=40)
@@ -43,8 +44,48 @@ def rows_never_crash ( rows: list[dict[str, object]], operator: str, value: int 
     assert array.pluck(rows, "id") == [row["id"] for row in rows]
     assert [row["id"] for row in array.sort(rows, "id")] == sorted(cast("int", row["id"]) for row in rows)
 
+@settings(max_examples=400, deadline=None, database=None)
+@given(ITEMS)
+def sole_counts_without_collecting ( items: list[int] ) -> None:
+
+    if len(items) == 1: assert array.sole(iter(items)) == items[0]
+    else:
+
+        with pytest.raises(Fault) as caught: array.sole(iter(items))
+
+        assert caught.value.reason == "array.sole"
+        if items: assert caught.value.errors == { "count": [str(len(items))] }
+
+sole_counts_without_collecting()
+
 slices_keep_every_item()
 sets_agree_with_the_builtin()
 rows_never_crash()
 
-print(f"fuzz array  examples={EXAMPLES * 3}  ok")
+
+@settings(max_examples=1500, deadline=None, database=None)
+@given(st.lists(st.one_of(st.none(), st.integers()), max_size=200))
+def streaming_aggregates_preserve_builtin_results ( values: list[int | None] ) -> None:
+
+    real = [value for value in values if value is not None]
+    assert array.sum(iter(values)) == sum(real)
+    assert array.min(iter(values)) == min(real, default=None)
+    assert array.max(iter(values)) == max(real, default=None)
+
+streaming_aggregates_preserve_builtin_results()
+
+@settings(max_examples=1000, deadline=None, database=None)
+@given(st.lists(st.one_of(st.none(), st.integers(-100, 100)), max_size=80))
+def order_statistics_match_materialized_reference ( values: list[int | None] ) -> None:
+
+    real = sorted(value for value in values if value is not None)
+    middle = len(real) // 2
+    expected = None if not real else real[middle] if len(real) % 2 else (real[middle - 1] + real[middle]) / 2
+    assert array.median(iter(values)) == expected
+    kept = [value for value in values if value is not None]
+    winner = max(dict.fromkeys(kept), key=kept.count) if kept else None
+    assert array.mode(iter(values)) == winner
+
+order_statistics_match_materialized_reference()
+
+print("fuzz array  properties=6  ok")

@@ -1,11 +1,13 @@
 from collections import Counter
 from collections.abc import Callable
 from itertools import pairwise
+from functools import partial
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 from engine.error import Code, Fault
 from engine.rand import Rand, Uuid, rand
-import base64, math, pytest, string, time
+import base64, math, multiprocessing, os, pytest, select, signal, string, sys, time, tracemalloc
 
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 URLSAFE   = set(string.ascii_letters + string.digits + "-_")
@@ -290,3 +292,398 @@ def test_quick_hex_is_cheap_unique_and_seedable () -> None:
     assert rand.quick(4) == a and len(a) == 8
 
     rand.seed(None)
+
+
+@pytest.mark.parametrize("bad", [True, False, 1.5, "8", None, [], {}])
+def test_invalid_types_are_domain_faults ( bad: Any ) -> None:
+
+    owner = Rand()
+    calls = (
+        ("rand.size", lambda: owner.bytes(bad)), ("rand.size", lambda: owner.quick(bad)),
+        ("rand.length", lambda: owner.string(bad)), ("rand.length", lambda: owner.password(bad)),
+        ("rand.range", lambda: owner.integer(bad, 10)), ("rand.range", lambda: owner.integer(0, bad)),
+        ("rand.range", lambda: owner.integer(0, 10, bad)), ("rand.sample", lambda: owner.sample([1], bad)),
+        ("rand.sample", lambda: owner.choices([1], bad)), ("rand.bits", lambda: owner.bits(bad)),
+        ("rand.range", lambda: owner.below(bad)),
+    )
+
+    for reason, call in calls:
+
+        with pytest.raises(Fault) as caught: call()
+
+        assert caught.value.reason == reason and caught.value.code is Code.INTERNAL
+
+    for call in (lambda: owner.weighted([1], [bad]), lambda: owner.choices([1], weights=[bad])):
+
+        if type(bad) is float: continue
+
+        with pytest.raises(Fault) as caught: call()
+
+        assert caught.value.reason == "rand.weight"
+
+def test_constructor_is_an_isolated_seeded_stream () -> None:
+
+    first, second, untouched = Rand("fixture"), Rand("fixture"), Rand("fixture")
+
+    assert first.bytes() == second.bytes() == untouched.bytes()
+
+    first.seed(9)
+
+    assert second.bytes() == untouched.bytes()
+
+    bad: Any = True
+
+    with pytest.raises(Fault): Rand(seed=bad)
+
+def test_bits_below_and_stepped_integers () -> None:
+
+    for owner in (Rand(), Rand(8)):
+
+        assert owner.bits(0) == 0 and owner.below(1) == 0
+        assert 0 <= owner.bits(32768) < 1 << 32768
+        assert 0 <= owner.below(1 << 4000) < 1 << 4000
+        assert {owner.integer(-4, 5, 3) for _ in range(300)} == {-4, -1, 2, 5}
+        assert owner.integer(7, 7, 50) == 7
+        assert owner.integer(7, 8, 50) == 7
+
+        calls: tuple[Callable[[], object], ...] = (
+            partial(owner.bits, -1), partial(owner.bits, 32769),
+            partial(owner.below, 0), partial(owner.integer, 1, 9, 0),
+            partial(owner.integer, 1, 9, -1),
+        )
+
+        for call in calls:
+
+            with pytest.raises(Fault): call()
+
+def test_uniform_extreme_ranges_and_chance ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    owner = Rand()
+    largest = float.fromhex("0x1.fffffffffffffp+1023")
+
+    for draw in (0.0, 0.25, 0.5, math.nextafter(1.0, 0.0)):
+
+        monkeypatch.setattr(Rand, "number", lambda _self, picked=draw: picked)
+
+        for low, high in ((-largest, largest), (-8.0, -3.0), (1.0, math.nextafter(1.0, 2.0)), (0.0, 5e-324)):
+
+            assert low <= owner.uniform(low, high) < high
+
+    assert owner.uniform(4, 4) == 4
+
+    for low, high in ((True, 2), (0, math.inf), (math.nan, 3), (9, 1), (0, 10 ** 10000)):
+
+        with pytest.raises(Fault) as caught: owner.uniform(low, high)
+
+        assert caught.value.reason == "rand.range"
+
+    assert not owner.chance(-1) and not owner.chance(math.nan)
+    assert owner.chance(2) and owner.chance(math.inf)
+
+    with pytest.raises(Fault): owner.chance(cast("Any", "bad"))
+
+def test_batch_choices_and_zero_weights () -> None:
+
+    for owner in (Rand(), Rand(2)):
+
+        assert owner.choices([], 0) == []
+        assert owner.choices("x", 3) == ["x"] * 3
+        assert owner.choices("abc", 100, weights=[0, 5e-324, 0]) == ["b"] * 100
+        assert owner.choices("abc", 100, weights=[0, 1, 0]) == ["b"] * 100
+        assert set(owner.choices(range(4), 4096)) == set(range(4))
+
+        calls: tuple[Callable[[], object], ...] = (
+            partial(owner.choices, [], 1), partial(owner.choices, "a", 4097),
+            partial(owner.choices, "ab", 0, weights=[1]),
+            partial(owner.choices, "ab", weights=[0, 0]),
+        )
+
+        for call in calls:
+
+            with pytest.raises(Fault): call()
+
+    first, second = Rand(91), Rand(91)
+
+    assert first.choices("abc", 100, weights=[1, 2, 3]) == second.choices("abc", 100, weights=[1, 2, 3])
+
+def test_sample_counts_without_materializing_population () -> None:
+
+    owner = Rand(1)
+
+    tracemalloc.start()
+
+    try:
+
+        sampled = owner.sample(range(100_000), 5)
+        expanded = owner.sample(["a", "b"], 5, counts=[10 ** 9, 10 ** 9])
+        peak = tracemalloc.get_traced_memory()[1]
+
+    finally: tracemalloc.stop()
+
+    assert len(sampled) == len(set(sampled)) == 5 and all(0 <= value < 100_000 for value in sampled)
+    assert len(expanded) == 5 and set(expanded) <= {"a", "b"}
+    assert peak < 100_000
+    assert sorted(owner.sample("ab", 5, counts=[3, 2])) == ["a", "a", "a", "b", "b"]
+    assert owner.sample([], 0, counts=[]) == []
+    assert owner.sample("ab", 0, counts=[0, 0]) == []
+
+    for counts in ([1], [1, -1], [True, 3], [0, 0], [1.5, 1.5]):
+
+        with pytest.raises(Fault) as caught: owner.sample("ab", 2, counts=cast("Any", counts))
+
+        assert caught.value.reason == "rand.sample"
+
+def test_native_text_rejects_biased_bytes ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[int] = []
+
+    def entropy ( size: int ) -> bytes:
+
+        calls.append(size)
+
+        return b"\xff" * size if len(calls) == 1 else b"\x00" * size
+
+    monkeypatch.setattr(os, "urandom", entropy)
+
+    assert Rand().code(12) == "0" * 12 and len(calls) == 2
+    assert Rand().string(4, "أب") == "أ" * 4
+
+def test_shuffle_bounds_entropy_buffer ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    original = os.urandom
+    sizes: list[int] = []
+
+    def entropy ( size: int ) -> bytes:
+
+        sizes.append(size)
+
+        return original(size)
+
+    monkeypatch.setattr(os, "urandom", entropy)
+
+    mixed = Rand().shuffle(range(20_000))
+
+    assert sorted(mixed) == list(range(20_000))
+    assert sizes and max(sizes) <= 4096
+
+def test_ordered_ids_across_threads ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    owner = Rand()
+    now = time.time_ns()
+
+    monkeypatch.setattr(time, "time_ns", lambda: now)
+
+    def batch ( index: int ) -> tuple[list[Uuid], list[str]]:
+
+        return [owner.uuid7() for _ in range(500)], [owner.ulid() for _ in range(500)]
+
+    with ThreadPoolExecutor(max_workers=4) as pool: batches = list(pool.map(batch, range(4)))
+
+    for sevens, ulids in batches:
+
+        assert all(left < right for left, right in pairwise(sevens))
+        assert all(left < right for left, right in pairwise(ulids))
+
+    assert len({value for sevens, _ in batches for value in sevens}) == 2000
+    assert len({value for _, ulids in batches for value in ulids}) == 2000
+
+def test_clock_and_counter_exhaustion_are_typed ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    owner = Rand()
+    now = 1_700_000_000_000
+
+    monkeypatch.setattr(time, "time_ns", lambda: now * 1_000_000)
+    monkeypatch.setattr(owner, "_ordered", now << 42 | (1 << 42) - 1)
+
+    assert owner.uuid7().int >> 80 == now + 1
+
+    monkeypatch.setattr(owner, "_sorted", now << 80 | (1 << 80) - 1)
+
+    with pytest.raises(Fault) as caught: owner.ulid()
+
+    assert caught.value.reason == "rand.overflow"
+
+    for value in (-1, 1 << 48):
+
+        monkeypatch.setattr(time, "time_ns", lambda stamp=value: stamp * 1_000_000)
+
+        with pytest.raises(Fault): owner.uuid7()
+        with pytest.raises(Fault): owner.ulid()
+
+def fork_probe () -> None:
+
+    owner = Rand()
+
+    owner.uuid7()
+    owner.ulid()
+
+    read, write = os.pipe()
+    child = os.fork()
+
+    if child == 0:
+
+        os.close(read)
+
+        try:
+
+            packet = f"{owner.uuid7()} {owner.ulid()} {owner.quick()}"
+            os.write(write, packet.encode())
+
+        finally: os._exit(0)
+
+    os.close(write)
+
+    try:
+
+        ready, _, _ = select.select([read], [], [], 5)
+
+        assert ready, "child could not generate identifiers after fork"
+
+        fields = os.read(read, 256).decode().split()
+        assert len(fields) == 3 and Uuid(fields[0]).version == 7
+        assert fields[0] != str(owner.uuid7()) and fields[1] != owner.ulid() and fields[2] != owner.quick()
+
+    finally:
+
+        os.close(read)
+        found, _ = os.waitpid(child, os.WNOHANG)
+
+        if found == 0:
+
+            os.kill(child, signal.SIGKILL)
+            os.waitpid(child, 0)
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork is unavailable")
+def test_fork_keeps_both_processes_usable () -> None:
+
+    worker = multiprocessing.get_context("spawn").Process(target=fork_probe)
+    worker.start()
+
+    try:
+
+        worker.join(timeout=10)
+
+        assert worker.exitcode == 0
+
+    finally:
+
+        if worker.is_alive():
+
+            worker.terminate()
+            worker.join()
+
+        worker.close()
+
+def test_ids_at_epoch_zero_use_random_prefixes ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    monkeypatch.setattr(time, "time_ns", lambda: 0)
+
+    first, second = Rand(1), Rand(2)
+
+    one, two = first.uuid7(), second.uuid7()
+
+    assert one.int >> 80 == two.int >> 80 == 0
+    assert one.int >> 32 != two.int >> 32
+    assert decode(first.ulid()) >> 80 == decode(second.ulid()) >> 80 == 0
+
+
+def test_oversized_populations_are_domain_faults () -> None:
+
+    owner = Rand()
+    huge = range(10 ** 100)
+    calls = (
+        ("rand.sample", lambda: owner.sample(huge, 1)),
+        ("rand.sample", lambda: owner.sample(huge, 1, counts=[1])),
+        ("rand.sample", lambda: owner.shuffle(huge)),
+        ("rand.weight", lambda: owner.weighted(huge, [1])),
+        ("rand.weight", lambda: owner.choices(huge, 1, weights=[1])),
+        ("rand.sample", lambda: owner.sample("ab", 1, counts=[10 ** 100, 1])),
+        ("rand.empty", lambda: owner.choice(huge)),
+        ("rand.empty", lambda: owner.choices(huge, 1)),
+    )
+
+    for reason, call in calls:
+
+        with pytest.raises(Fault) as caught: call()
+
+        assert caught.value.reason == reason
+
+def test_wide_alphabet_rejects_out_of_range_words ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    alphabet = "".join(chr(point) for point in range(1024, 1324))
+    calls: list[int] = []
+
+    def entropy ( size: int ) -> bytes:
+
+        calls.append(size)
+
+        return b"\xff" * size if len(calls) == 1 else b"\x00" * size
+
+    monkeypatch.setattr(os, "urandom", entropy)
+
+    assert Rand().string(12, alphabet) == alphabet[0] * 12
+    assert len(calls) == 2 and all(size % 2 == 0 for size in calls)
+
+def test_secure_choices_batch_entropy_without_modulo_bias ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    seen: list[int] = []
+
+    def entropy ( size: int ) -> bytes:
+
+        seen.append(size)
+
+        return bytes(range(256)) * (size // 256) + bytes(range(size % 256))
+
+    monkeypatch.setattr(os, "urandom", entropy)
+    draw = Rand()
+    found = draw.choices(("a", "b", "c"), 255)
+
+    assert Counter(found) == { "a": 85, "b": 85, "c": 85 }
+    assert len(seen) == 1
+    assert draw.choices([], 0) == [] and draw.choices([None], 10) == [None] * 10
+    assert len(seen) == 1
+
+
+def test_secure_choices_and_custom_alphabet_share_rejection_sampling ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    monkeypatch.setattr(os, "urandom", lambda size: b"\xff" * (size - 2) + b"\x00\x01")
+    draw = Rand()
+
+    assert draw.choices(("a", "b", "c"), 4) == ["a", "b", "a", "b"]
+    assert draw.string(4, "αβγ") == "αβαβ"
+
+
+def test_seeded_choices_keep_the_existing_integer_sampling_stream () -> None:
+
+    draw = Rand(17)
+    reference = Rand(17)
+
+    assert draw.choices(list(range(30)), 100) == [reference.choice(list(range(30))) for _ in range(100)]
+
+def test_secure_bulk_choices_reject_the_sixteen_bit_tail ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    seen: list[int] = []
+
+    def entropy ( size: int ) -> bytes:
+
+        seen.append(size)
+        return (65535).to_bytes(2, sys.byteorder) * (size // 2 - 2) + (0).to_bytes(2, sys.byteorder) + (256).to_bytes(2, sys.byteorder)
+
+    monkeypatch.setattr(os, "urandom", entropy)
+
+    assert Rand().choices(tuple(range(257)), 4) == [0, 256, 0, 256]
+    assert len(seen) == 2 and all(size % 2 == 0 for size in seen)
+
+@pytest.mark.parametrize(("left", "right"), [
+    ("", ""), ("a\x00b", "a\x00b"), ("a" * 64, "a" * 63 + "b"),
+    ("a" * 64, b"a" * 64), (b"ascii", "ascii"), ("a", "é"),
+    ("é", "a"), ("\ud800", "\ud800"), ("é", "é".encode()),
+])
+def test_constant_equal_keeps_ascii_unicode_and_mixed_semantics ( left: str | bytes, right: str | bytes ) -> None:
+
+    a = left.encode("utf-8", "surrogatepass") if isinstance(left, str) else left
+    b = right.encode("utf-8", "surrogatepass") if isinstance(right, str) else right
+
+    assert rand.constant_equal(left, right) == (a == b)
+    assert rand.constant_equal(right, left) == (a == b)

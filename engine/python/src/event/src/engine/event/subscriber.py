@@ -1,7 +1,6 @@
 from typing import ClassVar
 from .arch import Listener
 
-
 class Subscriber:
 
     listens: ClassVar[dict[str, str]] = {}

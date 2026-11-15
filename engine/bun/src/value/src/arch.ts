@@ -1,0 +1,25 @@
+import type * as json from "engine-json";
+
+export type Rounding = "half-even" | "half-up" | "half-down" | "up" | "down" | "ceil" | "floor";
+export type Whole = number | bigint;
+export type Exact = { units: bigint; scale: number };
+export type Factor = { units: Whole; scale: number };
+export type Scalar = string | number | boolean | null;
+export type Kind = "null" | "boolean" | "integer" | "number" | "date" | "text" | "list" | "record";
+export type Kinds = { null: null; boolean: boolean; integer: number; number: number; date: Date; text: string; list: string[]; record: json.Dictionary };
+export type Typed<T, Name extends string> = T & { readonly "~kind": Name };
+export type Email = Typed<string, "email">;
+export type Url = Typed<string, "url">;
+export type Phone = Typed<string, "phone">;
+export type Slug = Typed<string, "slug">;
+export type Key = Typed<string, "key">;
+export type Uuid = Typed<string, "uuid">;
+export type Ulid = Typed<string, "ulid">;
+export type CurrencyCode = Typed<string, "currency">;
+export type LocaleTag = Typed<string, "locale">;
+export type Otp = Typed<string, "otp">;
+export type PlainDate = Typed<string, "plain-date">;
+export type Decimal = Typed<string, "decimal">;
+export type Input = Decimal | string | number | bigint;
+export type Money = { readonly minor: number; readonly currency: string };
+export type Wire = { amount: string; currency: string; minor: number };

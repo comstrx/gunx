@@ -1,7 +1,5 @@
 import * as error from "engine-error";
-
-export type Wait = { timeout?: number | undefined; signal?: AbortSignal | undefined };
-export type Abortable = { readonly signal: AbortSignal; abort: ( reason?: unknown ) => void; release: () => void };
+import type { Abortable, Wait } from "./arch.ts";
 
 const longest = 2_147_483_647;
 
@@ -32,9 +30,24 @@ export function awaited<T> ( reason: string, options: number | Wait | undefined,
 
             settled = true;
 
-            for ( const stop of stops.splice(0) ) stop();
+            let failed: { cause: unknown } | undefined;
 
-            finish();
+            for ( const stop of stops.splice(0) ) {
+
+                try {
+
+                    stop();
+
+                } catch ( cause ) {
+
+                    failed ??= { cause };
+
+                }
+
+            }
+
+            if ( failed ) reject(failed.cause);
+            else finish();
 
         };
 
@@ -64,6 +77,14 @@ export function awaited<T> ( reason: string, options: number | Wait | undefined,
 
             signal.addEventListener("abort", abort, { once: true });
             stops.push(() => signal.removeEventListener("abort", abort));
+
+            if ( signal.aborted ) {
+
+                abort();
+
+                return;
+
+            }
 
         }
 
@@ -118,6 +139,8 @@ export function abortable ( ...signals: readonly (AbortSignal | undefined)[] ): 
     });
     const release = (): void => {
 
+        controller.signal.removeEventListener("abort", release);
+
         for ( const stop of stops.splice(0) ) stop();
 
     };
@@ -137,6 +160,7 @@ export function deadline ( ms: number, ...signals: readonly (AbortSignal | undef
 
         if ( timer !== undefined ) clearTimeout(timer);
 
+        made.signal.removeEventListener("abort", release);
         made.release();
 
     };
@@ -170,11 +194,13 @@ export function aborted ( signal: AbortSignal | undefined ): Promise<never> {
 }
 export function race<T> ( work: PromiseLike<T>, signal: AbortSignal | undefined ): Promise<T> {
 
-    if ( !signal ) return Promise.resolve(work);
+    const pending = Promise.resolve(work);
+
+    if ( !signal ) return pending;
 
     if ( signal.aborted ) {
 
-        work.then(undefined, () => undefined);
+        void pending.catch(() => undefined);
 
         return Promise.reject(gone(signal.reason));
 
@@ -186,7 +212,7 @@ export function race<T> ( work: PromiseLike<T>, signal: AbortSignal | undefined 
         const settle = (): void => signal.removeEventListener("abort", abort);
 
         signal.addEventListener("abort", abort, { once: true });
-        work.then(( value ) => {
+        void pending.then(( value ) => {
 
             settle();
             resolve(value);

@@ -1,10 +1,10 @@
-from .arch import Outcome
-from .cluster import Cluster
-from .gate import Gate
-from .lane import Lane
-from .pool import Pool
-from .run import Run
-from .tasks import Tasks
+lazy from .arch import Outcome
+lazy from .cluster import Cluster
+lazy from .gate import Gate
+lazy from .lane import Lane
+lazy from .pool import Pool
+lazy from .run import Run
+lazy from .tasks import Tasks
 from .thread import Thread
 
 thread = Thread()

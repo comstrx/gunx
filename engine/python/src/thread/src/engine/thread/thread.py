@@ -1,24 +1,28 @@
-from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator
-from contextvars import copy_context
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator, Mapping
 from functools import partial
 from operator import attrgetter, itemgetter
-from typing import Any, cast
+from typing import Any, cast, overload
 
 from engine.error import Code, Fault
 from engine.log import log
-from .arch import CEILING, CORES, Flight, GRACE, Hook, ISOLATED, Job, LIMIT, Mode, MODES, Outcome, RETRIES, Submit
+from .arch import CEILING, CORES, DRAIN, Flight, GRACE, Hook, ISOLATED, Job, LIMIT, Mode, MODES, Outcome, RETRIES
+from .arch import Submit, direct
 from .arch import WORD, WORKERS
 from .cluster import Cluster
 from .lane import Lane
 from .pool import Pool
 from .run import Run
+from .scope import Scope
 from .tasks import Tasks
 import asyncio, contextlib, inspect, itertools, math, signal, sys, time
 
 class Thread:
 
+    __slots__ = ("_lanes", "_scope", "_stopped", "_tasks", "_threads", "_waiters", "_workers")
+
     def __init__ ( self ) -> None:
 
+        self._scope: Scope | None = None
         self._workers = WORKERS
         self._tasks   = Tasks("thread")
         self._threads = Pool("thread", WORKERS)
@@ -26,19 +30,67 @@ class Thread:
         self._stopped = False
         self._waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Event]] = []
 
-    def setup ( self, workers: int = WORKERS ) -> None:
+    def mode ( self, mode: str ) -> Thread:
 
-        self._workers = self._whole_(workers, 1, "workers", CEILING)
+        scope = Scope(mode)
+        made = Thread()
+        made._scope = scope
 
-        self._threads.resize(self._workers)
+        return made
+
+    def options (
+        self, workers: int | None = None, provider: str | None = None, host: str | None = None, *,
+        namespace: str | None = None, runtime_env: Mapping[str, Any] | None = None,
+    ) -> Thread:
+
+        self._scoped_().options(workers, provider, host, namespace=namespace, runtime_env=runtime_env)
+
+        return self
+
+    @overload
+    def submit [T] ( self, handler: Callable[..., Awaitable[T]], *args: Any, **kwargs: Any ) -> asyncio.Task[T]: ...
+
+    @overload
+    def submit [T] ( self, handler: Callable[..., T], *args: Any, **kwargs: Any ) -> asyncio.Task[T]: ...
+
+    def submit [T] ( self, handler: Callable[..., T | Awaitable[T]], *args: Any, **kwargs: Any ) -> asyncio.Task[T]:
+
+        scope = self._scoped_()
+        scope.accept()
+
+        if not self._fits_(handler, scope.mode): raise Fault(Code.INTERNAL, reason="thread.work")
+
+        work = partial(handler, *args, **kwargs) if args or kwargs else handler
+
+        return scope.tasks.spawn(scope.call(Thread._called_, work))
+
+    async def start ( self ) -> Thread:
+
+        await self._scoped_().start()
+
+        return self
+
+    async def join ( self, grace: float = DRAIN ) -> None:
+
+        await self._scoped_().join(grace)
+
+    async def drop ( self, grace: float = GRACE ) -> int:
+
+        return await self._scoped_().drop(grace)
 
     async def offload [T] ( self, job: Job[T], *args: Any, **kwargs: Any ) -> T:
 
+        if self._scope is not None:
+
+            if self._scope.mode != "thread": self._scope.unsupported("offload")
+
+            return cast("T", await self.submit(job, *args, **kwargs))
+
         if not callable(job): raise Fault(Code.INTERNAL, reason="thread.work")
 
-        call = partial(copy_context().run, job, *args, **kwargs)
+        call = partial(job, *args, **kwargs)
 
-        try: made = await asyncio.get_running_loop().run_in_executor(self._threads.executor(), call)
+        try: made = await self._threads.submit(Thread._called_, call)
         except (SystemExit, KeyboardInterrupt) as error: raise Fault.wrap(error, reason="thread.failed") from error
 
         if inspect.iscoroutine(made):
@@ -47,41 +99,84 @@ class Thread:
 
             raise Fault(Code.INTERNAL, reason="thread.work")
 
-        return made
+        return cast("T", made)
 
-    async def gather [T] ( self, *works: Awaitable[T], limit: int = 0 ) -> list[T]:
+    async def gather [T] ( self, *works: Awaitable[T] | Callable[[], T | Awaitable[T]], limit: int = 0 ) -> list[T]:
 
-        made: dict[int, T] = {}
+        made: list[T | None] = [None] * len(works)
 
         async def keep ( index: int, work: Awaitable[T] ) -> None:
 
             made[index] = await work
 
+        async def selected ( index: int, work: Awaitable[T] | Callable[[], T | Awaitable[T]] ) -> None:
+
+            if inspect.isawaitable(work): await keep(index, work)
+            else: made[index] = await self._scoped_().call(Thread._called_, work)
+
         try:
 
             count = self._whole_(limit, 0, "limit")
+            scope = self._scope
 
-            if not all(inspect.isawaitable(work) for work in works): raise Fault(Code.INTERNAL, reason="thread.work")
+            if scope is not None:
 
-            if works: await self._pulled_(enumerate(works), keep, min(count or len(works), len(works)))
+                scope.accept()
+                count = min(count or scope.workers, scope.workers)
+
+            if not all(
+                inspect.isawaitable(work) or (scope is not None and self._fits_(work, scope.mode)) for work in works
+            ):
+
+                raise Fault(Code.INTERNAL, reason="thread.work")
+
+            if works:
+
+                await self._pulled_(
+                    enumerate(works), keep if scope is None else selected, min(count or len(works), len(works)),
+                )
 
         finally: self._unstarted_(works)
 
-        return [made[index] for index in range(len(works))]
+        return cast("list[T]", made)
 
-    async def map [T, R] ( self, items: Iterable[T], work: Callable[[T], Awaitable[R]], limit: int = LIMIT ) -> list[R]:
+    @overload
+    async def map [T, R] (
+        self, items: Iterable[T], work: Callable[[T], Awaitable[R]], limit: int | None = None,
+    ) -> list[R]: ...
 
-        count = self._whole_(limit, 1, "limit", CEILING)
-        made: dict[int, R] = {}
+    @overload
+    async def map [T, R] (
+        self, items: Iterable[T], work: Callable[[T], R], limit: int | None = None,
+    ) -> list[R]: ...
 
-        if not callable(cast("object", work)): raise Fault(Code.INTERNAL, reason="thread.work")
+    async def map [T, R] (
+        self, items: Iterable[T], work: Callable[[T], R | Awaitable[R]], limit: int | None = None,
+    ) -> list[R]:
+
+        scope = self._scope
+        count = limit if limit is not None else scope.workers if scope is not None else LIMIT
+        count = self._whole_(count, 1, "limit", CEILING)
+        made: list[R | None] = []
+
+        if scope is not None:
+
+            scope.accept()
+            count = min(count, scope.workers)
+
+        if not self._fits_(work, scope.mode if scope is not None else "async"):
+
+            raise Fault(Code.INTERNAL, reason="thread.work")
+
+        call = work if scope is None else partial(scope.call, work)
 
         async def keep ( index: int, item: T ) -> None:
 
-            held = work(item)
+            held = call(item)
 
             if not inspect.isawaitable(held): raise Fault(Code.INTERNAL, reason="thread.work")
 
+            made.append(None)
             made[index] = await held
 
         try: source = enumerate(items)
@@ -89,13 +184,15 @@ class Thread:
 
         await self._pulled_(source, keep, count)
 
-        return [made[index] for index in range(len(made))]
+        return cast("list[R]", made)
 
     async def run (
-        self, items: Iterable[Any], handler: Callable[..., Any], mode: Mode = "async", workers: int | None = None,
+        self, items: Iterable[Any], handler: Callable[..., Any], mode: Mode | None = None, workers: int | None = None,
         timeout: float | None = None, retries: int = 0, ordered: bool = True, on_result: Hook | None = None,
-        on_error: Hook | None = None, address: str | None = None, fail_fast: bool = False,
+        on_error: Hook | None = None, address: str | None = None, fail_fast: bool = False, *, idempotent: bool = False,
     ) -> Run:
+
+        mode = self._selected_(mode, address)
 
         if mode not in MODES: raise Fault(Code.INTERNAL, reason="thread.mode", errors={ "mode": [self._word_(mode)] })
         if not self._fits_(handler, mode): raise Fault(Code.INTERNAL, reason="thread.work")
@@ -103,19 +200,27 @@ class Thread:
 
             raise Fault(Code.INTERNAL, reason="thread.hook")
 
+        if type(idempotent) is not bool: raise Fault(Code.INTERNAL, reason="thread.idempotent")
+
         wait  = self._deadline_(timeout)
         tries = self._whole_(retries, 0, "retries", RETRIES)
         count = self._bound_(mode, workers)
 
-        try: sequence = list(items)
+        try:
+
+            source = iter(items)
+            head = list(itertools.islice(source, count))
+
         except TypeError as error: raise Fault(Code.INTERNAL, reason="thread.items") from error
 
-        if not sequence: return Run(mode, (), 0.0, count)
+        if not head: return Run(mode, (), 0.0, count)
 
         started = time.perf_counter()
-        flight  = Flight(await self._lane_(mode, address), handler, wait, tries, bool(fail_fast), on_result, on_error)
+        flight  = Flight(
+            await self._lane_(mode, address), handler, wait, tries, bool(fail_fast), on_result, on_error, idempotent,
+        )
 
-        await self._pulled_(enumerate(sequence), partial(self._one_, flight), min(count, len(sequence)))
+        await self._pulled_(enumerate(itertools.chain(head, source)), partial(self._one_, flight), len(head), flight)
 
         found  = sorted(flight.outcomes, key=attrgetter("index")) if ordered else flight.outcomes
         failed = sum(1 for outcome in found if not outcome.ok())
@@ -125,8 +230,10 @@ class Thread:
         return Run(mode, tuple(found), self._ms_(started), count)
 
     async def compute (
-        self, handler: Callable[..., Any], *args: Any, mode: Mode = "process", timeout: float | None = None,
+        self, handler: Callable[..., Any], *args: Any, mode: Mode | None = None, timeout: float | None = None,
     ) -> Any:
+
+        mode = mode if mode is not None else cast("Mode", self._scope.mode) if self._scope is not None else "process"
 
         if not self._fits_(handler, mode): raise Fault(Code.INTERNAL, reason="thread.work")
 
@@ -168,17 +275,38 @@ class Thread:
 
         return made
 
-    async def cluster ( self, address: str | None = None ) -> Cluster:
+    async def cluster (
+        self, address: str | None = None, *, namespace: str | None = None,
+        runtime_env: Mapping[str, Any] | None = None,
+    ) -> Cluster:
 
-        return await Cluster.connect(address)
+        if self._scope is not None: self._scope.unsupported("cluster")
+
+        return await Cluster.connect(address, namespace=namespace, runtime_env=runtime_env)
 
     def spawn [T] ( self, coroutine: Coroutine[Any, Any, T], name: str | None = None ) -> asyncio.Task[T]:
+
+        if self._scope is not None:
+
+            if self._scope.mode != "async":
+
+                self._unstarted_((coroutine,))
+                self._scope.unsupported("spawn")
+
+            try: self._scope.accept()
+            except BaseException:
+
+                self._unstarted_((coroutine,))
+
+                raise
+
+            return self._scope.tasks.spawn(coroutine, name)
 
         return self._tasks.spawn(coroutine, name)
 
     def tasks ( self ) -> Tasks:
 
-        return self._tasks
+        return self._scope.tasks if self._scope is not None else self._tasks
 
     async def sleep ( self, seconds: float ) -> None:
 
@@ -190,9 +318,16 @@ class Thread:
 
     def stopping ( self ) -> bool:
 
-        return self._stopped
+        return self._scope.stopped if self._scope is not None else self._stopped
 
     def stop ( self ) -> None:
+
+        if self._scope is not None:
+
+            self._scope.bind()
+            self._scope.stopped = True
+
+            return
 
         self._stopped = True
 
@@ -202,6 +337,7 @@ class Thread:
 
     async def forever ( self, signals: tuple[signal.Signals, ...] = (signal.SIGINT, signal.SIGTERM) ) -> None:
 
+        if self._scope is not None: self._scope.unsupported("forever")
         if type(signals) is not tuple or not all(isinstance(sig, signal.Signals) for sig in signals):
 
             raise Fault(Code.INTERNAL, reason="thread.signal")
@@ -230,6 +366,8 @@ class Thread:
 
     async def close ( self, grace: float = GRACE ) -> int:
 
+        if self._scope is not None: return await self.drop(grace)
+
         closed = await self._tasks.close(grace)
 
         self._threads.close()
@@ -242,6 +380,8 @@ class Thread:
 
     def describe ( self ) -> dict[str, object]:
 
+        if self._scope is not None: return self._scope.describe()
+
         pools = [self._threads.mode] if self._threads.live() else []
         pools += [lane.mode for lane in self._lanes.values() if lane.live()]
 
@@ -249,13 +389,17 @@ class Thread:
 
     async def _pulled_ (
         self, source: Iterator[tuple[int, Any]], work: Callable[[int, Any], Awaitable[None]], limit: int,
+        flight: Flight | None = None,
     ) -> None:
 
         failed: list[tuple[int, Exception]] = []
 
         async def puller () -> None:
 
-            for index, item in source:
+            while flight is None or not flight.stopped:
+
+                try: index, item = next(source)
+                except StopIteration: return
 
                 try: await work(index, item)
                 except Exception as error:
@@ -264,38 +408,48 @@ class Thread:
 
                     raise
 
-        tasks = [asyncio.ensure_future(puller()) for _ in range(limit)]
+        spawn = asyncio.create_task if self._scope is None else self._scope.tasks.spawn
+        tasks: list[asyncio.Task[None]] = []
 
-        try: await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-        finally:
+        try:
 
-            for task in tasks: task.cancel()
+            for _ in range(limit):
+
+                pending = puller()
+
+                try: tasks.append(spawn(pending))
+                except BaseException:
+
+                    pending.close()
+
+                    raise
+
+            await asyncio.gather(*tasks)
+
+        except BaseException as error:
+
+            pending_tasks = (task for task in tasks if not task.done() and not task.cancelling())
+
+            for task in pending_tasks: task.cancel()
 
             await asyncio.gather(*tasks, return_exceptions=True)
 
-        if failed: raise min(failed, key=itemgetter(0))[1]
+            if isinstance(error, Exception) and failed and (first := min(failed, key=itemgetter(0))[1]) is not error:
 
-        for task in tasks:
+                raise first from error
 
-            error = None if task.cancelled() else task.exception()
-
-            if error is not None: raise error
+            raise
 
     async def _lane_ ( self, mode: str, address: str | None ) -> Submit:
 
-        if mode == "async": return self._direct_
-        if mode == "ray": return (await Cluster.connect(address)).call
+        if self._scope is not None: return self._scope.call
+        if mode == "async": return direct
+        if mode in {"ray", "remote"}: return (await Cluster.connect(address)).call
         if mode == "thread": return self._threads.submit
 
         return self._lanes[mode].submit
 
     async def _one_ ( self, flight: Flight, index: int, item: Any ) -> None:
-
-        if flight.stopped:
-
-            flight.outcomes.append(Outcome(index, error=Fault(Code.CONFLICT, reason="thread.stopped")))
-
-            return
 
         began = time.perf_counter()
 
@@ -321,9 +475,10 @@ class Thread:
         for left in range(flight.tries, -1, -1):
 
             try: return await self._attempt_(flight, item)
-            except Exception:
+            except Fault as error:
 
-                if left == 0: raise
+                if left == 0 or not error.safe(flight.idempotent): raise
+                if error.retry_after: await asyncio.sleep(error.retry_after)
 
         raise Fault(Code.INTERNAL, reason="thread.retries")
 
@@ -345,6 +500,12 @@ class Thread:
 
     def _bound_ ( self, mode: str, workers: int | None ) -> int:
 
+        if self._scope is not None:
+
+            asked = self._scope.workers if workers is None else self._whole_(workers, 1, "workers", CEILING)
+
+            return min(asked, self._scope.workers)
+
         asked = self._workers if workers is None else self._whole_(workers, 1, "workers", CEILING)
 
         if mode == "thread": return min(asked, self._workers)
@@ -358,10 +519,36 @@ class Thread:
 
             if inspect.iscoroutine(work) and inspect.getcoroutinestate(work) == inspect.CORO_CREATED: work.close()
 
+    def _scoped_ ( self ) -> Scope:
+
+        if self._scope is None: raise Fault(Code.CONFLICT, reason="thread.mode_required")
+
+        return self._scope
+
+    def _selected_ ( self, mode: Mode | None, address: str | None ) -> Mode:
+
+        if self._scope is None: return "async" if mode is None else mode
+
+        scope = self._scope
+        scope.accept()
+
+        if mode is not None and mode != scope.mode: raise Fault(Code.CONFLICT, reason="thread.mode")
+        if address is not None and address != scope.host: raise Fault(Code.CONFLICT, reason="thread.host")
+
+        return cast("Mode", scope.mode)
+
+    @staticmethod
+    def _called_ ( work: Callable[[], Any] ) -> Any:
+
+        return work()
+
     @staticmethod
     def _fits_ ( work: object, mode: str = "async" ) -> bool:
 
-        return callable(work) and (mode == "async" or not inspect.iscoroutinefunction(work))
+        return callable(work) and (
+            mode == "async"
+            or not (inspect.iscoroutinefunction(work) or inspect.iscoroutinefunction(type(work).__call__))
+        )
 
     @staticmethod
     def _whole_ ( value: int, low: int, reason: str, high: int | None = None ) -> int:
@@ -394,13 +581,6 @@ class Thread:
         handler, args = packed
 
         return handler(*args)
-
-    @staticmethod
-    async def _direct_ ( handler: Callable[..., Any], item: Any ) -> Any:
-
-        made = handler(item)
-
-        return await made if inspect.isawaitable(made) else made
 
     @staticmethod
     async def _hook_ ( hook: Hook, index: int, value: Any ) -> None:

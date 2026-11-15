@@ -1,7 +1,5 @@
-import { type Layout, offsetOf, sizeOf, type Visible, visible } from "./layout.ts";
-
-export type Table = { rows: Visible; columns: Visible };
-export type Stuck = { index: number; shift: number };
+import type { Layout, Stuck, Table } from "./arch.ts";
+import { offsetOf, sizeOf, visible } from "./layout.ts";
 
 function inside ( made: Layout, index: number | undefined ): index is number {
 

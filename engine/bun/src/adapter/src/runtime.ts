@@ -1,9 +1,5 @@
 import * as error from "engine-error";
-import type { Host } from "./host.ts";
-
-export type Runtime = "browser" | "worker" | "native" | "bun" | "node" | "deno" | "edge" | "unknown";
-export type Facts = { runtime: Runtime; server: boolean; document: boolean; hermes: boolean; agent: string };
-export type Members = Record<string, unknown>;
+import type { Facts, Host, Members, Runtime } from "./arch.ts";
 
 const servers: ReadonlySet<Runtime> = new Set(["bun", "node", "deno", "edge"]);
 
@@ -97,7 +93,15 @@ export function fill<T extends object> ( given: { [K in keyof T]?: T[K] | undefi
 
     const out = { ...defaults };
 
-    for ( const [key, value] of Object.entries(given) ) if ( value !== undefined && key !== "__proto__" ) (out as Record<string, unknown>)[key] = value;
+    for ( const key of named(given as Members) ) {
+
+        if ( key === "__proto__" || (key in Object.prototype && !Object.hasOwn(given, key)) ) continue;
+
+        const value = (given as Members)[key];
+
+        if ( value !== undefined ) (out as Members)[key] = typeof value === "function" ? value.bind(given) : value;
+
+    }
 
     return out;
 

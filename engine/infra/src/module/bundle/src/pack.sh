@@ -22,12 +22,46 @@ module:bundle:pack:slim () {
     done
 
 }
+module:bundle:pack:split () {
+
+    local kind="${1}" line="" marker="" inside=0
+
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+
+        if (( inside == 0 )) && [[ "${line}" =~ ^\#cfg\[(test|bench|fuzz)\]$ ]]; then marker="${line}"; continue; fi
+        if (( inside == 0 )) && [[ "${line}" =~ ^@?[a-z][a-z0-9:-]*\ \(\)\ \{$ ]]; then inside=1; fi
+
+        if (( inside == 1 )); then
+
+            [[ "${kind}" != functions ]] || printf '%s%s\n' "${marker:+${marker}$'\n'}" "${line}"
+            [[ "${line}" != '}' ]] || inside=0
+
+        else
+
+            [[ "${kind}" != statements ]] || printf '%s%s\n' "${marker:+${marker}$'\n'}" "${line}"
+
+        fi
+
+        marker=""
+
+    done
+
+}
+module:bundle:pack:part () {
+
+    local file="${1}" mode="${2}" kind="${3}"
+
+    if [[ "${mode}" == release ]]; then
+        core:fs:file:read "${file}" | module:bundle:pack:strip | module:bundle:pack:split "${kind}" | module:bundle:pack:slim
+    else
+        core:fs:file:read "${file}" | module:bundle:pack:split "${kind}"
+    fi
+
+}
 module:bundle:pack:sources () {
 
-    local root="${1}" source="${2}" entry="${3}" mode="${4}" file="" relative=""
-    local -a embedded=()
-
-    printf 'bundle:source () {\n\n    case "%s" in\n' "\${1}"
+    local root="${1}" source="${2}" entry="${3}" mode="${4}" file="" relative="" index=0
+    local -a embedded=() files=()
 
     while IFS= read -r -d '' file; do
 
@@ -39,24 +73,75 @@ module:bundle:pack:sources () {
             || { core:error:fail "Invalid source name: ${relative}"; return; }
 
         embedded+=( "${relative}" )
-
-        printf "        '%s')\n" "${relative}"
-
-        if [[ "${mode}" == release ]]; then
-            core:fs:file:read "${file}" | module:bundle:pack:strip | module:bundle:pack:slim || return
-        else
-            core:fs:file:read "${file}" || return
-        fi
-
-        printf '\n        ;;\n'
+        files+=( "${file}" )
 
     done < <(core:fs:tree:files "${root}/${source}" .sh)
 
-    printf '        *) core:error:fail "Missing source: %s" ;;\n    esac\n\n}\n' "\${1}"
+    for file in "${files[@]}"; do
+        module:bundle:pack:part "${file}" "${mode}" functions || return
+    done
+
+    for (( index = 0; index < ${#files[@]}; index++ )); do
+
+        printf 'bundle:unit:%s () {\n\n:\n' "${index}"
+        module:bundle:pack:part "${files[index]}" "${mode}" statements || return
+        printf '\n}\n'
+
+    done
+
+    printf 'bundle:source () {\n\n    case "%s" in\n' "\${1}"
+
+    for (( index = 0; index < ${#embedded[@]}; index++ )); do
+        printf "        '%s') bundle:unit:%s || return; unset -f bundle:unit:%s ;;\n" "${embedded[index]}" "${index}" "${index}"
+    done
+
+    printf '        *) core:error:fail "Missing source: %s"; return ;;\n    esac\n\n}\n' "\${1}"
     printf 'bundle:sources () {\n\n'
     printf '    printf '"'"'%%s\\n'"'"
     printf " '%s'" "${embedded[@]}"
     printf '\n\n}\n'
+
+}
+module:bundle:pack:data () {
+
+    local root="${1}" file="" key=""
+    local -A table=() pairs=()
+    local -a order=() keys=()
+
+    shift
+
+    for file in "$@"; do
+
+        case "${file}" in
+            *.toml)
+                core:parse:toml table "${root}/${file}" || return
+                mapfile -t keys < <(printf '%s\n' "${!table[@]}" | LC_ALL=C sort)
+
+                printf 'bundle:manifest () {\n\n    local -n _manifest="%s"\n\n    _manifest=(\n' "\${1}"
+                for key in "${keys[@]}"; do module:bundle:pack:pair "${key}" "${table[${key}]}"; done
+                printf '    )\n\n}\n'
+            ;;
+            .env.example)
+                core:parse:env pairs order "${root}/${file}" || return
+
+                printf 'bundle:schema () {\n\n    local -n _schema="%s"\n    local -n _sequence="%s"\n\n    _schema=(\n' "\${1}" "\${2}"
+                for key in "${order[@]}"; do module:bundle:pack:pair "${key}" "${pairs[${key}]}"; done
+                printf '    )\n    _sequence=(\n'
+                for key in "${order[@]}"; do printf "        '%s'\n" "${key}"; done
+                printf '    )\n\n}\n'
+            ;;
+        esac
+
+    done
+
+}
+module:bundle:pack:pair () {
+
+    local key="${1}" value="${2-}"
+
+    [[ "${key}" != *[!A-Za-z0-9_.-]* ]] || { core:error:fail "A key that cannot be embedded: ${key}"; return; }
+
+    printf "        ['%s']='%s'\n" "${key}" "${value//\'/\'\\\'\'}"
 
 }
 module:bundle:pack:assets () {
@@ -138,10 +223,9 @@ module:bundle:pack:create () {
         printf 'TOOL_ROOT="%s"\nTOOL_ENGINE=""\nTOOL_SOURCE=""\nTOOL_BIN="%s"\n\n' "\${PWD}" "\${BASH_SOURCE[0]}"
         printf '%s\n' 'declare -gA LOAD_STATE=() LOAD_INDEX=()' 'declare -g LOAD_PATH=""'
 
-        declare -f core:load:use core:load:index core:load:exists core:load:resolve core:load:list
-
         module:bundle:pack:sources "${root}" "${source}" "${entry}" "${mode}" || exit
         module:bundle:pack:assets "${root}" "$@" || exit
+        module:bundle:pack:data "${root}" "$@" || exit
 
         [[ "${mode}" != dev ]] || module:bundle:pack:tests "${root}/${tests}" || exit
 

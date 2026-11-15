@@ -1,19 +1,42 @@
-export type Direction = "rtl" | "ltr";
-export type PadSide = "start" | "end" | "both";
-export type MaskKind = "email" | "phone" | "name" | "card" | "text";
-export type MaskOptions = { kind?: MaskKind | undefined; keep?: number | undefined; keepEnd?: number | undefined; mark?: string | undefined };
+import { collectGraphemes, countGraphemes, splitGraphemes as units } from "unicode-segmenter/grapheme";
+import type { Direction, MaskOptions, PadSide } from "./arch.ts";
 
 const arabicRange = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
 const rtlRange = /[֐-ࣿיִ-﷿ﹰ-﻿]/;
 const strong = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ֐-ࣿיִ-﷿ﹰ-﻿]/;
-const clustered = /[\p{M}\p{Cf}\p{Regional_Indicator}\p{Emoji_Modifier}\r\u0d4e\u0e33\u0eb3\u1100-\u11ff\ua960-\ua97f\ud7b0-\ud7ff\uff9e\uff9f\u{111c2}\u{111c3}\u{113d1}\u{1193f}\u{11941}\u{11a3a}\u{11a84}-\u{11a89}\u{11d46}\u{11f02}]/u;
+const complex = /[^\p{ASCII}]|\r/u;
 const htmlEscapes: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 const htmlNames = new Map(Object.entries(htmlEscapes).map(([letter, name]) => [name, letter]));
-const segmenter = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : undefined;
+function budget ( value: number ): number {
 
-function paired ( text: string, at: number ): boolean {
+    return Math.max(0, Math.trunc(value) || 0);
 
-    return at > 0 && at < text.length && (text.charCodeAt(at) & 0xfc00) === 0xdc00 && (text.charCodeAt(at - 1) & 0xfc00) === 0xd800;
+}
+function trimmed ( text: string ): string {
+
+    if ( !complex.test(text) ) return text.trim();
+
+    let from = 0;
+    let to = 0;
+    let at = 0;
+    let started = false;
+
+    for ( const part of units(text) ) {
+
+        if ( part.trim() !== "" ) {
+
+            if ( !started ) from = at;
+
+            started = true;
+            to = at + part.length;
+
+        }
+
+        at += part.length;
+
+    }
+
+    return text.slice(from, to);
 
 }
 
@@ -48,14 +71,14 @@ export function isolate ( text: string ): string {
 }
 export function graphemes ( text: string ): string[] {
 
-    if ( !segmenter || !clustered.test(text) ) return [...text];
-
-    return Array.from(segmenter.segment(text), ( part ) => part.segment);
+    return complex.test(text) ? collectGraphemes(text) : [...text];
 
 }
 export function length ( text: string ): number {
 
-    return graphemes(text).length;
+    if ( !complex.test(text) ) return text.length;
+
+    return countGraphemes(text);
 
 }
 export function collapse ( text: string ): string {
@@ -75,43 +98,95 @@ export function reverse ( text: string ): string {
 }
 export function truncate ( text: string, limit: number, tail = "…" ): string {
 
-    if ( text.length <= limit ) return text;
+    const size = budget(limit);
 
-    const letters = graphemes(text);
+    if ( size === 0 ) return "";
+    if ( text.length <= size ) return text;
 
-    if ( letters.length <= limit ) return text;
+    const mark = take(tail, size);
+    const room = Math.max(0, size - length(mark));
+    let count = 0;
+    let at = 0;
+    let end = 0;
 
-    const room = Math.max(0, limit - graphemes(tail).length);
+    for ( const part of units(text) ) {
 
-    return `${letters.slice(0, room).join("").trimEnd()}${tail}`;
+        count += 1;
+
+        if ( count > size ) return text.slice(0, end) + mark;
+
+        at += part.length;
+
+        if ( count <= room && part.trim() !== "" ) end = at;
+
+    }
+
+    return text;
 
 }
 export function excerpt ( text: string, phrase: string, radius = 40, tail = "…" ): string {
 
+    const reach = budget(radius);
     const at = text.search(new RegExp(escapeRegExp(phrase), "i"));
 
-    if ( at === -1 ) return truncate(text, radius * 2 + phrase.length, tail);
+    if ( at === -1 ) return truncate(text, reach * 2 + length(phrase), tail);
 
-    const from = Math.max(0, at - radius);
-    const to = Math.min(text.length, at + phrase.length + radius);
-    const start = paired(text, from) ? from - 1 : from;
-    const end = paired(text, to) ? to + 1 : to;
+    let from = Math.max(0, at - reach);
+    let to = Math.min(text.length, at + phrase.length + reach);
 
-    return `${start > 0 ? tail : ""}${text.slice(start, end).trim()}${end < text.length ? tail : ""}`;
+    if ( complex.test(text) && to > from ) {
+
+        let start = 0;
+
+        for ( const part of units(text) ) {
+
+            const end = start + part.length;
+
+            if ( start <= from && from < end ) from = start;
+
+            if ( end >= to ) {
+
+                to = end;
+
+                break;
+
+            }
+
+            start = end;
+
+        }
+
+    }
+
+    return (from > 0 ? tail : "") + trimmed(text.slice(from, to)) + (to < text.length ? tail : "");
 
 }
 export function limitWords ( text: string, limit: number, tail = "…" ): string {
 
-    const parts = collapse(text).split(" ");
+    const size = budget(limit);
 
-    return parts.length <= limit ? collapse(text) : `${parts.slice(0, limit).join(" ")}${tail}`;
+    if ( size === 0 ) return "";
+
+    const parts: string[] = [];
+
+    for ( const found of text.matchAll(/\S+/g) ) {
+
+        if ( parts.length === size ) return parts.join(" ") + tail;
+
+        parts.push(found[0]);
+
+    }
+
+    return parts.join(" ");
 
 }
 export function wordCount ( text: string ): number {
 
-    const trimmed = collapse(text);
+    let count = 0;
 
-    return trimmed === "" ? 0 : trimmed.split(" ").length;
+    for ( const _ of text.matchAll(/\S+/g) ) count += 1;
+
+    return count;
 
 }
 export function pad ( text: string, width: number, fill = " ", side: PadSide = "start" ): string {
@@ -133,7 +208,22 @@ export function pad ( text: string, width: number, fill = " ", side: PadSide = "
 }
 export function initials ( text: string, limit = 2 ): string {
 
-    return collapse(text).split(" ").filter(Boolean).slice(0, limit).map(( word ) => graphemes(word)[0] ?? "").join("").toUpperCase();
+    const size = budget(limit);
+    let count = 0;
+    let out = "";
+
+    if ( size === 0 ) return out;
+
+    for ( const found of text.matchAll(/\S+/g) ) {
+
+        out += take(found[0], 1);
+        count += 1;
+
+        if ( count === size ) break;
+
+    }
+
+    return out.toUpperCase();
 
 }
 export function escapeHtml ( text: string ): string {
@@ -242,10 +332,25 @@ export function replaceLast ( text: string, search: string, replacement: string 
 }
 export function take ( text: string, count: number ): string {
 
-    const letters = graphemes(text);
     const size = Math.trunc(count);
 
-    return size > 0 ? letters.slice(0, size).join("") : size < 0 ? letters.slice(size).join("") : "";
+    if ( !size ) return "";
+    if ( size < 0 ) return graphemes(text).slice(size).join("");
+    if ( size >= text.length ) return text;
+
+    let seen = 0;
+    let end = 0;
+
+    for ( const part of units(text) ) {
+
+        end += part.length;
+        seen += 1;
+
+        if ( seen === size ) break;
+
+    }
+
+    return text.slice(0, end);
 
 }
 export function chunk ( text: string, size: number ): string[] {
@@ -300,16 +405,22 @@ export function wrap ( text: string, width: number ): string[] {
 
     const out: string[] = [];
     let line = "";
+    let size = 0;
 
-    for ( const word of collapse(text).split(" ") ) {
+    for ( const found of text.matchAll(/\S+/g) ) {
 
-        if ( line !== "" && length(line) + 1 + length(word) > width ) {
+        const word = found[0];
+        const count = length(word);
+
+        if ( line !== "" && size + 1 + count > width ) {
 
             out.push(line);
             line = word;
+            size = count;
 
         } else {
 
+            size += (line === "" ? 0 : 1) + count;
             line = line === "" ? word : `${line} ${word}`;
 
         }

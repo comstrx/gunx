@@ -1,18 +1,42 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const lookup = new Map<string, number>([...alphabet].map(( letter, index ) => [letter, index]));
+const lookup = new Int8Array(128).fill(-1);
+
+for ( let index = 0; index < alphabet.length; index += 1 ) lookup[alphabet.charCodeAt(index)] = index;
 
 const pairs: string[] = [];
 
-lookup.set("-", 62);
-lookup.set("_", 63);
+lookup[45] = 62;
+lookup[95] = 63;
 
 for ( let byte = 0; byte < 256; byte += 1 ) pairs.push((byte < 16 ? "0" : "") + byte.toString(16));
 
 export function bytes ( text: string ): Uint8Array {
 
     return encoder.encode(text);
+
+}
+export function byteLength ( text: string ): number {
+
+    let size = 0;
+
+    for ( let at = 0; at < text.length; at += 1 ) {
+
+        const code = text.charCodeAt(at);
+
+        if ( code < 0x80 ) size += 1;
+        else if ( code < 0x800 ) size += 2;
+        else if ( code >= 0xd800 && code <= 0xdbff && (text.charCodeAt(at + 1) & 0xfc00) === 0xdc00 ) {
+
+            size += 4;
+            at += 1;
+
+        } else size += 3;
+
+    }
+
+    return size;
 
 }
 export function utf8 ( data: Uint8Array ): string {
@@ -81,18 +105,24 @@ export function base64url ( data: Uint8Array | string ): string {
 }
 export function fromBase64 ( text: string ): Uint8Array {
 
-    const clean = text.replace(/[\s=]+/g, "");
+    const clean = text.replace(/\s/g, "");
+    const padding = clean.indexOf("=");
+    const length = padding === -1 ? clean.length : padding;
+    const tail = length % 4;
 
-    if ( /[^A-Za-z0-9+/_-]/.test(clean) || clean.length % 4 === 1 ) return new Uint8Array(0);
+    if ( !/^[A-Za-z0-9+/_-]*={0,2}$/.test(clean) || tail === 1 ) return new Uint8Array(0);
+    if ( /[+/]/.test(clean) && /[-_]/.test(clean) ) return new Uint8Array(0);
+    if ( padding !== -1 && (clean.length % 4 !== 0 || tail === 0) ) return new Uint8Array(0);
+    if ( tail !== 0 && ((lookup[clean.charCodeAt(length - 1)] ?? 0) & (tail === 2 ? 15 : 3)) !== 0 ) return new Uint8Array(0);
 
-    const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
+    const out = new Uint8Array(Math.floor((length * 3) / 4));
     let buffer = 0;
     let bits = 0;
     let at = 0;
 
-    for ( const letter of clean ) {
+    for ( let index = 0; index < length; index += 1 ) {
 
-        buffer = (buffer << 6) | (lookup.get(letter) ?? 0);
+        buffer = (buffer << 6) | (lookup[clean.charCodeAt(index)] ?? 0);
         bits += 6;
 
         if ( bits >= 8 ) {
@@ -105,6 +135,6 @@ export function fromBase64 ( text: string ): Uint8Array {
 
     }
 
-    return out.subarray(0, at);
+    return out;
 
 }

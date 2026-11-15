@@ -1,6 +1,4 @@
-import type * as rand from "engine-rand";
-
-export type Draw = ( random: rand.Random, extra?: number ) => string;
+import type { Draw } from "./arch.ts";
 
 const loop = 3;
 const spread = 32;

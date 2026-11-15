@@ -1,23 +1,6 @@
 import * as date from "engine-date";
 import * as error from "engine-error";
-
-type Step = ( value: never ) => unknown;
-type Timer = ReturnType<typeof setTimeout>;
-
-export type Deferred<T> = { promise: Promise<T>; resolve: ( value: T ) => void; reject: ( reason: unknown ) => void; settled: boolean };
-export type DebounceOptions = { leading?: boolean | undefined; max?: number | undefined };
-export type Debounced<F extends ( ...args: never[] ) => void> = F & { cancel: () => void; flush: () => void; pending: () => boolean };
-export type Throttled<F extends ( ...args: never[] ) => void> = F & { cancel: () => void; flush: () => void; pending: () => boolean };
-export type RetryOptions = {
-    times?: number | undefined;
-    delay?: number | undefined;
-    factor?: number | undefined;
-    max?: number | undefined;
-    jitter?: boolean | undefined;
-    when?: (( failure: unknown, attempt: number ) => boolean) | undefined;
-    onRetry?: (( failure: unknown, attempt: number, wait: number ) => void) | undefined;
-    signal?: AbortSignal | undefined;
-};
+import type { Debounced, DebounceOptions, Deferred, RetryOptions, Step, Throttled, Timer } from "./arch.ts";
 
 const longest = 2_147_483_647;
 
@@ -229,6 +212,8 @@ export async function retry<T> ( work: ( attempt: number ) => Promise<T>, option
     let attempt = 0;
 
     for ( ;; ) {
+
+        if ( signal?.aborted ) throw error.fault("timeout", "retry.aborted", { cause: signal.reason });
 
         attempt += 1;
 

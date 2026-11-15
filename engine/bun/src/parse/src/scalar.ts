@@ -1,10 +1,7 @@
 import * as date from "engine-date";
 import * as string from "engine-string";
 import * as casts from "engine-value";
-
-export type Semver = { major: number; minor: number; patch: number; prerelease: string; build: string };
-
-type Table = readonly (readonly [string, number])[];
+import type { Semver, Table } from "./arch.ts";
 
 const spans: Table = [["ms msec msecs millisecond milliseconds", 1], ["s sec secs second seconds", 1000], ["m min mins minute minutes", 60_000], ["h hr hrs hour hours", 3_600_000], ["d day days", 86_400_000], ["w wk wks week weeks", 604_800_000]];
 const sizes: Table = [["b byte bytes", 1], ["k kb kib", 1024], ["m mb mib", 1024 ** 2], ["g gb gib", 1024 ** 3], ["t tb tib", 1024 ** 4], ["p pb pib", 1024 ** 5]];

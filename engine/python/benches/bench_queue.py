@@ -4,7 +4,7 @@ from engine.log import log
 from engine.queue import Job, Queue
 from engine.test import Bench
 from pathlib import Path
-import asyncio
+import asyncio, os
 
 bench = Bench()
 loop  = asyncio.new_event_loop()
@@ -13,7 +13,7 @@ jobs  = Queue()
 inline = Queue()
 done: list[int] = []
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 bus.setup(Memory())
 jobs.setup(bus, queues=("default",))
 inline.setup(Broker(), inline=True)

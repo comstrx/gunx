@@ -131,19 +131,16 @@ export function sum ( values: readonly number[] ): number {
 }
 export function mean ( values: readonly number[] ): number {
 
-    return values.length === 0 ? 0 : sum(values) / values.length;
+    let count = 0;
+
+    for ( const value of values ) if ( Number.isFinite(value) ) count += 1;
+
+    return count === 0 ? 0 : sum(values) / count;
 
 }
 export function median ( values: readonly number[] ): number {
 
-    if ( values.length === 0 ) return 0;
-
-    const sorted = values.map(( value ) => finite(value)).sort(( a, b ) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    const upper = sorted[middle] ?? 0;
-    const lower = sorted[middle - 1] ?? upper;
-
-    return sorted.length % 2 === 0 ? (lower + upper) / 2 : upper;
+    return quantile(values, 0.5);
 
 }
 export function quantile ( values: readonly number[], share: number ): number {
@@ -153,7 +150,9 @@ export function quantile ( values: readonly number[], share: number ): number {
     const low = sorted[Math.floor(at)] ?? 0;
     const high = sorted[Math.ceil(at)] ?? low;
 
-    return low + (high - low) * (at - Math.floor(at));
+    const weight = at - Math.floor(at);
+
+    return low < 0 && high > 0 ? low * (1 - weight) + high * weight : low + (high - low) * weight;
 
 }
 export function deviation ( values: readonly number[] ): number {

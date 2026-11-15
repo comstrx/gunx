@@ -5,65 +5,8 @@ import * as event from "engine-event";
 import * as func from "engine-func";
 import * as json from "engine-json";
 import * as rand from "engine-rand";
+import type { Counts, Ended, Flight, Job, Options, Outbox, Outcome, Status } from "./arch.ts";
 import { backoff, clean, count, schedule, span } from "./policy.ts";
-
-export type Status = "pending" | "running" | "done" | "failed" | "dead";
-export type Job<P = unknown> = {
-    id: string;
-    type: string;
-    payload: P;
-    owner: string;
-    key: string | undefined;
-    status: Status;
-    attempts: number;
-    at: number;
-    available: number;
-    error: string | undefined;
-    code: string | undefined;
-};
-export type Perform = ( job: Job, signal: AbortSignal ) => Promise<void>;
-export type Outcome = { done: number; failed: number };
-export type Counts = Record<Status, number>;
-export type Push = { key?: string | undefined; delay?: number | undefined };
-export type Options = {
-    name?: string | undefined;
-    store?: cache.Storage | undefined;
-    owner: string;
-    perform: Perform;
-    retries?: number | undefined;
-    delay?: number | undefined;
-    factor?: number | undefined;
-    backoff?: (( attempt: number ) => number) | undefined;
-    when?: (( fault: error.Fault, job: Job ) => boolean) | undefined;
-    timeout?: number | undefined;
-    lanes?: number | undefined;
-    strict?: boolean | undefined;
-    keep?: number | undefined;
-    onChange?: (( jobs: Job[] ) => void) | undefined;
-    fail?: (( cause: unknown ) => void) | undefined;
-};
-export type Outbox = {
-    push: <P>( type: string, payload: P, options?: Push ) => Promise<Job<P>>;
-    flush: ( signal?: AbortSignal ) => Promise<Outcome>;
-    jobs: ( status?: Status ) => Promise<Job[]>;
-    get: ( id: string ) => Promise<Job | undefined>;
-    counts: () => Promise<Counts>;
-    pending: () => Promise<number>;
-    next: () => Promise<number | undefined>;
-    retry: ( id: string ) => Promise<boolean>;
-    replay: () => Promise<number>;
-    drop: ( id: string ) => Promise<boolean>;
-    prune: ( status?: "done" | "dead" ) => Promise<number>;
-    clear: () => Promise<void>;
-    watch: ( listener: ( jobs: Job[] ) => void ) => () => void;
-    start: ( every?: number ) => void;
-    stop: () => void;
-    load: () => Promise<Job[]>;
-};
-
-type End = "done" | "free" | "fail" | "dead";
-type Ended = { job: Job; fault: error.Fault | undefined; end: End; wait: number };
-type Flight = { signal: AbortSignal | undefined; seen: Set<string>; tally: Outcome; failures: unknown[]; blocked: boolean };
 
 const statuses: readonly Status[] = ["pending", "running", "done", "failed", "dead"];
 const spent: readonly Status[] = ["done", "dead"];
@@ -158,11 +101,18 @@ export function create ( options: Options ): Outbox {
     const store = cache.typed<unknown>(raw);
     const lane = func.lane(1);
     let writing = false;
-    let listening = false;
-    const stray: unknown[] = [];
-    const changes = event.emitter<{ change: Job[] }>({ fail: options.fail ?? (( cause ) => void stray.push(cause)) });
+    let closed = false;
+    const lifetime = new AbortController();
+    const open = (): void => {
+
+        if ( closed ) throw error.fault("gone", "queue.closed");
+
+    };
+    let listening: (() => void) | undefined;
+    let stray: { cause: unknown } | undefined;
+    const changes = event.emitter<{ change: Job[] }>({ fail: options.fail ?? (( cause ) => { stray ??= { cause }; }) });
     const flights = new Map<string, event.Abortable>();
-    const held = new Set<string>();
+    const held = new Map<string, number>();
     let flight: Promise<Outcome> | undefined;
     let halt: (() => void) | undefined;
     const mine = ( jobs: readonly Job[] ): Job[] => jobs.filter(( job ) => job.owner === owner);
@@ -184,13 +134,29 @@ export function create ( options: Options ): Outbox {
 
     };
     const rows = async (): Promise<Job[]> => parsed(await store.read(name));
-    const locked = <T>( work: () => Promise<T> ): Promise<T> => lane.run(() => (raw.lock === undefined ? work() : raw.lock(name, work)));
+    const locked = <T>( work: () => Promise<T>, settling = false ): Promise<T> => lane.run(() => {
+
+        const checked = (): Promise<T> => {
+
+            if ( !settling ) open();
+
+            return work();
+
+        };
+
+        if ( !settling ) open();
+
+        if ( raw.lock !== undefined ) return raw.lock(name, checked);
+        if ( options.guard !== "local" ) throw cache.unguarded();
+
+        return checked();
+
+    });
     const listen = (): void => {
 
         if ( listening ) return;
 
-        listening = true;
-        raw.watch(name, ( text ) => {
+        listening = raw.watch(name, ( text ) => {
 
             if ( writing ) return;
 
@@ -206,12 +172,20 @@ export function create ( options: Options ): Outbox {
 
         const value = await work;
 
-        if ( stray.length > 0 ) throw stray.splice(0)[0];
+        if ( stray ) {
+
+            const { cause } = stray;
+
+            stray = undefined;
+
+            throw cause;
+
+        }
 
         return value;
 
     };
-    const mutate = <T>( work: ( jobs: Job[] ) => readonly [T, boolean] ): Promise<T> => locked(async () => {
+    const mutate = <T>( work: ( jobs: Job[] ) => readonly [T, boolean], settling = false ): Promise<T> => locked(async () => {
 
         const jobs = await rows();
         const [value, changed] = work(jobs);
@@ -236,7 +210,7 @@ export function create ( options: Options ): Outbox {
 
         return value;
 
-    });
+    }, settling);
     const judged = ( job: Job, fault: error.Fault | undefined, state: Flight ): Ended => {
 
         if ( !fault ) return { job, fault, end: "done", wait: 0 };
@@ -268,6 +242,8 @@ export function create ( options: Options ): Outbox {
 
         try {
 
+            if ( made.signal.aborted ) throw halted(made.signal);
+
             await event.race((async () => perform(job, made.signal))(), made.signal);
 
         } catch ( caught ) {
@@ -289,9 +265,11 @@ export function create ( options: Options ): Outbox {
         const { job, fault, end } = ended;
         const found = jobs.find(( row ) => row.id === job.id && row.owner === owner);
 
+        const claimed = held.get(job.id);
+
         held.delete(job.id);
 
-        if ( !found || (end !== "done" && found.status !== "running") ) return false;
+        if ( found?.status !== "running" || found.attempts !== job.attempts + 1 || found.available !== claimed ) return false;
 
         if ( end === "done" ) Object.assign(found, { status: "done", attempts: job.attempts + 1, available: now, error: undefined, code: undefined });
         else if ( end === "free" ) Object.assign(found, { status: job.error === undefined ? "pending" : "failed", attempts: job.attempts, available: now });
@@ -334,7 +312,7 @@ export function create ( options: Options ): Outbox {
                 const taken: Job = { ...job, status: "running" };
 
                 Object.assign(job, { status: "running", attempts: job.attempts + 1, available: now + lease });
-                held.add(job.id);
+                held.set(job.id, job.available);
                 state.seen.add(job.id);
 
                 return [taken, true];
@@ -347,7 +325,7 @@ export function create ( options: Options ): Outbox {
 
         return [undefined, changed];
 
-    });
+    }, last !== undefined);
     const drain = async ( signal: AbortSignal | undefined ): Promise<Outcome> => {
 
         const state: Flight = { signal, seen: new Set(), tally: { done: 0, failed: 0 }, failures: [], blocked: false };
@@ -411,10 +389,13 @@ export function create ( options: Options ): Outbox {
         })),
         flush: ( signal ) => {
 
+            if ( closed ) return Promise.reject(error.fault("gone", "queue.closed"));
             if ( flight ) return signal ? event.race(flight, signal) : flight;
 
-            const made = raised(drain(signal)).finally(() => {
+            const active = event.abortable(signal, lifetime.signal);
+            const made = raised(drain(active.signal)).finally(() => {
 
+                active.release();
                 held.clear();
                 flight = undefined;
 
@@ -513,21 +494,65 @@ export function create ( options: Options ): Outbox {
         })),
         watch: ( listener ) => {
 
-            listen();
+            open();
 
-            return changes.on("change", listener);
+            const stop = changes.on("change", listener);
+
+            try {
+
+                listen();
+
+            } catch ( caught ) {
+
+                stop();
+
+                throw caught;
+
+            }
+
+            return () => {
+
+                stop();
+
+                if ( changes.has("change") ) return;
+
+                const gone = listening;
+
+                listening = undefined;
+                gone?.();
+
+            };
 
         },
         start: ( every = 5000 ) => {
 
+            open();
             outbox.stop();
             halt = schedule(outbox, { every, immediate: false, fail: options.fail });
 
         },
         stop: () => {
 
-            halt?.();
+            const stop = halt;
+
             halt = undefined;
+            stop?.();
+
+        },
+        destroy: () => {
+
+            if ( closed ) return;
+
+            closed = true;
+            lifetime.abort();
+            outbox.stop();
+            changes.clear();
+            stray = undefined;
+
+            const stop = listening;
+
+            listening = undefined;
+            stop?.();
 
         },
     };

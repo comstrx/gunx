@@ -1,0 +1,20 @@
+import type * as number from "engine-number";
+
+export type Input = Date | number | string | null | undefined;
+export type Unit = "year" | "quarter" | "month" | "week" | "day" | "hour" | "minute" | "second";
+export type Shift = Partial<Record<`${Unit}s` | "milliseconds", number>>;
+export type Time = { hour?: number | undefined; minute?: number | undefined; second?: number | undefined; millisecond?: number | undefined };
+export type Held<T> = Map<string, { value: T }>;
+export type Parts = { year: number; month: number; day: number; hour: number; minute: number; second: number; millisecond: number; weekday: number };
+export type Grid = { weeks: (Date | undefined)[][]; month: number; year: number };
+export type Span = { days: number; hours: number; minutes: number; seconds: number; ms: number; negative: boolean };
+export type Names = { months: readonly string[]; monthsShort: readonly string[]; days: readonly string[]; daysShort: readonly string[]; meridiem: readonly [string, string] };
+export type Width = "long" | "short";
+export type Hijri = { year: number; month: number; day: number; text: string };
+export type Moon = readonly [Intl.DateTimeFormat, Intl.DateTimeFormat];
+export type Style = "date" | "time" | "datetime" | "long" | "short" | "clock" | "month" | "weekday" | "near";
+export type FormatOptions = { locale?: string | undefined; numerals?: number.Numerals | undefined; timeZone?: string | undefined };
+export type Duration = { days: number; hours: number; minutes: number; seconds: number; total: number };
+export type Scale = "year" | "month" | "week" | "day" | "hour" | "minute" | "second";
+export type Writer = ( read: Parts, table: Names, east: number ) => string;
+export type Voice = readonly [Intl.RelativeTimeFormat, Intl.RelativeTimeFormat];

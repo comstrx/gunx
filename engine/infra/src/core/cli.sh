@@ -60,11 +60,28 @@ core:cli:flag () {
     [[ -z "${CLI_VALUED[${1}]+x}" && "${CLI_FLAGS[${1}]:-false}" == true ]]
 
 }
+core:cli:given () {
+
+    [[ -n "${CLI_FLAGS[${1:-}]+x}" ]]
+
+}
 core:cli:value () {
 
     [[ -n "${CLI_VALUED[${1}]+x}" && -n "${CLI_FLAGS[${1}]+x}" ]] || return 1
 
     core:log:print "${CLI_FLAGS[${1}]}"
+
+}
+core:cli:collect () {
+
+    local -n _switches="${1}"
+    local flag=""
+
+    _switches=()
+
+    for flag in "${!CLI_FLAGS[@]}"; do
+        [[ "${flag}" == --help || "${flag}" == --version ]] || _switches+=( "${flag}" )
+    done
 
 }
 core:cli:switches () {

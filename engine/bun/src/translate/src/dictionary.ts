@@ -1,28 +1,7 @@
 import * as json from "engine-json";
 import * as number from "engine-number";
+import type { Dictionaries, Entry, Forms, Messages, Params, Sheet, Slot, Template, Translate } from "./arch.ts";
 import { held, split } from "./locale.ts";
-
-type Param = string | number | bigint | boolean | null | undefined | { readonly [key: string]: Param };
-type Span = { low: number; high: number; text: string };
-type Forms = { exact: Map<number, string>; ranged: Span[]; labeled: Map<string, string>; plain: string[]; last: string };
-type Entry = string | Forms;
-type Sheet = Map<string, Entry>;
-type Slot = { name: string; whole: string; deep: boolean };
-type Template = readonly (string | Slot)[];
-
-export type Params = { readonly [key: string]: Param };
-export type Messages = { [key: string]: string | Messages };
-export type Dictionaries = Record<string, Messages>;
-export type Translate = {
-    readonly locale: string;
-    readonly fallback: string;
-    t: ( key: string, params?: Params, count?: number ) => string;
-    find: ( key: string, params?: Params, count?: number ) => string | undefined;
-    has: ( key: string, locale?: string ) => boolean;
-    use: ( locale: string ) => Translate;
-    missing: () => string[];
-    locales: () => string[];
-};
 
 const placeholder = /\{([a-zA-Z_][a-zA-Z0-9_.]*)\}|:([a-zA-Z_][a-zA-Z0-9_]*)/g;
 const exactPattern = /^(?:\[(-?\d+)\]|\{(-?\d+)\})\s*(.*)$/s;

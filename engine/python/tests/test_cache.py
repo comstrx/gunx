@@ -2,7 +2,8 @@ from engine.cache import Cache, Memory, Redis, cache
 from engine.cache.replies import Replies
 from engine.cache.wire import Wire
 from engine.error import Code, Fault
-from collections.abc import Awaitable, Callable
+from engine.thread import Gate
+from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
 from typing import Any, cast
 import asyncio, hashlib, hiredis, math, os, pytest
@@ -10,17 +11,19 @@ import asyncio, hashlib, hiredis, math, os, pytest
 REDIS = os.environ.get("ENGINE_REDIS_URL", "redis://127.0.0.1:6379/14")
 
 @pytest.fixture(params=["memory", "redis"])
-async def store ( request: pytest.FixtureRequest ) -> Memory | Redis:
+async def store ( request: pytest.FixtureRequest ) -> AsyncIterator[Memory | Redis]:
 
-    if request.param == "memory": return Memory()
+    made: Memory | Redis = Memory() if request.param == "memory" else Redis(REDIS, prefix="engine-test:")
 
-    made = Redis(REDIS, prefix="engine-test:")
+    try:
 
-    assert await made.ping()
+        assert await made.ping()
 
-    await made.clear()
+        await made.clear()
 
-    return made
+        yield made
+
+    finally: await made.close()
 
 async def test_stores_share_one_contract ( store: Memory | Redis ) -> None:
 
@@ -529,7 +532,7 @@ async def test_a_stale_entry_of_another_shape_is_reloaded_and_a_failing_refresh_
 
     down = True
 
-    assert await local.stale("s", 0.05, 1.0, load) == 1 and await store.get("refresh:s") == 1
+    assert await local.stale("s", 0.05, 1.0, load) == 1 and isinstance(await store.get("refresh:s"), str)
 
     await asyncio.sleep(0.02)
 
@@ -631,3 +634,326 @@ async def test_redis_names_a_type_error_and_hides_the_rest () -> None:
     assert await redis.clear() == 2
 
     await redis.close()
+
+
+async def test_large_redis_batches_preserve_results_and_clear_only_their_namespace () -> None:
+
+    local = Redis(REDIS, prefix="engine-test:batch:", pool=2)
+    other = Redis(REDIS, prefix="engine-test:outside:")
+    values = { f"key:{number:04}": number for number in range(1503) }
+
+    await local.clear()
+    await other.set("keep", 1)
+    await local.set_many(values, ttl=30)
+
+    assert await local.many(iter(values)) == values
+    assert await local.keys(limit=3) == list(values)[:3]
+    assert await local.clear() == len(values)
+    assert await local.keys() == [] and await other.get("keep") == 1
+
+    await other.clear()
+    await local.close()
+    await other.close()
+
+
+async def test_redis_pipeline_is_bounded_and_keeps_reply_order ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    wire = Wire(REDIS, inflight=3)
+    protocol = await wire.ready()
+    submit = protocol.submit
+    peak = 0
+
+    def tracked ( command: bytes, gate: Gate | None = None ) -> asyncio.Future[Any]:
+
+        nonlocal peak
+
+        result = submit(command, gate)
+        peak = max(peak, len(protocol.pending))
+
+        return result
+
+    monkeypatch.setattr(protocol, "submit", tracked)
+
+    replies = await wire.many([("ECHO", str(value)) for value in range(37)])
+
+    assert replies == [str(value).encode() for value in range(37)]
+    assert peak <= 3
+    assert await wire.send("PING") == b"PONG"
+
+    await wire.close()
+
+@pytest.mark.parametrize("mode", ["none", "failure", "cancel"])
+async def test_remember_keeps_one_lock_until_all_waiters_leave ( mode: str ) -> None:
+
+    local = Cache(Memory())
+    entered = [asyncio.Event() for _ in range(3)]
+    releases = [asyncio.Event() for _ in range(3)]
+    active = peak = calls = 0
+
+    async def load () -> None:
+
+        nonlocal active, peak, calls
+
+        index = calls
+        calls += 1
+        active += 1
+        peak = max(peak, active)
+
+        entered[index].set()
+
+        try:
+
+            await releases[index].wait()
+
+            if index == 0 and mode == "failure": raise RuntimeError("failed")
+
+        finally: active -= 1
+
+    first = asyncio.create_task(local.remember("same", 5, load))
+
+    await entered[0].wait()
+
+    second = asyncio.create_task(local.remember("same", 5, load))
+
+    await asyncio.sleep(0)
+
+    if mode == "cancel": first.cancel()
+    else: releases[0].set()
+
+    await asyncio.gather(first, return_exceptions=True)
+    await entered[1].wait()
+
+    third = asyncio.create_task(local.remember("same", 5, load))
+
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert calls == 2 and peak == 1 and local.stats()["loading"] == 1
+
+    releases[1].set()
+
+    await entered[2].wait()
+
+    releases[2].set()
+
+    await asyncio.gather(second, third)
+
+    assert peak == 1 and local.stats()["loading"] == 0
+
+async def test_stale_refresh_cannot_overwrite_newer_value_or_release_another_owner ( store: Memory | Redis ) -> None:
+
+    local = Cache(store)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def load () -> int:
+
+        entered.set()
+
+        await release.wait()
+
+        return 2
+
+    await store.set("stale-race", { "__stale__": 1.0, "value": 1 }, 5)
+
+    assert await local.stale("stale-race", 5, 5, load) == 1
+
+    await entered.wait()
+
+    newer = { "__stale__": 9999999999.0, "value": 3 }
+
+    await store.set("stale-race", newer, 5)
+    await store.set("refresh:stale-race", "another-owner", 5)
+
+    pending = [task for task in asyncio.all_tasks() if task.get_name() == "cache.refresh"]
+
+    assert len(pending) == 1
+
+    release.set()
+
+    await asyncio.gather(*pending)
+
+    assert await store.get("stale-race") == newer
+    assert await store.get("refresh:stale-race") == "another-owner"
+
+    await local.close()
+
+
+async def test_cache_close_cancels_owned_refresh_before_closing_provider () -> None:
+
+    store = Memory()
+    local = Cache(store)
+    entered, closed = asyncio.Event(), asyncio.Event()
+
+    async def load () -> int:
+
+        entered.set()
+
+        try: await asyncio.Event().wait()
+        finally: closed.set()
+
+        return 2
+
+    await store.set("close-race", { "__stale__": 1.0, "value": 1 }, 5)
+    await local.stale("close-race", 5, 5, load)
+    await entered.wait()
+    await local.close()
+
+    assert closed.is_set()
+    assert not any(task.get_name() == "cache.refresh" for task in asyncio.all_tasks())
+
+async def test_cancelled_redis_request_keeps_its_slot_until_reply_without_aborting_peers ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    wire = Wire(REDIS, inflight=3)
+    protocol = Replies(wire)
+    writes: list[bytes] = []
+    stopped: list[bool] = []
+
+    class Transport:
+
+        def write ( self, data: bytes ) -> None:
+
+            writes.append(data)
+
+        def is_closing ( self ) -> bool:
+
+            return bool(stopped)
+
+        def abort ( self ) -> None:
+
+            stopped.append(True)
+
+            protocol.connection_lost(None)
+
+    protocol.connection_made(Transport())
+    async def ready () -> Replies:
+
+        return protocol
+
+    monkeypatch.setattr(wire, "ready", ready)
+    tasks = [asyncio.create_task(wire.send("PING")) for _ in range(3)]
+
+    await asyncio.sleep(0)
+
+    await asyncio.sleep(0)
+
+    assert b"".join(writes) == b"*1\r\n$4\r\nPING\r\n" * 3
+
+    tasks[0].cancel()
+
+    with pytest.raises(asyncio.CancelledError): await tasks[0]
+
+    fourth = asyncio.create_task(wire.send("PING"))
+
+    await asyncio.sleep(0)
+
+    assert b"".join(writes) == b"*1\r\n$4\r\nPING\r\n" * 3 and len(protocol.pending) == 3 and not stopped
+
+    protocol.data_received(b"+cancelled\r\n+second\r\n+third\r\n")
+
+    assert await tasks[1] == b"second" and await tasks[2] == b"third"
+
+    await asyncio.sleep(0)
+
+    protocol.data_received(b"+fourth\r\n")
+
+    assert await fourth == b"fourth" and b"".join(writes) == b"*1\r\n$4\r\nPING\r\n" * 4
+    assert not protocol.pending and not stopped
+
+    protocol.connection_lost(None)
+
+
+async def test_pipeline_error_and_cancellation_preserve_reply_alignment () -> None:
+
+    wire = Wire(REDIS, inflight=4)
+
+    try:
+
+        with pytest.raises(Fault):
+
+            await wire.many([("ECHO", "first"), ("NOSUCHCOMMAND",), ("ECHO", "third")])
+
+        assert await wire.send("ECHO", "after-error") == b"after-error"
+
+        batch = asyncio.create_task(wire.many([("PING",)] * 1000))
+
+        await asyncio.sleep(0)
+
+        batch.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await batch
+
+        assert await wire.send("ECHO", "after-cancel") == b"after-cancel"
+
+    finally: await wire.close()
+
+async def test_bulk_forget_counts_duplicates_and_missing_keys_without_touching_peers ( store: Memory | Redis ) -> None:
+
+    cache = Cache(store)
+    values = {f"bulk:{n}": n for n in range(1200)}
+
+    await cache.set_many(values, 60)
+    await cache.set("keep", 7, 60)
+
+    assert await cache.forget(*values, "bulk:0", "missing") == len(values)
+    assert await cache.forget() == 0
+    assert await cache.forget(*values) == 0
+    assert await cache.get("keep") == 7
+
+async def test_bulk_forget_uses_bounded_redis_commands ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    store = Redis(REDIS, prefix="bulk-forget:")
+    cache = Cache(store)
+    sent: list[tuple[object, ...]] = []
+    original = Wire.send
+
+    async def send ( wire: Wire, *parts: str | bytes | float ) -> Any:
+
+        sent.append(parts)
+
+        return await original(wire, *parts)
+
+    await cache.set_many({f"k{n}": n for n in range(1200)}, 60)
+
+    monkeypatch.setattr(Wire, "send", send)
+
+    try:
+
+        assert await cache.forget(*(f"k{n}" for n in range(1200))) == 1200
+        assert all(parts[0] == "DEL" and 1 < len(parts) <= 501 for parts in sent)
+        assert len(sent) == 3
+
+    finally: await cache.close()
+
+async def test_bulk_forget_keeps_existing_store_adapters_compatible ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    store = Memory()
+    cache = Cache(store)
+
+    await cache.set_many({"a": 1, "b": 2})
+
+    monkeypatch.setattr(store, "delete_many", None)
+
+    assert await cache.forget("a", "a", "b", "missing") == 2
+
+async def test_memory_many_uses_last_observed_value_and_omits_missing () -> None:
+
+    store = Memory()
+
+    await store.set("hit", 7)
+    await store.set("none", None)
+
+    assert await store.many(["hit", "missing", "hit", "none"]) == { "hit": 7 }
+
+
+
+async def test_keys_bounded_sorted_and_nonpositive ( store: Memory | Redis ) -> None:
+
+    await store.set_many({ f"bounded:{value:04d}": value for value in reversed(range(150)) })
+
+    assert await store.keys("bounded:", 3) == ["bounded:0000", "bounded:0001", "bounded:0002"]
+    assert await store.keys("bounded:", 0) == []
+    assert await store.keys("bounded:", -1) == []
+    assert await store.keys("missing:", 3) == []
+
+    assert await store.clear("bounded:") == 150
+    assert await store.keys("bounded:") == []

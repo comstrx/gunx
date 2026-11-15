@@ -15,7 +15,7 @@ class Validator:
 
         self._seen += 1
 
-        if isinstance(payload, (bytes, bytearray, memoryview)): return kind.from_json(bytes(payload))
+        if isinstance(payload, (bytes, bytearray, memoryview)): return kind.from_json(payload)
         if isinstance(payload, str): return kind.from_json(payload)
         if isinstance(payload, Mapping): return kind.from_mapping(payload)
 
@@ -27,7 +27,11 @@ class Validator:
         except msgspec.ValidationError as error: raise Fault(Code.VALIDATION, str(error), "validate.convert") from error
         except UnicodeError as error: raise Fault(Code.BAD_REQUEST, "Malformed text", "validate.encoding") from error
 
-    def components ( self, shapes: Sequence[type[Shape]], template: str ) -> dict[str, Any]:
+    def schema ( self, kind: Any, template: str = "#/$defs/{name}" ) -> dict[str, Any]:
+
+        return msgspec.json.schema(kind, ref_template=template)
+
+    def components ( self, shapes: Sequence[Any], template: str ) -> dict[str, Any]:
 
         return msgspec.json.schema_components(shapes, ref_template=template)[1] if shapes else {}
 

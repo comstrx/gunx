@@ -1,10 +1,6 @@
-import { from, type Input, utc } from "./calendar.ts";
-import type { Parts } from "./extra.ts";
-import { type Held, held, tongue } from "./intl.ts";
-
-export type Hijri = { year: number; month: number; day: number; text: string };
-
-type Moon = readonly [Intl.DateTimeFormat, Intl.DateTimeFormat];
+import type { Held, Hijri, Input, Moon, Parts } from "./arch.ts";
+import { from, utc } from "./calendar.ts";
+import { held, tongue } from "./intl.ts";
 
 const day = 86_400_000;
 const walls: Held<Intl.DateTimeFormat | undefined> = new Map();

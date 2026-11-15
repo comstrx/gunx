@@ -20,8 +20,11 @@
     "applyPatch",
     "catalogue",
     "changeOf",
+    "connect",
     "create",
+    "decodeFrame",
     "del",
+    "encodeFrame",
     "endpoints",
     "envelope",
     "facts",
@@ -35,6 +38,7 @@
     "isEnvelope",
     "live",
     "liveHouse",
+    "liveProtocol",
     "many",
     "openapi",
     "pageOf",
@@ -43,6 +47,7 @@
     "partsOf",
     "patch",
     "post",
+    "presence",
     "put",
     "refuse",
     "sample",
@@ -78,6 +83,7 @@
     "namespaced",
     "open",
     "parseCookies",
+    "peek",
     "place",
     "remember",
     "serial",
@@ -463,6 +469,7 @@
   ],
   "list": [
     "averageBy",
+    "best",
     "catalog",
     "changes",
     "chunk",
@@ -722,11 +729,8 @@
   ],
   "socket": [
     "channel",
-    "decode",
-    "encode",
     "factory",
-    "open",
-    "presence"
+    "open"
   ],
   "spec": [
     "all",
@@ -806,6 +810,7 @@
     "define",
     "derive",
     "feed",
+    "inspect",
     "keyOf",
     "readable",
     "resource",
@@ -821,6 +826,7 @@
     "before",
     "beforeLast",
     "between",
+    "byteLength",
     "bytes",
     "camel",
     "capitalize",
@@ -925,6 +931,7 @@
     "writeJson"
   ],
   "translate": [
+    "currencyName",
     "dictionary",
     "direction",
     "field",

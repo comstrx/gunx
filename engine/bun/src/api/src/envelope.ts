@@ -1,12 +1,7 @@
 import type * as error from "engine-error";
 import * as json from "engine-json";
-import { house, type Paths } from "./wire.ts";
-
-export type Meta = json.Dictionary;
-export type Envelope<T = unknown> = { data: T; message: string | null; errors: Record<string, string[]> | null; code: string; reason: string | null; meta: Meta; requestId: string | undefined };
-export type Page = { page: number; limit: number; total: number; pages: number };
-
-type Routed = "page" | "limit" | "total" | "pages" | "requestId" | "retryAfter";
+import type { Envelope, Meta, Page, Paths, Routed } from "./arch.ts";
+import { house } from "./wire.ts";
 
 const routed: ReadonlySet<string> = new Set(["page", "limit", "total", "pages", "requestId", "retryAfter"]);
 const digits = /^\d{1,15}$/;

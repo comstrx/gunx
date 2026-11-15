@@ -1,32 +1,11 @@
-import { type Countries, countriesReady, defineCountries, defineKeys, everyCountry, regions as everyRegion, type Keys, loadCountries, type Region, regionName } from "./country.ts";
-import { type Currencies, currenciesReady, defineCurrencies, loadCurrencies } from "./currency.ts";
-import { defineEmoji, type EmojiOptions, type Emojis, emojiReady, everyEmoji, loadEmoji } from "./emoji.ts";
-import { type FlagPlace, flagCode, flagEmoji, flagFile } from "./flag.ts";
-import { type Family, fontFiles, fontOf } from "./font.ts";
-import { type Direction, defineLanguages, type Languages, languagesReady, loadLanguages } from "./language.ts";
-import { type Catalog, catalogs, once, over, word } from "./lazy.ts";
-
-export type Options = { locale?: string | undefined; countries?: readonly string[] | undefined; currencies?: readonly string[] | undefined; languages?: readonly string[] | undefined; emoji?: EmojiOptions | undefined; flags?: FlagPlace | undefined };
-export type Assets = { flag: string[]; font: string[]; emoji: string[] };
-export type World = {
-    readonly locale: string;
-    readonly countries: Countries;
-    readonly keys: Keys;
-    readonly currencies: Currencies;
-    readonly languages: Languages;
-    readonly regions: readonly Region[];
-    readonly emojis: Emojis;
-    country: ( code: string ) => string;
-    currency: ( code: string ) => string;
-    language: ( code: string ) => string;
-    region: ( code: string ) => string;
-    symbol: ( code: string, narrow?: boolean ) => string;
-    direction: ( code?: string ) => Direction;
-    flag: ( code: string ) => string;
-    flagUrl: ( code: string ) => string;
-    fontOf: ( language: string ) => Family | undefined;
-    assets: () => Assets;
-};
+import type { Catalog, Emojis, Options, World } from "./arch.ts";
+import { countriesReady, defineCountries, defineKeys, everyCountry, regions as everyRegion, loadCountries, regionName } from "./country.ts";
+import { currenciesReady, defineCurrencies, loadCurrencies } from "./currency.ts";
+import { defineEmoji, emojiReady, everyEmoji, loadEmoji } from "./emoji.ts";
+import { flagCode, flagEmoji, flagFile } from "./flag.ts";
+import { fontFiles, fontOf } from "./font.ts";
+import { defineLanguages, languagesReady, loadLanguages } from "./language.ts";
+import { catalogs, once, over, word } from "./lazy.ts";
 
 const tagged = /^[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})*$/;
 const loaders: Readonly<Record<Catalog, () => Promise<unknown>>> = { countries: loadCountries, currencies: loadCurrencies, languages: loadLanguages, emoji: loadEmoji };

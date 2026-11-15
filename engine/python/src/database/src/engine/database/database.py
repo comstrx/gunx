@@ -83,6 +83,8 @@ class Database:
 
         if found is not None:
 
+            found._ensure_()
+
             yield found
 
             return
@@ -99,6 +101,7 @@ class Database:
         finally:
 
             self._current.reset(token)
+            session._end_()
 
             if not driver.give(connection): await driver.release(connection)
 
@@ -209,6 +212,8 @@ class Database:
     async def advisory ( self, key: int, wait: bool = False ) -> bool:
 
         async with self.session() as session:
+
+            if not session.inside(): raise Fault(Code.CONFLICT, reason="database.advisory.transaction")
 
             try: return await session.driver().advisory(session.raw(), key, wait)
             except session.driver().failures as error: raise session.driver().translate(error) from error

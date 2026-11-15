@@ -1,25 +1,10 @@
 import * as list from "engine-list";
 import * as string from "engine-string";
 import groupRows from "../data/emoji-groups.json" with { type: "json" };
+import type { Emoji, EmojiGroup, EmojiOptions, Emojis } from "./arch.ts";
 import { isArabic } from "./country.ts";
-import { type FlagPlace, flagCode, flagFile } from "./flag.ts";
+import { flagCode, flagFile } from "./flag.ts";
 import { live, once, rootOf, slot, word } from "./lazy.ts";
-
-export type EmojiGroup = { key: string; name: { en: string; ar: string } };
-export type Emoji = { glyph: string; code: string; group: string; name: { en: string; ar: string }; keywords: { en: readonly string[]; ar: readonly string[] } };
-export type EmojiOptions = { folder?: string | undefined; flags?: FlagPlace | undefined; locale?: string | undefined };
-export type Browse = { query?: string | undefined; group?: string | undefined; limit?: number | undefined };
-export type Emojis = list.Catalog<Emoji> & {
-    groups: readonly EmojiGroup[];
-    files: readonly string[];
-    of: ( group: string ) => Emoji[];
-    browse: ( browse?: Browse ) => Emoji[];
-    nameOf: ( glyph: string, locale?: string ) => string;
-    groupName: ( key: string, locale?: string ) => string;
-    shortcode: ( glyph: string ) => string | undefined;
-    byShortcode: ( code: string ) => Emoji | undefined;
-    imageOf: ( glyph: string ) => string | undefined;
-};
 
 export const emojiFolder = "/world/emoji";
 export const emojiGroups: readonly EmojiGroup[] = groupRows as EmojiGroup[];

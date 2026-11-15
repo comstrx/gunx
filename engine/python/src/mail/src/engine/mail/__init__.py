@@ -1,9 +1,9 @@
-from .arch import Message
-from .http import Http
-from .log import Log
+lazy from .arch import Message
+lazy from .http import Http
+lazy from .log import Log
 from .mail import Mail
-from .mailer import Mailer
-from .smtp import Smtp
+lazy from .mailer import Mailer
+lazy from .smtp import Smtp
 
 mail = Mail()
 

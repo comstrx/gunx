@@ -7,7 +7,7 @@ from engine.socket import Hub, Socket
 from hypothesis import HealthCheck, given, settings, strategies as st
 from pathlib import Path
 from typing import Any
-import asyncio
+import asyncio, os
 
 EXAMPLES = 800
 LEAVES   = st.one_of(st.none(), st.booleans(), st.integers(-(1 << 62), 1 << 62), st.floats(allow_nan=False, allow_infinity=False), st.text(max_size=12))
@@ -37,7 +37,7 @@ class Quiet:
 
         return None
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 local.setup(hub)
 
 pipe   = Quiet()

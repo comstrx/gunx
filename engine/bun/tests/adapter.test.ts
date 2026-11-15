@@ -186,6 +186,32 @@ describe("adapter", () => {
         expect(clock.bound()).toBe(false);
 
     });
+    it("family preferences restore out of order and an explicit preference supersedes old scopes", () => {
+
+        const family = adapter.family<number>("preferences");
+
+        family.add("base", 0);
+        family.add("first", 1);
+        family.add("second", 2);
+        family.prefer("base");
+
+        const first = family.use("first");
+        const second = family.use("second");
+
+        first();
+        expect(family.pick()).toBe(2);
+        second();
+        expect(family.pick()).toBe(0);
+
+        const stale = family.use("first");
+
+        family.prefer("second");
+        stale();
+        expect(family.pick()).toBe(2);
+        family.reset();
+        expect(family.preferred()).toBeUndefined();
+
+    });
     it("a family holds function adapters, stacks a kind and forgets stale restores", () => {
 
         const makers = adapter.family<() => number>("makers");

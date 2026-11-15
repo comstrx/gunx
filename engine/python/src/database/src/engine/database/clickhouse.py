@@ -27,11 +27,16 @@ class Clickhouse(Dialect):
     capabilities = frozenset({ "vector", "ilike", "mutation" })
 
     @override
+    def literal ( self, value: str ) -> str:
+
+        return f"unhex('{value.encode().hex()}')"
+
+    @override
     def column ( self, column: Column ) -> str:
 
         kind    = self.kind(column)
         parts   = [self.ident(column.name), f"Nullable({kind})" if column.nullable and not column.primary else kind]
-        default = self.default(column.default)
+        default = self.value(column)
 
         if column.generated: parts.append(f"MATERIALIZED {column.generated}")
         elif default is not None: parts.append(f"DEFAULT {default}")
@@ -87,7 +92,7 @@ class Clickhouse(Dialect):
     @override
     def json ( self, column: str, key: str ) -> str:
 
-        if not KEY.match(key): raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [key[:64]] })
+        if not KEY.fullmatch(key): raise Fault(Code.INTERNAL, reason="sql.key", errors={ "key": [key[:64]] })
 
         return f"JSONExtractString({self.ident(column)}, '{key}')"
 

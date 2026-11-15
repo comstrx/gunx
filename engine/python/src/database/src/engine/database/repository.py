@@ -7,6 +7,7 @@ from engine.error import Code, Fault
 from engine.health import health
 from engine.rand import rand
 from .database import Database
+from .arch import cursor_size
 from .model import Model
 from .sql import Sql
 from .table import Table
@@ -90,13 +91,21 @@ class Repository[M: Model]:
 
         return await self.where(sql), total
 
+    async def cursor ( self, after: Any = None, limit: int = 100, **where: Any ) -> list[M]:
+
+        sql = self.query().equals(**where).order(self._primary).limit(cursor_size(limit))
+
+        if after is not None: sql.where(self._primary, ">", after)
+
+        return await self.where(sql)
+
     async def count ( self, **where: Any ) -> int:
 
         return int(await self.database.value(self.query().equals(**where).count()) or 0)
 
     async def exists ( self, **where: Any ) -> bool:
 
-        return await self.count(**where) > 0
+        return await self.database.one(self.query(self._primary).equals(**where).limit(1)) is not None
 
     async def create ( self, **values: Any ) -> M:
 

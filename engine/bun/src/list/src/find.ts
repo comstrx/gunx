@@ -1,8 +1,7 @@
 import * as number from "engine-number";
 import * as string from "engine-string";
-import { type Key, keyOf } from "./core.ts";
-
-export type Where<T> = Partial<{ [K in keyof T]: T[K] | readonly T[K][] }>;
+import type { Key, Where } from "./arch.ts";
+import { keyOf } from "./core.ts";
 
 function matches<T> ( item: T, criteria: Where<T> ): boolean {
 

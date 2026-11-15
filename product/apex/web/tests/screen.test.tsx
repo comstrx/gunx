@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test as it } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server";
 import { Nav } from "../src/app/nav.tsx";
 import { Screen } from "../src/app/screen.tsx";
 import { toneOf } from "../src/features/hello/hooks/use-hello.ts";
@@ -14,9 +14,13 @@ beforeEach(() => {
 
 describe("screen", () => {
 
-    it("the screen renders its blocks and places the hello feature", () => {
+    it("the screen renders its blocks and places the hello feature", async () => {
 
-        const markup = renderToStaticMarkup(<Screen path="/" />);
+        const stream = await renderToReadableStream(<Screen path="/" />);
+
+        await stream.allReady;
+
+        const markup = await new Response(stream).text();
 
         expect(markup).toStartWith('<title>أهلاً · أكمي</title><div data-ui="block" data-direction="column" data-gap="md" data-align="center" data-justify="center" data-padding="md" data-surface="plain" data-width="auto" data-height="screen"');
         expect(markup).toContain('class="flex min-w-0 flex-col gap-4 items-center justify-center p-5 grow flex-nowrap"');

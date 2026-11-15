@@ -8,7 +8,7 @@ from engine.json import json
 from engine.parse import parse
 from .arch import (
     ACCEPTED, ALPHA, ALPHA_DASH, ALPHA_NUM, BOOLEANS, Check, Compiled, DECLINED, EMPTY, Field, KEY, KEYS, LIMIT,
-    NUMERIC, Plain, PLAIN_ARITY, Step,
+    NUMERIC, Plain, PLAIN_ARITY, Spec, Step,
 )
 import inspect, re
 
@@ -17,7 +17,7 @@ class Rules:
     def __init__ ( self ) -> None:
 
         self._checks: dict[str, Check] = {}
-        self._compiled: dict[tuple[tuple[str, str], ...], Compiled] = {}
+        self._compiled: dict[tuple[tuple[str, tuple[str, ...]], ...], Compiled] = {}
 
         self._install_()
 
@@ -43,18 +43,20 @@ class Rules:
 
         self._compiled.clear()
 
-    def compile ( self, spec: Mapping[str, str] ) -> Compiled:
+    def compile ( self, spec: Spec ) -> Compiled:
 
-        key   = tuple(spec.items())
+        key = tuple(
+            (name, tuple(rule.split("|")) if isinstance(rule, str) else tuple(rule)) for name, rule in spec.items()
+        )
         found = self._compiled.get(key)
 
         if found is not None: return found
 
         fields: list[Field] = []
 
-        for name, rule in spec.items():
+        for name, rules in key:
 
-            parts = [part for part in rule.split("|") if part]
+            parts = [part for part in rules if part]
             steps: list[Step] = []
 
             for part in parts:
@@ -82,7 +84,7 @@ class Rules:
         return compiled
 
     def check (
-        self, payload: Mapping[str, Any], spec: Mapping[str, str], reason: str = "validate.rules",
+        self, payload: Mapping[str, Any], spec: Spec, reason: str = "validate.rules",
     ) -> dict[str, Any]:
 
         bag  = Bag()
@@ -285,13 +287,13 @@ class Rules:
             "hex_color"  : lambda v, _: self._parsed_(parse.color, v, "must be a color"),
             "timezone"   : lambda v, _: self._parsed_(date.zone, v, "must be a timezone"),
             "date"       : lambda v, _: self._parsed_(date.parse, v, "must be a date"),
-            "alpha"      : lambda v, _: None if isinstance(v, str) and ALPHA.match(v) else "must be letters only",
+            "alpha"      : lambda v, _: None if isinstance(v, str) and ALPHA.fullmatch(v) else "must be letters only",
             "alpha_num"  : lambda v, _: self._matches_(v, ALPHA_NUM, "must be letters and numbers"),
             "alpha_dash" : lambda v, _: self._matches_(v, ALPHA_DASH, "must be letters, numbers or dashes"),
             "ascii"      : lambda v, _: None if isinstance(v, str) and v.isascii() else "must be ascii",
             "lowercase"  : lambda v, _: None if isinstance(v, str) and v == v.lower() else "must be lowercase",
             "uppercase"  : lambda v, _: None if isinstance(v, str) and v == v.upper() else "must be uppercase",
-            "key"        : lambda v, _: None if isinstance(v, str) and KEY.match(v) else "must be a key",
+            "key"        : lambda v, _: None if isinstance(v, str) and KEY.fullmatch(v) else "must be a key",
             "min"        : lambda v, a: None if self._size_(v) >= float(a) else f"must be at least {a}",
             "max"        : lambda v, a: None if self._size_(v) <= float(a) else f"must be at most {a}",
             "size"       : lambda v, a: None if self._size_(v) == float(a) else f"must be exactly {a}",
@@ -372,7 +374,7 @@ class Rules:
     @staticmethod
     def _matches_ ( value: Any, pattern: re.Pattern[str], message: str ) -> str | None:
 
-        return None if isinstance(value, str) and pattern.match(value) else message
+        return None if isinstance(value, str) and pattern.fullmatch(value) else message
 
     @staticmethod
     def _edge_ ( value: Any, argument: str, side: str, wanted: bool ) -> str | None:
@@ -505,7 +507,7 @@ class Rules:
 
         if isinstance(value, int | float) and not isinstance(value, bool): return None
 
-        return None if isinstance(value, str) and NUMERIC.match(value) else "must be numeric"
+        return None if isinstance(value, str) and NUMERIC.fullmatch(value) else "must be numeric"
 
     @staticmethod
     def _digits_ ( value: Any, argument: str ) -> str | None:

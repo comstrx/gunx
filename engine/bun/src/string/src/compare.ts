@@ -1,6 +1,5 @@
+import type { Closest } from "./arch.ts";
 import { fold } from "./fold.ts";
-
-export type Closest<T> = { item: T; distance: number; similarity: number } | undefined;
 
 const astral = /[\ud800-\udfff]/;
 

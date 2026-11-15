@@ -28,6 +28,9 @@ test:config:manifest:validates () {
     printf '[meta]\nname = "ok"\nversion = "0.1.0"\nlicense = "MIT"\nauthors = []\n' > "${file}"
     @errors 'authors needs one name' config:manifest:load "${file}"
 
+    printf '[meta]\nname = "ok"\nversion = "0.1.0"\nlicense = "MIT"\nauthors = "solo"\n' > "${file}"
+    @errors 'authors needs one name' config:manifest:load "${file}"
+
     printf '[meta]\nname = "ok"\nversion = "0.1.0"\nlicense = "MIT"\nauthors = ["a"]\n[paths]\nentrypoint = "/abs"\n' > "${file}"
     @errors 'paths.entrypoint must be a relative path' config:manifest:load "${file}"
 

@@ -1,5 +1,8 @@
-from engine.broker import Broker, Memory
+from engine.broker import Broker, Memory, Message
 from engine.context import context
+from engine.cache import Cache
+from engine.database import Database, Migrator, Outbox
+from pathlib import Path
 from engine.error import Code, Fault
 from engine.log import log
 from engine.queue import Job, Queue, Work
@@ -255,3 +258,160 @@ async def test_work_is_a_typed_job_that_dispatches_itself () -> None:
     job = await Send(to="a@x.io", body="hi").dispatch(bus=inline)
 
     assert job.name == "send" and job.payload == { "to": "a@x.io", "body": "hi" } and sent == [("a@x.io", "hi")]
+
+
+async def test_delayed_jobs_release_completed_tasks_and_close_cancels_pending ( jobs: Queue ) -> None:
+
+    @jobs.task("later")
+    async def later () -> None: return
+
+    await jobs.push("later", {}, delay=0.01)
+
+    for _ in range(100):
+
+        if not jobs.stats()["delayed"]: break
+
+        await asyncio.sleep(0.01)
+
+    assert not jobs.stats()["delayed"]
+
+    await jobs.push("later", {}, delay=60)
+
+    assert jobs.stats()["delayed"] == 1
+
+    await jobs.close()
+
+    assert not jobs.stats()["delayed"]
+
+async def test_durable_queue_survives_recreation_without_a_running_relay ( tmp_path: Path ) -> None:
+
+    db = Database()
+
+    await db.connect(f"sqlite://{tmp_path / 'queue.db'}")
+
+    table = Outbox.blueprint("jobs_outbox")
+    box = Outbox(db, table=table)
+    bus = Broker()
+    first = Queue()
+    first.setup(bus)
+    first.durable(box)
+
+    async def broken () -> None: raise Fault(Code.UNAVAILABLE, reason="unavailable")
+
+    first.task("work", tries=1)(broken)
+
+    await Migrator(db, [table]).apply()
+    await first.declare()
+
+    try:
+
+        job = await first.push("work", delay=0.01)
+
+        assert first.stats()["delayed"] == 0 and await box.pending() == 1
+
+        await first.close()
+        await asyncio.sleep(0.02)
+
+        assert await box.relay() == 1
+        assert await first.work(wait=0.01) == 1
+
+        second_box = Outbox(db, table=table)
+        second = Queue()
+        second.setup(bus)
+        second.durable(second_box)
+        seen: list[bool] = []
+
+        async def fixed () -> None: seen.append(True)
+
+        second.task("work", tries=1)(fixed)
+
+        assert [row["id"] for row in await second.failed()] == [job.id]
+        assert await second_box.claim() == []
+        assert await second.retry_dead(job.id)
+        assert await second_box.relay() == 1
+        assert await second.work(wait=0.01) == 1 and seen == [True]
+        assert await second.failed() == []
+
+        await second.close()
+
+    finally:
+
+        await bus.close()
+        await db.close()
+
+async def test_early_delivery_waits_without_clearing_requested_availability ( jobs: Queue ) -> None:
+
+    ran = asyncio.Event()
+
+    @jobs.task("future")
+    async def future () -> None: ran.set()
+
+    job = Job.make("future", {}, delay=0.1)
+    message = Message.make("queue.default", job.dump())
+    task = asyncio.create_task(jobs.handle(message))
+
+    try:
+
+        await asyncio.sleep(0.02)
+
+        assert not ran.is_set() and not task.done()
+
+        await task
+
+        assert ran.is_set() and job.due()
+
+    finally:
+
+        task.cancel()
+
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_unique_reservation_is_released_only_for_definite_publish_failure (
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+
+    bus, store, jobs = Broker(), Cache(), Queue()
+    jobs.setup(bus, cache=store)
+    seen: list[bool] = []
+
+    @jobs.task("unique")
+    async def receive () -> None: seen.append(True)
+
+    await jobs.declare()
+
+    async def definite ( *args: Any, **kwargs: Any ) -> None:
+
+        raise Fault(Code.UNAVAILABLE, reason="publish.failed")
+
+    async def uncertain ( *args: Any, **kwargs: Any ) -> None:
+
+        raise Fault(Code.UNAVAILABLE, reason="publish.unknown", unknown=True)
+
+    try:
+
+        with monkeypatch.context() as patch:
+
+            patch.setattr(bus, "publish", definite)
+
+            with pytest.raises(Fault): await jobs.push("unique", unique="definite")
+
+        await jobs.push("unique", unique="definite")
+
+        assert await jobs.work(wait=0.01) == 1 and seen == [True]
+
+        with monkeypatch.context() as patch:
+
+            patch.setattr(bus, "publish", uncertain)
+
+            with pytest.raises(Fault): await jobs.push("unique", unique="uncertain")
+
+        await jobs.push("unique", unique="uncertain")
+
+        assert jobs.stats()["skipped"] == 1
+
+    finally:
+
+        await jobs.close()
+        await bus.close()
+        await store.close()

@@ -48,6 +48,47 @@ async function settle (): Promise<void> {
 
 describe("fuzz func", () => {
 
+    it("lane admission agrees with a finite burst model and recovers after saturation", async () => {
+
+        await fc.assert(fc.asyncProperty(fc.integer({ min: 1, max: 8 }), fc.nat({ max: 20 }), fc.nat({ max: 60 }), async ( width, pending, count ) => {
+
+            const made = func.lane(width, { pending });
+            const held = Promise.withResolvers<void>();
+            const ran: number[] = [];
+            const jobs = Array.from({ length: count }, ( _, at ) => made.run(async () => {
+
+                ran.push(at);
+                await held.promise;
+
+                return at;
+
+            }).then(( value ) => ({ ok: true, value }), ( fault: unknown ) => ({ ok: false, fault })));
+
+            try {
+
+                expect([made.active(), made.waiting()]).toEqual([Math.min(count, width), Math.min(pending, Math.max(0, count - width))]);
+                held.resolve();
+
+                const outcomes = await Promise.all(jobs);
+                const admitted = Math.min(count, width + pending);
+
+                expect(outcomes.map(( result ) => result.ok)).toEqual(Array.from({ length: count }, ( _, at ) => at < admitted));
+                expect(ran).toEqual(Array.from({ length: admitted }, ( _, at ) => at));
+                expect(outcomes.filter(( result ) => "fault" in result).every(( result ) => "fault" in result && error.is(result.fault, "too_many_requests") && result.fault.reason === "lane.full")).toBe(true);
+                expect(made.size()).toBe(0);
+                expect(await made.run(async () => "recovered")).toBe("recovered");
+
+            } finally {
+
+                held.resolve();
+
+            }
+
+        }), { numRuns: 2000 });
+
+    });
+
+
     it("memo joins equal shapes and tells every other value apart", () => {
 
         fc.assert(

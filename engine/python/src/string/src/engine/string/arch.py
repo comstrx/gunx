@@ -35,10 +35,9 @@ SINGULARS   = tuple((re.compile(pattern, re.IGNORECASE), result) for pattern, re
     (r"((a)naly|(b)a|(d)iagno|(p)arenthe|(p)rogno|(s)ynop|(t)he)(sis|ses)$", r"\1sis"), (r"([ti])a$", r"\1um"),
     (r"(n)ews$", r"\1ews"), (r"(ss)$", r"\1"), (r"s$", ""),
 ))
-INFLECT_SHORT       = 4
 
 ARABIC     = re.compile(r"[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]")
-RTL        = re.compile(r"^[^\w]*[؀-ۿ֐-׿]")
+TATWEEL    = "\u0640"
 DIACRITICS = re.compile(r"[ً-ْٰـ]")
 DIGITS     = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 EASTERN    = str.maketrans("0123456789", "٠١٢٣٤٥٦٧٨٩")
@@ -57,7 +56,7 @@ ROMAN      = str.maketrans({
 })
 
 SCRIPT   = r"\u0610-\u061A\u0620-\u0669\u066E-\u06D3\u06D5-\u06DC\u06DF-\u06E8\u06EA-\u06FC\u06FF"
-SLUG     = re.compile(f"[^a-z0-9{SCRIPT}]+")
+SLUG     = re.compile(f"[a-z0-9{SCRIPT}]+")
 SPACES   = re.compile(r"\s+")
 CAMEL    = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 WORD     = re.compile(f"[A-Za-z0-9]+|[{SCRIPT}]+")
@@ -77,3 +76,13 @@ MINOR    = frozenset({
 WPM      = 200
 SHORT    = 3
 WIDE     = 1 << 20
+
+TEMPLATE_NAME = re.compile(r"[a-zA-Z_][a-zA-Z0-9_.]*")
+TEMPLATE_LIMIT = 8 * 1024 * 1024
+DELIMITER_LIMIT = 32
+DELIMITER_COUNT = 2
+
+DEFAULT_TEMPLATE = re.compile(r"\{[ \t]*([a-zA-Z_][a-zA-Z0-9_.]*)[ \t]*\}")
+
+BASE64_PLAIN = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+BASE64_URL   = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"

@@ -1,6 +1,9 @@
 from engine.error import Fault
-from engine.string import Fluent, string
-from collections.abc import Callable
+from engine.string import Fluent, String, string
+from engine.func import func
+from collections.abc import Callable, Iterator
+from rapidfuzz import fuzz, process
+from typing import assert_type
 import pytest
 
 def test_text_helpers () -> None:
@@ -242,3 +245,416 @@ def test_laravel_str_examples_behave_the_same () -> None:
     assert string.shorten("Perfectly balanced, as all things should be.", 3, " >>>") == "Perfectly balanced, as >>>"
     assert string.wrap("Laravel", '"') == '"Laravel"' and string.wrap("is", "This ", " Laravel!") == "This is Laravel!"
     assert string.of("  hello world  ").trim().title().get() == "Hello World"
+
+@pytest.mark.parametrize("mode", ["native", "pure"])
+def test_find_keeps_text_and_byte_offsets_at_every_boundary ( mode: str ) -> None:
+
+    previous = func.mode()
+
+    try:
+
+        func.setup(mode)
+
+        finder = String()
+
+        for text in ("", "abc", "مَرْحَبًا 🌍 café", "a" * 4096 + "needle"):
+
+            for needle in ("", "a", "needle", "🌍", "missing"):
+
+                raw, pattern = text.encode(), needle.encode()
+
+                for start in (-10 ** 30, -5, 0, 1, len(raw), len(raw) + 1, 10 ** 30):
+
+                    assert finder.find(text, needle, start) == text.find(needle, start)
+                    assert finder.find(raw, pattern, start) == raw.find(pattern, start)
+                    assert finder.find(text, pattern, start) == raw.find(pattern, start)
+                    assert finder.find(raw, needle, start) == raw.find(pattern, start)
+
+    finally: func.setup(previous)
+
+@pytest.mark.parametrize("text", ["", "  ", "a", " a  b\n c ", "\u0623\u0647\u0644\u0627\u2003\u0628\u0627\u0644\u0639\u0627\u0644\u0645 \u0627\u0644\u0622\u0646", "e\u0301 x y"])
+@pytest.mark.parametrize("limit", [-3, 0, 1, 2, 10**30])
+def test_shortening_matches_word_selection ( text: str, limit: int ) -> None:
+
+    words = text.split()
+    expected = text if len(words) <= limit else " ".join(words[:max(0, limit)]) + "…"
+
+    assert string.shorten(text, limit) == expected
+
+def test_text_reversal_and_affixes_keep_their_contract () -> None:
+
+    assert string.reverse("abc\n123") == "321\ncba"
+    assert string.reverse("e\u0301a") == "ae\u0301"
+    assert not string.starts("abc", "", "") and not string.ends("abc", "", "")
+    assert string.starts("abc", "", "a") and string.ends("abc", "", "c")
+
+def test_lacks_stops_after_a_matching_needle () -> None:
+
+    def needles () -> Iterator[str]:
+
+        yield "found"
+
+        raise AssertionError("an already decided search consumed more input")
+
+    assert not string.lacks("found", needles())
+
+def test_replace_many_is_simultaneous_and_literal () -> None:
+
+    assert string.replace_many("abc ab a", { "a": "abc", "ab": "x", "abc": "y" }) == "y x abc"
+    assert string.replace_many("لغة لغة", { "لغة": "\\1", "": "ignored" }) == "\\1 \\1"
+    assert string.replace_many("a+b a.b", { "a+b": "plus", "a.b": "dot" }) == "plus dot"
+    assert string.replace_many("unchanged", {}) == "unchanged"
+
+@pytest.mark.parametrize(("text", "opening", "closing", "expected"), [
+    ("prefix[value]tail", "[", "]", "value"), ("before[tail", "[", "]", "tail"),
+    ("plain", "[", "]", ""), ("before]then[value]tail", "[", "]", "value"),
+    ("abc", "", "b", "a"), ("abc", "a", "", ""), ("abc", "", "", ""),
+    ("aaaa", "aa", "aa", ""), ("\u0645[\u0631\u062d\u0628\u0627]\u0627", "[", "]", "\u0631\u062d\u0628\u0627"),
+])
+def test_between_preserves_delimiter_boundaries ( text: str, opening: str, closing: str, expected: str ) -> None:
+
+    assert string.between(text, opening, closing) == expected
+
+@pytest.mark.parametrize(("start", "length", "picked", "replaced"), [
+    (-2, 4, "ef", "abcdX"), (-2, 1, "e", "abcdXf"), (-2, 0, "", "abcdXef"),
+    (-2, -1, "e", "abcdXf"), (-2, -2, "", "abcdXef"), (-2, -20, "", "abcdXef"),
+    (-20, 2, "ab", "Xcdef"), (-20, None, "abcdef", "X"), (20, 3, "", "abcdefX"),
+    (20, -1, "", "abcdefX"), (2, -1, "cde", "abXf"), (2, -20, "", "abXcdef"),
+    (0, 0, "", "Xabcdef"), (0, None, "abcdef", "X"), (2, None, "cdef", "abX"),
+    (10**30, 10**30, "", "abcdefX"), (-(10**30), 10**30, "abcdef", "X"),
+])
+def test_ranges_have_one_offset_and_length_contract (
+    start: int, length: int | None, picked: str, replaced: str,
+) -> None:
+
+    assert string.substr("abcdef", start, length) == picked
+    assert string.splice("abcdef", "X", start, length) == replaced
+
+def test_ranges_use_codepoints_and_accept_empty_text () -> None:
+
+    assert string.substr("أ🙂é終", -3, 2) == "🙂é"
+    assert string.splice("أ🙂é終", "ع", -3, 2) == "أع終"
+    assert string.substr("", -10, -2) == ""
+    assert string.splice("", "X", -10, -2) == "X"
+    assert string.of("abcdef").splice("X", -2, 4).get() == "abcdX"
+
+@pytest.mark.parametrize(("text", "pattern", "expected", "first"), [
+    ("b ab", "(a)?b", ["", "a"], None),
+    ("ab b", "(a)?b", ["a", ""], "a"),
+    ("ab b", "(a)?(b)", ["a", ""], "a"),
+    ("ab", "(?P<first>a)?b", ["a"], "a"),
+    ("b", "(a*)b", [""], ""),
+    ("ab", "", ["", "", ""], ""),
+    ("bb", "b", ["b", "b"], "b"),
+    ("abc", "(z)", [], None),
+])
+def test_regex_results_have_stable_capture_semantics (
+    text: str, pattern: str, expected: list[str], first: str | None,
+) -> None:
+
+    assert string.matches(text, pattern) == expected
+    assert string.match(text, pattern) == first
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("123 مرحبا", "rtl"), ("١٢٣ Hello", "ltr"), ("123 שלום", "rtl"),
+    ("--- 123", "ltr"), ("", "ltr"), ("é مرحبا", "ltr"), ("\u0301\u0645\u0631\u062d\u0628\u0627", "rtl"),
+    ("\u200fHello", "rtl"), ("\u200e\u0645\u0631\u062d\u0628\u0627", "ltr"), ("مرحبا Hello", "rtl"),
+])
+def test_direction_uses_the_first_strong_character ( text: str, expected: str ) -> None:
+
+    assert string.direction(text) == expected
+
+def test_rank_matches_the_provider_and_keeps_original_values () -> None:
+
+    choices = ["Crème", "CREME", "creme", "other", "مَرْحَبًا", "مرحبا"]
+    expected = process.extract("creme", [string.fold(item) for item in choices], scorer=fuzz.WRatio, limit=6)
+    ranked = [(choices[index], score / 100.0) for _, score, index in expected]
+
+    assert string.rank("Crème", choices, 10**30) == ranked
+    assert string.rank("Crème", iter(choices), 10**30) == ranked
+    assert string.rank("Crème", choices, floor=1.0) == [("Crème", 1.0), ("CREME", 1.0), ("creme", 1.0)]
+    assert string.rank("missing", [], 10**30) == []
+    assert string.rank("", [""]) == [("", 0.0)]
+    assert string.closest("Crème", choices) == "Crème"
+    assert string.closest("مَرْحَبًا", iter(choices)) == "مَرْحَبًا"
+    assert string.closest("absent", ["other"], floor=1.0) is None
+    assert string.closest("absent", iter(())) is None
+
+def test_closest_and_disabled_rank_do_not_consume_unneeded_choices () -> None:
+
+    def choices () -> Iterator[str]:
+
+        yield "Crème"
+
+        raise AssertionError("perfect match must stop consumption")
+
+    assert string.closest("creme", choices()) == "Crème"
+    assert string.rank("creme", choices(), 0) == []
+
+@pytest.mark.parametrize("floor", [-0.1, 1.1, float("nan"), float("inf"), -float("inf")])
+def test_fuzzy_threshold_errors_are_engine_faults ( floor: float ) -> None:
+
+    with pytest.raises(Fault) as caught: string.closest("a", ["a"], floor=floor)
+
+    assert caught.value.reason == "string.floor"
+
+    with pytest.raises(Fault) as caught: string.rank("a", ["a"], floor=floor)
+
+    assert caught.value.reason == "string.floor"
+
+def test_initials_use_a_nonnegative_bounded_word_count () -> None:
+
+    assert string.initials("  Ada   Lovelace  Byron", 2) == "AL"
+    assert string.initials("  élan \t عربي \n 🙂", 10**30) == "Éع🙂"
+    assert string.initials("one two", 0) == ""
+    assert string.initials("one two", -1) == ""
+    assert string.initials(" \t\n", 10**30) == ""
+
+def test_fluent_callbacks_preserve_result_types_and_isolation () -> None:
+
+    left = string.of("abc")
+    right = left.pipe(str.upper)
+    count = left.pipe(len)
+
+    assert_type(right, Fluent)
+    assert_type(count, int | Fluent)
+    assert right.get() == "ABC"
+    assert left.get() == "abc"
+    assert count == 3
+    assert left.when(condition=False, step=lambda _: 99) is left
+    assert left.unless(condition=True, step=lambda _: 99) is left
+    assert left.when(condition=True, step=len) == 3
+    assert left.unless(condition=False, step=len) == 3
+
+    seen: list[str] = []
+
+    assert left.tap(seen.append) is left
+    assert seen == ["abc"]
+
+    with pytest.raises(AttributeError): left._range_(1, 0, None)
+    with pytest.raises(AttributeError): left.not_a_verb()
+
+def test_single_replacement_keeps_literal_and_nonrecursive_behavior () -> None:
+
+    assert string.replace_many("aaaa", {"aa": "aaa"}) == "aaaaaa"
+    assert string.replace_many("a+b a+b", {"a+b": "\\1", "": "ignored"}) == "\\1 \\1"
+
+def test_fuzzy_threshold_keeps_subnormal_and_boundary_values () -> None:
+
+    assert string.rank("", [""], floor=5e-324) == []
+    assert string.closest("", [""], floor=5e-324) is None
+
+    choices = ["abc", "ac", "abcd", "other"]
+
+    for item, score in string.rank("abc", choices, len(choices)):
+
+        assert (item, score) in string.rank("abc", choices, len(choices), floor=score)
+
+def test_fluent_pipe_types_allow_a_callback_with_mixed_results () -> None:
+
+    def choose ( value: str ) -> str | int:
+
+        return value.upper() if value else 0
+
+    result = string.of("abc").pipe(choose)
+
+    assert_type(result, str | int | Fluent)
+    assert isinstance(result, Fluent)
+    assert result.get() == "ABC"
+    assert string.of("").pipe(choose) == 0
+
+def test_fuzzy_iterables_do_not_inherit_provider_mapping_semantics () -> None:
+
+    choices = {"Crème": "unrelated", "other": "creme"}
+
+    assert string.closest("creme", choices) == "Crème"
+    assert string.rank("creme", choices, floor=1.0) == [("Crème", 1.0)]
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("a👩🏽‍💻b", "b👩🏽‍💻a"), ("🇪🇬🇯🇵", "🇯🇵🇪🇬"),
+    ("a\r\nb", "b\r\na"), ("e\u0301a", "ae\u0301"),
+    ("\r\n\r", "\r\r\n"), ("\n\r\n\r", "\r\r\n\n"), ("\n\r", "\r\n"),
+    ("a✈️b", "b✈️a"), ("a1️⃣b", "b1️⃣a"),
+    ("a\u1100\u1161\u11a8b", "b\u1100\u1161\u11a8a"),
+    ("\u0301a", "a\u0301"), ("\ud800a", "a\ud800"),
+    ("", ""), ("abc\nxyz", "zyx\ncba"),
+])
+def test_reverse_preserves_original_grapheme_clusters ( text: str, expected: str ) -> None:
+
+    assert string.reverse(text) == expected
+    assert string.of(text).reverse().get() == expected
+
+def test_reverse_retains_a_large_combining_cluster () -> None:
+
+    cluster = "e" + "\u0301" * 20000
+
+    assert string.reverse(cluster + "x") == "x" + cluster
+    assert string.reverse(cluster) == cluster
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("Crème Brûlée", "creme brulee"),
+    ("ـــمَرْحَبًاـــ", "مرحبا"),
+    ("\uff28\uff45\uff4c\uff4c\uff4f \uff11\uff12\uff13", "hello 123"),
+    ("ﬃ ①", "ffi 1"),
+    ("\ufefb\ufe77\u0640", "لا"),
+    ("\ud800x", "\ud800x"),
+])
+def test_folding_preserves_compatibility_and_arabic_semantics ( text: str, expected: str ) -> None:
+
+    assert string.fold(text) == expected
+
+@pytest.mark.parametrize(("separator", "limit", "expected"), [
+    ("-", 0, ""), ("-", -1, ""), ("-", 1, "a"), ("-", 2, "ab"), ("-", 3, "abc"),
+    ("-", 4, "abc"), ("-", 5, "abc-d"), ("-", 6, "abc-de"), ("-", 7, "abc-def"),
+    ("::", 4, "abc"), ("::", 5, "abc"), ("::", 6, "abc::d"),
+    ("", 4, "abcd"), ("ab", 6, "abcabd"), ("\\1", 6, "abc\\1d"),
+])
+def test_bounded_slug_keeps_whole_separators ( separator: str, limit: int, expected: str ) -> None:
+
+    assert string.slug("...abc def ghi...", separator, limit) == expected
+    assert string.slug("...abc def ghi..." + " ignored" * 1000, separator, limit) == expected
+
+def test_slug_large_single_word_and_empty_inputs () -> None:
+
+    assert string.slug("x" * 100000, limit=5) == "xxxxx"
+    assert string.slug("! " * 10000) == ""
+    assert string.slug("", limit=10**30) == ""
+    assert string.slug("a b", separator="", limit=10**30) == "ab"
+
+@pytest.mark.parametrize(("text", "limit", "suffix", "expected"), [
+    ("a👩🏽‍💻b🇪🇬c", 4, "…", "a👩🏽‍💻b…"),
+    ("e\u0301x", 1, "", "e\u0301"),
+    ("a\r\nb", 2, "", "a"),
+    ("a\r\nbc", 3, "", "a\r\nb"),
+    ("\u0600 x", 1, "", "\u0600 "),
+    ("🇪🇬🇯🇵x", 2, "👩🏽‍💻", "🇪🇬👩🏽‍💻"),
+    ("abc", 1, "👩🏽‍💻🇪🇬", "👩🏽‍💻"),
+    ("e\u0301", 1, "…", "e\u0301"),
+    ("abc", -1, "…", ""),
+    ("", 0, "…", ""),
+    ("a👩🏽‍💻", 10**100, "…", "a👩🏽‍💻"),
+])
+def test_grapheme_truncation_preserves_original_clusters (
+    text: str, limit: int, suffix: str, expected: str,
+) -> None:
+
+    assert string.truncate(text, limit, suffix, graphemes=True) == expected
+    assert string.of(text).truncate(limit, suffix, graphemes=True).get() == expected
+
+def test_graphemes_are_lazy_and_rejoin_the_original () -> None:
+
+    text = "e\u0301👩🏽‍💻🇪🇬\r\n"
+    parts = string.graphemes(text)
+
+    assert iter(parts) is parts
+    assert next(parts) == "e\u0301"
+    assert list(parts) == ["👩🏽‍💻", "🇪🇬", "\r\n"]
+    assert "".join(string.graphemes(text)) == text
+    assert string.truncate("e\u0301x", 1, "") == "e"
+
+@pytest.mark.parametrize(("text", "pattern", "matched"), [
+    ("123", r"\d+", True), ("a123", r"\d+", False), ("123\n", r"\d+", False),
+    ("", r"a*", True), ("a\nb", r"a.*b", False),
+])
+def test_full_matching_is_explicit ( text: str, pattern: str, matched: bool ) -> None:
+
+    assert string.test(text, pattern, full=True) is matched
+
+def test_multiple_character_replacement_is_simultaneous_and_literal () -> None:
+
+    assert string.replace_many("aabé", {"a": "b", "b": "a", "é": "\\1"}) == "bba\\1"
+    assert string.replace_many("aaba", {"a": "", "b": "aa", "": "ignored"}) == "aa"
+    assert string.replace_many("aaaab", {"aa": "x", "a": "y", "b": ""}) == "xx"
+
+@pytest.mark.parametrize(("text", "width", "fill"), [
+    ("", 0, "ab"), ("x", 12, "abc"), ("x", 13, "abc"), ("", 15, "abc"),
+    ("word", 7, "👩🏽‍💻"), ("word", 40, "xy" * 50), ("x", 65536, "12345"),
+])
+def test_padding_preserves_exact_pattern_boundaries ( text: str, width: int, fill: str ) -> None:
+
+    for side in ("left", "right", "both"):
+
+        room = max(0, width - len(text))
+        left = room if side == "left" else 0 if side == "right" else room // 2 + (room & width & 1)
+        repeat = (fill * (room // len(fill) + 1))[:room]
+        expected = repeat[:left] + text + repeat[:room - left]
+
+        assert string.pad(text, width, fill, side) == expected
+
+def test_large_grapheme_truncation_keeps_the_suffix_budget () -> None:
+
+    cluster = "👩🏽‍💻"
+    text = cluster * 10000
+
+    assert string.truncate(text, 5000, "…", graphemes=True) == cluster * 4999 + "…"
+    assert string.truncate(text, 5000, "", graphemes=True) == cluster * 5000
+    assert string.truncate("a\r\n" * 10000, 2, "", graphemes=True) == "a"
+
+def test_template_is_literal_single_pass_and_supports_delimiters () -> None:
+
+    assert string.template("Hi {user.name}", {"user": {"name": "A"}}) == "Hi A"
+    assert string.template("{a}", {"a": "{b}", "b": "hidden"}) == "{b}"
+    assert string.template("__name__", {"name": "A"}, delimiters=("__", "__")) == "A"
+    assert string.template("**__name__**", {"name": "B"}, delimiters=("**__", "__**")) == "B"
+    assert string.keys("{a} {a} {user.name}") == ["a", "user.name"]
+    assert string.template("{unknown}", {}, strict=False) == "{unknown}"
+    assert string.split(" a ,, b ,") == ["a", "b"]
+    assert string.split(" a ,,", strip=False, empty=True) == [" a ", "", ""]
+
+def test_template_rejects_missing_keys_and_expansion_budget () -> None:
+
+    with pytest.raises(Fault): string.template("{missing}", {})
+    with pytest.raises(Fault): string.template("x", {}, delimiters=("", "}"))
+    with pytest.raises(Fault): string.template("{x}{x}", {"x": "a" * (5 * 1024 * 1024)})
+
+def test_adjacent_custom_placeholders_end_at_the_first_literal_closer () -> None:
+
+    assert string.template("__a____b__", {"a": "left", "b": "right"}, delimiters=("__", "__")) == "leftright"
+    assert string.keys("__a____b__", ("__", "__")) == ["a", "b"]
+    assert string.template("[[user_name]][[port]]", {"user_name": "worker", "port": 80}, delimiters=("[[", "]]")) == "worker80"
+
+def test_custom_templates_scan_invalid_and_missing_closers_without_backtracking () -> None:
+
+    text = "__" * 10000 + "!$$"
+    assert string.template(text, {}, delimiters=("__", "$$")) == text
+    assert string.keys(text, ("__", "$$")) == []
+    assert string.keys("a" * 10000, ("a", "z")) == []
+
+@pytest.mark.parametrize(("opening", "closing"), [("{", "}"), ("__", "__"), ("**__", "__**"), ("[[", "]]")])
+def test_template_padding_and_single_pass ( opening: str, closing: str ) -> None:
+
+    text = f"{opening} \tuser.name \t{closing}{opening} value {closing}"
+    values = {"user": {"name": "A"}, "value": "{ignored}"}
+    assert string.template(text, values, delimiters=(opening, closing)) == "A{ignored}"
+    assert string.keys(text, (opening, closing)) == ["user.name", "value"]
+    assert string.template(text, {}, strict=False, delimiters=(opening, closing)) == text
+
+@pytest.mark.parametrize(("strip", "empty", "expected"), [
+    (True, True, ["a", "", "b", ""]), (True, False, ["a", "b"]),
+    (False, True, [" a ", " ", " b ", ""]), (False, False, [" a ", " ", " b "]),
+])
+def test_split_options_preserve_blanks ( strip: bool, empty: bool, expected: list[str] ) -> None:
+
+    assert string.split(" a , , b ,", strip=strip, empty=empty) == expected
+
+def test_explicit_base64_alphabets_and_canonical_bits () -> None:
+
+    assert string.base64(b"\xfb\xff", url=True) == "-_8"
+    assert string.base64(b"\xfb\xff") == "+/8="
+    assert string.unbase64("-_8", url=True, canonical=True) == b"\xfb\xff"
+    assert string.unbase64("+/8=", url=False, canonical=True) == b"\xfb\xff"
+    assert string.unbase64("Zh", url=True) == b"f"
+
+    for text in ("Zh", "Zg=", "Zg==", "Zg\n", "+/8", "é", "\ud800", "Z"):
+
+        with pytest.raises(Fault): string.unbase64(text, url=True, canonical=True)
+
+    for text in ("Zh==", "-_8=", "Zg", "Zg==\n"):
+
+        with pytest.raises(Fault): string.unbase64(text, url=False, canonical=True)
+
+    assert string.unbase64("Zg") == string.unbase64("Zg==") == b"f"
+
+    with pytest.raises(Fault): string.unbase64("Zh==", canonical=True)
+
+    assert string.unbase64("Zg", canonical=True) == b"f"

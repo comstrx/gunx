@@ -15,3 +15,11 @@ test:config:tools:reads-scalars-and-tables () {
     @eq "$(config:tools:fetchable | tr '\n' ' ')" 'gitleaks shellcheck syft taplo trivy typos zizmor '
 
 }
+test:module:bundle:tool:runs-a-pinned-package () {
+
+    @eq "$(config:tools:get prettier runner)" bunx
+    @eq "$(config:tools:version prettier)" "${MANIFEST[tools.prettier.version]}"
+    PATH=/nonexistent @fails module:bundle:tool:ready prettier
+    @fails module:bundle:tool:ready no-such-tool
+
+}

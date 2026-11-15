@@ -2,7 +2,7 @@
   "name": "engine-state",
   "private": true,
   "type": "module",
-  "description": "State: zustand stores with persistence, React bindings, resources, actions, feed",
+  "description": "State: stores, persistence, renderer bindings, resources, actions, feeds",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
@@ -13,8 +13,5 @@
     "engine-error": "workspace:*",
     "engine-event": "workspace:*",
     "zustand": "catalog:"
-  },
-  "peerDependencies": {
-    "react": ">=19.0.0"
   }
 }

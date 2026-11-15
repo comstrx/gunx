@@ -11,6 +11,8 @@ import threading
 
 class Metrics:
 
+    __slots__ = ("_claims", "_items", "_lock", "_prefix", "_series")
+
     def __init__ ( self, prefix: str = "engine", series: int = SERIES ) -> None:
 
         if type(series) is not int or not 0 < series <= CEILING: raise self._refused_("series", "series")
@@ -71,11 +73,16 @@ class Metrics:
     def render ( self ) -> str:
 
         prefix = self._prefix
-        lines: list[str] = []
+        blocks = []
 
-        for _, item in self._sorted_(): lines.extend(item.lines(prefix))
+        for _, item in self._sorted_():
 
-        return "\n".join(lines) + "\n" if lines else ""
+            lines = item.lines(prefix)
+
+            lines.append("")
+            blocks.append("\n".join(lines))
+
+        return "".join(blocks)
 
     def clear ( self ) -> None:
 

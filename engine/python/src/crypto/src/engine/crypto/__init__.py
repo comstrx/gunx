@@ -1,8 +1,7 @@
-from .arch import Key, Pair, Sealed
+lazy from .arch import Key, Pair, Sealed
 from .crypto import Crypto
-from .password import Password
+from .hasher import Hasher
 
-crypto   = Crypto()
-password = Password()
+crypto = Crypto()
 
-__all__ = ["Crypto", "Key", "Pair", "Password", "Sealed", "crypto", "password"]
+__all__ = ["Crypto", "Hasher", "Key", "Pair", "Sealed", "crypto"]

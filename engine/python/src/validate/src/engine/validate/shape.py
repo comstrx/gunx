@@ -7,27 +7,31 @@ import msgspec
 
 class Shape(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
 
-    _decoders: ClassVar[dict[type, msgspec.json.Decoder[Any]]] = {}
+    _decoder : ClassVar[msgspec.json.Decoder[Any] | None] = None
+    _fields  : ClassVar[tuple[str, ...] | None] = None
+    _members : ClassVar[tuple[Member, ...] | None] = None
     fillable : ClassVar[tuple[str, ...]] = ()
     hidden   : ClassVar[tuple[str, ...]] = ()
 
     @classmethod
     def decoder ( cls ) -> msgspec.json.Decoder[Any]:
 
-        found = Shape._decoders.get(cls)
+        found = cls.__dict__.get("_decoder")
 
         if found is None:
 
             found = msgspec.json.Decoder(cls, strict=False)
 
-            Shape._decoders[cls] = found
+            cls._decoder = found
 
-        return found
+        return cast("msgspec.json.Decoder[Any]", found)
 
     @classmethod
-    def from_json ( cls, data: bytes | str ) -> Self:
+    def from_json ( cls, data: bytes | bytearray | memoryview | str ) -> Self:
 
-        try: return cast("Self", cls.decoder().decode(data if isinstance(data, bytes) else data.encode()))
+        if isinstance(data, memoryview) and not data.c_contiguous: data = data.tobytes()
+
+        try: return cast("Self", cls.decoder().decode(data))
         except msgspec.ValidationError as error: raise cls._fault_(error) from error
         except msgspec.DecodeError as error: raise Fault(Code.BAD_REQUEST, "Malformed JSON", "validate.json") from error
         except UnicodeError as error: raise Fault(Code.BAD_REQUEST, "Malformed text", "validate.encoding") from error
@@ -67,15 +71,31 @@ class Shape(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
     @classmethod
     def fields ( cls ) -> tuple[str, ...]:
 
-        return tuple(info.encode_name for info in msgspec.structs.fields(cls))
+        found = cls.__dict__.get("_fields")
+
+        if found is None:
+
+            found = tuple(info.encode_name for info in msgspec.structs.fields(cls))
+
+            cls._fields = found
+
+        return cast("tuple[str, ...]", found)
 
     @classmethod
     def members ( cls ) -> tuple[Member, ...]:
 
-        return tuple(
-            Member(info.name, info.type, None if info.default is msgspec.NODEFAULT else info.default)
-            for info in msgspec.structs.fields(cls)
-        )
+        found = cls.__dict__.get("_members")
+
+        if found is None:
+
+            found = tuple(
+                Member(info.name, info.type, None if info.default is msgspec.NODEFAULT else info.default)
+                for info in msgspec.structs.fields(cls)
+            )
+
+            cls._members = found
+
+        return cast("tuple[Member, ...]", found)
 
     @classmethod
     def _fault_ ( cls, error: msgspec.ValidationError ) -> Fault:

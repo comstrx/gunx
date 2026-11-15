@@ -9,6 +9,28 @@ module:extract:source () {
     fi
 
 }
+module:extract:self () {
+
+    local root="" engine="" name="" path=""
+
+    root="$(core:git:root "${TOOL_ENGINE}")" || return
+    root="$(cd -- "${root}" && pwd -P)" || return
+    engine="$(cd -- "${TOOL_ENGINE}" && pwd -P)" || return
+
+    if [[ "${engine}" == "${root}/"* ]]; then @print "${engine#"${root}/"}"; return 0; fi
+
+    while IFS= read -r name; do
+
+        path="$(config:targets:get "${name}" path)" || return
+
+        [[ -f "${root}/${path}/${MANIFEST[paths.entrypoint]}" ]] && config:manifest:file "${root}/${path}" >/dev/null 2>&1 \
+            && { @print "${path}"; return 0; }
+
+    done < <(config:targets:list)
+
+    @err "No target of the table is this engine under ${root}"
+
+}
 module:extract:kind () {
 
     local name="${1}"
@@ -84,19 +106,23 @@ module:extract:files () {
 
     while IFS= read -r -d '' path; do
 
-        if module:extract:keep "${kind}" "${part}" "${path}"; then
+        module:extract:travels "${kind}" "${part}" "${path}" || continue
 
-            if [[ "${kind}" == product ]]; then printf '%s\t%s\n' "${path}" "${path}"
-            else printf '%s\t%s\n' "${path}" "${path#"${part}/"}"
-            fi
-
-        elif [[ "${kind}" != product ]] && { module:extract:governance "${path}" || module:extract:flows:files "${kind}" "${part}" "${path}"; }; then
-
-            printf '%s\t%s\n' "${path}" "${path}"
-
+        if [[ "${kind}" == product ]] || ! module:extract:keep "${kind}" "${part}" "${path}"; then printf '%s\t%s\n' "${path}" "${path}"
+        else printf '%s\t%s\n' "${path}" "${path#"${part}/"}"
         fi
 
     done < <(core:git:files "${root}")
+
+}
+module:extract:travels () {
+
+    local kind="${1}" part="${2}" path="${3}"
+
+    module:extract:keep "${kind}" "${part}" "${path}" && return 0
+    [[ "${kind}" != product ]] || return 1
+
+    module:extract:governance "${path}" || module:extract:flows:files "${kind}" "${part}" "${path}"
 
 }
 module:extract:gatename () {

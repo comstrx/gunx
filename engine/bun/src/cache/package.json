@@ -13,6 +13,7 @@
     "engine-date": "workspace:*",
     "engine-error": "workspace:*",
     "engine-json": "workspace:*",
+    "engine-list": "workspace:*",
     "engine-string": "workspace:*"
   }
 }

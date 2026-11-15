@@ -1,10 +1,10 @@
-import * as state from "engine/state";
 import { report } from "@/specs/runtime.ts";
+import { bind } from "@/stores/bind.ts";
 import { faults, instance } from "@/stores/preferences.ts";
 
 export type Stale = { stale: boolean; dismiss: () => void; reload: () => Promise<void> };
 
-const watched = state.bind(faults);
+const watched = bind(faults);
 
 export function dismiss (): void {
 

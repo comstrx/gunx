@@ -1,22 +1,10 @@
 import * as list from "engine-list";
 import * as number from "engine-number";
+import * as translate from "engine-translate";
 import * as value from "engine-value";
-import { chosen, countriesReady, countryOf, isArabic, type Named } from "./country.ts";
+import type { Currencies, Currency } from "./arch.ts";
+import { chosen, countriesReady, countryOf, isArabic } from "./country.ts";
 import { live, once, slot, word } from "./lazy.ts";
-
-export type Currency = { code: string; numeric: string | null; digits: number; symbol: { en: string; ar: string; narrow: string; native: string }; countries: readonly string[]; name: Named };
-export type Currencies = list.Catalog<Currency> & {
-    of: ( country: string ) => Currency[];
-    primaryOf: ( country: string ) => Currency | undefined;
-    symbolOf: ( code: string, locale?: string, narrow?: boolean ) => string;
-    nameOf: ( code: string, locale?: string ) => string;
-    digitsOf: ( code: string ) => number;
-    exponentOf: ( code: string ) => number;
-    minor: ( amount: number, code: string ) => number;
-    major: ( minor: number, code: string ) => number;
-    round: ( amount: number, code: string ) => number;
-    format: ( amount: number, code: string, locale?: string, options?: number.FormatOptions ) => string;
-};
 
 const rows = slot<readonly Currency[]>("currencies", async () => (await import("../data/currencies.json")).default as Currency[]);
 
@@ -106,7 +94,12 @@ export function defineCurrencies ( codes?: readonly string[] ): Currencies {
 
             const currency = found.get(word(code));
 
-            return currency ? (isArabic(locale) ? currency.name.ar : currency.name.en) || currency.name.en : word(code).trim().toUpperCase();
+            if ( !currency ) return word(code).trim().toUpperCase();
+            if ( isArabic(locale) ) return currency.name.ar || currency.name.en;
+
+            const localized = translate.currencyName(currency.code, locale);
+
+            return localized !== currency.code ? localized : currency.name.en;
 
         },
         digitsOf,

@@ -1,24 +1,5 @@
 import * as number from "engine-number";
-
-export type Shape = { count: number; size: number | (( index: number ) => number); gap?: number | undefined; paddingStart?: number | undefined; paddingEnd?: number | undefined; overscan?: number | undefined };
-export type Layout = { readonly count: number; readonly offsets: readonly number[]; readonly sizes: readonly number[]; readonly total: number; readonly overscan: number };
-export type Item = { index: number; offset: number; size: number };
-export type Range = { first: number; last: number };
-export type Visible = { start: number; end: number; items: Item[]; total: number; before: number; after: number };
-export type Reached = { start: boolean; end: boolean };
-export type Align = "start" | "center" | "end" | "auto";
-export type Measures = {
-    get: ( index: number ) => number | undefined;
-    set: ( index: number, size: number ) => boolean;
-    drop: ( index: number ) => boolean;
-    sizer: ( fallback: number ) => ( index: number ) => number;
-    estimate: ( fallback: number ) => number;
-    count: () => number;
-    version: () => number;
-    clear: () => void;
-};
-
-type Flat = { start: number; size: number; step: number };
+import type { Align, Flat, Item, Layout, Measures, Range, Reached, Shape, Visible } from "./arch.ts";
 
 const flats = new WeakMap<Layout, Flat>();
 

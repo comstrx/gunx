@@ -4,15 +4,18 @@
 app:router:flags () {
 
     local command="${1}" flag=""
+    local -a switches=()
 
     module:bundle:usage:command "${command}" >/dev/null || { module:bundle:help:unknown "${command}"; return; }
 
-    while IFS= read -r flag; do
+    core:cli:collect switches
 
-        [[ -z "${flag}" ]] || module:bundle:usage:allowed "${command}" "${flag}" \
+    for flag in "${switches[@]}"; do
+
+        module:bundle:usage:allowed "${command}" "${flag}" \
             || { core:error:usage "${command} does not take ${flag}"; return; }
 
-    done < <(core:cli:switches)
+    done
 
 }
 app:router:dispatch () {

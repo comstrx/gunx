@@ -42,15 +42,23 @@ class Socket:
 
         frame = Frame(event=event, channel=channel, data=dict(data or {}), id=id_)
 
+        await self.write(frame.encode().decode())
+
+    async def write ( self, frame: str ) -> None:
+
         try:
 
-            async with asyncio.timeout(SEND_WAIT), self.lock: await self.connection.send(frame.encode().decode())
+            async with asyncio.timeout(SEND_WAIT), self.lock:
+
+                if self.closed: return
+
+                await self.connection.send(frame)
 
         except Exception as error:
 
-            self.closed = True
-
             log.debug("socket.send_failed", socket=self.id, kind=type(error).__name__)
+
+            await self.close(1011, "send failed")
 
             return
 
@@ -77,7 +85,10 @@ class Socket:
 
         self.closed = True
 
-        try: await self.connection.close(code, reason)
+        try:
+
+            async with asyncio.timeout(SEND_WAIT): await self.connection.close(code, reason)
+
         except Exception: log.debug("socket.close_failed", socket=self.id)
 
     def describe ( self ) -> dict[str, Any]:

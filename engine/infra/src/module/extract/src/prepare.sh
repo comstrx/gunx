@@ -59,25 +59,22 @@ module:extract:docs () {
     done < <(core:fs:tree:files "${tree}")
 
     (( ${#docs[@]} > 0 )) || return 0
-    core:sys:has bunx || { @warn "bunx is missing; the renamed files keep their old widths"; return 0; }
+    module:bundle:tool:ready prettier || { @warn "prettier cannot run here; the renamed files keep their old widths"; return 0; }
 
-    (
-        cd -- "${tree}" && \
-        core:process:timeout "${CONFIG[RUN_TIMEOUT]:-300}" bunx "prettier@$(config:tools:version prettier)" --log-level warn --write "${docs[@]}"
-    ) || { @err "Prettier failed on the renamed files"; return; }
+    core:process:within "${tree}" @tool prettier --log-level warn --write "${docs[@]}" || { @err "Prettier failed on the renamed files"; return; }
 
 }
 module:extract:strip () {
 
     local tree="${1}" kind="${2}" part="${3}" file=""
 
-    [[ "${kind}" == engine && "${part}" == engine/infra ]] || return 0
+    [[ "${kind}" == engine && "${part}" == "$(module:extract:self)" ]] || return 0
 
     for file in infra.toml Infra.toml; do
 
         [[ -f "${tree}/${file}" ]] || continue
 
-        core:fs:file:edit "${tree}/${file}" '/^\[deps\]/,/^$/d' || { @err "Strip failed: ${file}"; return; }
+        core:parse:toml:drop "${tree}/${file}" deps || { @err "Strip failed: ${file}"; return; }
 
     done
 

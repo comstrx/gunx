@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 from typing import Any
 from .arch import Operation
 
-
 @dataclass(slots=True)
 class Plan:
 

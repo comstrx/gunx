@@ -7,14 +7,15 @@ from engine.parse import parse
 from engine.json import json
 from engine.log import log
 from .arch import (
-    CANCELLED, Connection, DENIED, HANDLES, Isolation, Live, LOOPBACK, Mode, MODES, NOT_NULL, POSTGRES_CHECK,
-    POSTGRES_COLUMNS, POSTGRES_FAILURES, POSTGRES_FOREIGN, POSTGRES_INDEXES, POSTGRES_LOCKED, POSTGRES_RECYCLE,
-    POSTGRES_SERIAL, POSTGRES_UNIQUE, STALE,
+    CANCELLED, Connection, DENIED, HANDLES, Isolation, JSONB_PREFIX, Live, LOOPBACK, Mode, MODES, NOT_NULL,
+    POSTGRES_CHECK, POSTGRES_COLUMNS, POSTGRES_FAILURES, POSTGRES_FOREIGN, POSTGRES_INDEXES, POSTGRES_LOCKED,
+    POSTGRES_RECYCLE, POSTGRES_SERIAL, POSTGRES_UNIQUE, STALE,
 )
 from .dialect import Dialect
 from .driver import Driver
 from .lane import Lane
 from .listener import Listener
+from .link import Link
 from .postgres import POSTGRES
 from .vector import Vector
 import asyncio, asyncpg, ssl
@@ -40,6 +41,8 @@ class PostgresDriver(Driver):
         self._ssl         = self.mode(url, ssl)
         self._lane: Lane | None = None
         self._handles: dict[int, dict[str, Any]] = {}
+        self._connections: dict[int, Lane] = {}
+        self._connecting = asyncio.Lock()
 
     @staticmethod
     def mode ( url: str, wanted: str | None ) -> Mode:
@@ -58,6 +61,10 @@ class PostgresDriver(Driver):
     @override
     async def connect ( self ) -> None:
 
+        async with self._connecting: await self._connect_()
+
+    async def _connect_ ( self ) -> None:
+
         if self._lane is not None: return
 
         settings = { "application_name": self._application, "statement_timeout": str(int(self._timeout * 1000)) }
@@ -68,7 +75,7 @@ class PostgresDriver(Driver):
 
             connection = await asyncpg.connect(
                 self._url, timeout=self._timeout, command_timeout=self._timeout, server_settings=settings,
-                ssl=self._ssl,
+                ssl=self._ssl, connection_class=Link,
             )
 
             try: await self._init_(connection)
@@ -78,6 +85,9 @@ class PostgresDriver(Driver):
 
                 raise
 
+            connection.add_termination_listener(self._terminated_)
+            self._connections[id(connection)] = lane
+
             return connection
 
         async def closer ( connection: Any ) -> None:
@@ -86,7 +96,9 @@ class PostgresDriver(Driver):
 
             await connection.close(timeout=5)
 
-        lane = Lane(opener, closer, self._min, self._max, POSTGRES_RECYCLE)
+        async def reset ( connection: Any ) -> None: await connection.reset(timeout=self._timeout)
+
+        lane = Lane(opener, closer, self._min, self._max, POSTGRES_RECYCLE, reset)
 
         await lane.open()
 
@@ -94,6 +106,10 @@ class PostgresDriver(Driver):
 
     @override
     async def close ( self ) -> None:
+
+        async with self._connecting: await self._close_()
+
+    async def _close_ ( self ) -> None:
 
         lane, self._lane = self._lane, None
 
@@ -128,7 +144,10 @@ class PostgresDriver(Driver):
     @override
     async def release ( self, connection: Any ) -> None:
 
-        await self._lane_().release(connection)
+        owner = self._connections.get(id(connection))
+
+        if owner is None: await connection.close(timeout=5)
+        else: await owner.release(connection)
 
     @override
     def take ( self ) -> Any:
@@ -138,7 +157,9 @@ class PostgresDriver(Driver):
     @override
     def give ( self, connection: Any ) -> bool:
 
-        return self._lane is not None and self._lane.give(connection)
+        lane = self._lane
+
+        return lane is not None and self._connections.get(id(connection)) is lane and lane.give(connection)
 
     @override
     async def execute ( self, connection: Any, sql: str, params: Sequence[Any], timeout: float | None = None ) -> int:
@@ -256,9 +277,12 @@ class PostgresDriver(Driver):
     @override
     async def scope ( self, connection: Any, settings: Mapping[str, str] ) -> None:
 
-        for name, value in settings.items():
+        if not settings: return
 
-            await connection.execute("SELECT set_config($1, $2, true)", f"app.{name}", value)
+        await connection.execute(
+            "SELECT set_config(name, value, true) FROM unnest($1::text[], $2::text[]) AS settings(name, value)",
+            [f"app.{name}" for name in settings], list(settings.values()),
+        )
 
     @override
     async def listen ( self, channel: str, handler: Callable[[str], Any] ) -> Listener:
@@ -322,6 +346,11 @@ class PostgresDriver(Driver):
 
         return found
 
+    def _terminated_ ( self, connection: Any ) -> None:
+
+        self._handles.pop(id(connection), None)
+        self._connections.pop(id(connection), None)
+
     def _forget_ ( self, connection: Any, sql: str ) -> None:
 
         held = self._handles.get(id(connection))
@@ -336,8 +365,24 @@ class PostgresDriver(Driver):
 
     async def _init_ ( self, connection: Connection ) -> None:
 
-        await connection.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
-        await connection.set_type_codec("json", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
+        await connection.set_type_codec(
+            "jsonb", encoder=self._encode_jsonb_, decoder=self._decode_jsonb_, schema="pg_catalog", format="binary",
+        )
+        await connection.set_type_codec(
+            "json", encoder=json.encode, decoder=json.decode, schema="pg_catalog", format="binary",
+        )
+
+    @staticmethod
+    def _encode_jsonb_ ( value: object ) -> bytes:
+
+        return JSONB_PREFIX + json.encode(value)
+
+    @staticmethod
+    def _decode_jsonb_ ( value: bytes ) -> Any:
+
+        if not value.startswith(JSONB_PREFIX): raise Fault(Code.UNAVAILABLE, reason="database.jsonb")
+
+        return json.decode(memoryview(value)[1:])
 
     @staticmethod
     def fault ( error: BaseException ) -> Fault:
@@ -368,7 +413,10 @@ class PostgresDriver(Driver):
 
             return Fault(Code.TIMEOUT, reason="database.timeout", unknown=True)
 
-        if isinstance(error, asyncpg.PostgresSyntaxError | asyncpg.UndefinedTableError | asyncpg.UndefinedColumnError):
+        if isinstance(error, (
+            asyncpg.PostgresSyntaxError, asyncpg.UndefinedTableError, asyncpg.UndefinedColumnError,
+            asyncpg.UndefinedObjectError,
+        )):
 
             return Fault(Code.INTERNAL, str(error).split("\n")[0], "database.sql")
 

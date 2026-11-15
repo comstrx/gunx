@@ -1,68 +1,6 @@
 import * as date from "engine-date";
 import * as string from "engine-string";
-
-export type Site = {
-    name: string;
-    url: string;
-    locale: string;
-    locales?: readonly string[] | undefined;
-    default?: string | undefined;
-    hide?: boolean | undefined;
-    description?: string | undefined;
-    image?: string | undefined;
-    twitter?: string | undefined;
-    separator?: string | undefined;
-};
-export type Directives = {
-    index?: boolean | undefined;
-    follow?: boolean | undefined;
-    archive?: boolean | undefined;
-    translate?: boolean | undefined;
-    snippet?: boolean | number | undefined;
-    imagePreview?: "none" | "standard" | "large" | undefined;
-    videoPreview?: number | undefined;
-    until?: date.Input;
-};
-export type Page = {
-    title?: string | undefined;
-    description?: string | undefined;
-    path?: string | undefined;
-    image?: string | undefined;
-    alt?: string | undefined;
-    type?: "website" | "article" | "product" | "profile" | undefined;
-    noindex?: boolean | undefined;
-    robots?: Directives | undefined;
-    published?: date.Input;
-    modified?: date.Input;
-    author?: string | undefined;
-    section?: string | undefined;
-    keywords?: readonly string[] | undefined;
-};
-export type Alternate = { locale: string; href: string };
-export type Tag = { name: string; content: string } | { property: string; content: string } | { rel: string; href: string; hreflang?: string | undefined };
-export type Metadata = {
-    title: string;
-    description: string | undefined;
-    canonical: string;
-    robots: string;
-    keywords: string[];
-    alternates: Alternate[];
-    openGraph: Record<string, string>;
-    twitter: Record<string, string>;
-};
-export type Shape = {
-    name: string;
-    url: string;
-    locale: string;
-    locales: readonly string[] | undefined;
-    chosen: string | undefined;
-    hide: boolean | undefined;
-    root: string;
-    lead: string;
-    fallback: string;
-    spoken: string;
-    tongues: { name: string; lead: string }[];
-};
+import type { Alternate, Directives, Metadata, Page, Shape, Site, Tag } from "./arch.ts";
 
 const schemed = /^https?:\/\/[^\s/?#\\@<>"]+(?:\/[^\s?#\\<>"]*)?$/i;
 const absolute = /^https?:\/\//i;

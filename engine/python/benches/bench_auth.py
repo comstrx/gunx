@@ -6,7 +6,7 @@ from engine.test import Bench
 from engine.token import token
 from pathlib import Path
 from typing import Any
-import asyncio
+import asyncio, os
 
 bench = Bench()
 auth  = Auth()
@@ -14,7 +14,7 @@ relay = Relay()
 store = Memory()
 loop  = asyncio.new_event_loop()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 crypto.setup([crypto.key("k1")])
 token.setup("bench-secret-that-is-long-enough-00000001")
 auth.setup(Cache(store), roles={ "admin": ["orders.*", "users.read", "reports.*"], "user": ["orders.read", "profile.*"] })

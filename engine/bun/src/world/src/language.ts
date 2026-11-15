@@ -1,17 +1,8 @@
 import * as list from "engine-list";
-import { chosen, countryOf, isArabic, type Named } from "./country.ts";
+import * as translate from "engine-translate";
+import type { Direction, Language, Languages } from "./arch.ts";
+import { chosen, countryOf, isArabic } from "./country.ts";
 import { baseOf, live, once, over, slot, word } from "./lazy.ts";
-
-export type Direction = "ltr" | "rtl";
-export type Language = { code: string; direction: Direction; script: string; name: Named };
-export type Languages = list.Catalog<Language> & {
-    nameOf: ( code: string, locale?: string ) => string;
-    directionOf: ( code: string ) => Direction;
-    scriptOf: ( code: string ) => string;
-    isRtl: ( code: string ) => boolean;
-    ofCountry: ( country: string ) => Language[];
-    withScript: ( script: string ) => Language[];
-};
 
 const separator = /[-_]/;
 const lettered = /^[a-z]+$/i;
@@ -97,7 +88,13 @@ export function defineLanguages ( codes?: readonly string[] ): Languages {
 
             const language = get(code);
 
-            return language ? (isArabic(locale) ? language.name.ar : language.name.en) || language.name.en : word(code);
+            if ( !language ) return word(code);
+            if ( isArabic(locale) ) return language.name.ar || language.name.en;
+            if ( baseOf(locale) === "en" ) return language.name.en;
+
+            const localized = translate.languageName(language.code, locale);
+
+            return localized.toLowerCase() !== language.code.toLowerCase() ? localized : language.name.en;
 
         },
         directionOf,

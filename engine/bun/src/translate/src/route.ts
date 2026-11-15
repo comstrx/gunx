@@ -1,10 +1,5 @@
+import type { Index, Routed, Routing, Shape } from "./arch.ts";
 import { split } from "./locale.ts";
-
-export type Routing = { locales: readonly string[]; default: string; hide?: boolean | undefined };
-export type Routed = { locale: string; path: string };
-
-type Shape = { locale: string | undefined; segments: string[]; slash: boolean; tail: string };
-type Index = { exact: Map<string, string>; spoken: Map<string, string> };
 
 const tailed = /[?#]/;
 const stray = /[\t\n\r\\]/;

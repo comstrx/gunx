@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { Nav } from "@/app/nav.tsx";
 import { Screen } from "@/app/screen.tsx";
-import { compiled, metadataOf, pathsOf, screenAt } from "@/specs/runtime.ts";
+import { compiled, contentOf, metadataOf, pathsOf, screenAt } from "@/specs/runtime.ts";
 
 type Params = { path?: string[] | undefined };
 
-const locale = compiled.surface.locale === "ar" ? "ar" : "en";
+const locale = compiled.surface.locale;
 
 function pathOf ( params: Params ): string {
 
@@ -30,7 +30,7 @@ export async function generateMetadata ({ params }: { params: Promise<Params> } 
         description: meta.description,
         robots: meta.robots,
         alternates: meta.canonical ? { canonical: meta.canonical, languages: Object.fromEntries(meta.alternates.map(( alternate ) => [alternate.locale, alternate.href])) } : undefined,
-        openGraph: meta.canonical ? { title: meta.title, description: meta.description, url: meta.canonical, siteName: compiled.role.config.contents.name[locale], locale } : undefined,
+        openGraph: meta.canonical ? { title: meta.title, description: meta.description, url: meta.canonical, siteName: contentOf("name", locale), locale } : undefined,
     };
 
 }

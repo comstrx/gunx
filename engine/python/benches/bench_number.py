@@ -1,4 +1,4 @@
-from engine.number import number
+from engine.number import Money, number
 from engine.test import Bench
 
 bench = Bench()
@@ -32,3 +32,24 @@ bench.measure("number.currency", currency)
 bench.measure("number.spell", spell)
 bench.measure("number.compact", compact)
 bench.measure("number.roman", roman)
+
+bench.measure("number.from_roman", lambda: number.from_roman("MMMDCCCLXXXVIII"))
+
+bench.measure("number.major", price.major)
+bench.measure("number.multiply", lambda: price.multiply("1.25"))
+bench.measure("number.percent", lambda: number.percent(7, 13))
+bench.measure("number.divide", lambda: number.divide(7, 13, places=4))
+bench.measure("number.split", lambda: price.split(7))
+bench.measure("number.allocate.exact", lambda: Money(10000, "USD").allocate([70, 20, 10]))
+bench.measure("number.allocate.remainder", lambda: price.allocate([1, 2, 3, 4]))
+bench.measure("number.total.iterable", lambda: number.total(iter(cart)))
+bench.measure("number.round_to", lambda: number.round_to("123.456", "0.05"))
+bench.measure("number.trim", lambda: number.trim("1234.567800"))
+
+bench.measure("number.clamp", lambda: number.clamp(7, 0, 10))
+bench.measure("number.sign", lambda: number.sign(-7))
+
+held = number.money("123.45", "USD")
+bench.measure("number.exchange", lambda: number.exchange(held, "KWD", "0.3071"))
+
+bench.measure("number.money.text", lambda: number.minor(-123456789, "KWD").text())

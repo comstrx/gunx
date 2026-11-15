@@ -3,6 +3,7 @@ from typing import Any, TYPE_CHECKING
 
 from engine.error import Code, Fault
 from engine.rand import rand
+from .arch import cursor_size
 from .model import Model
 from .mongo import Mongo
 
@@ -66,6 +67,17 @@ class Documents[M: Model]:
 
         return [self._load_(document) for document in await self._guard_(cursor.to_list())], total
 
+    async def cursor ( self, after: Any = None, limit: int = 100, **where: Any ) -> list[M]:
+
+        size   = cursor_size(limit)
+        query  = self._filter_(where)
+
+        if after is not None: query = { "$and": [query, { "_id": { "$gt": after } }] }
+
+        cursor = self._collection_().find(query).sort("_id", 1).limit(size)
+
+        return [self._load_(document) for document in await self._guard_(cursor.to_list())]
+
     async def count ( self, **where: Any ) -> int:
 
         return int(await self._guard_(self._collection_().count_documents(self._filter_(where))))
@@ -96,8 +108,11 @@ class Documents[M: Model]:
 
         self._known_(values)
 
+        if self._key in values and values[self._key] != key: raise Fault(Code.INTERNAL, reason="database.primary")
+
+        changes = { name: value for name, value in values.items() if name != self._key }
         found = await self._guard_(
-            self._collection_().find_one_and_update({ "_id": key }, { "$set": dict(values) }, return_document=True),
+            self._collection_().find_one_and_update({ "_id": key }, { "$set": changes }, return_document=True),
         )
 
         if found is None: raise Fault(Code.NOT_FOUND, reason=f"{self._name}.missing")
@@ -112,13 +127,37 @@ class Documents[M: Model]:
 
     async def upsert ( self, conflict: Sequence[str], update: Sequence[str], **values: Any ) -> M:
 
-        found = await self.first(**{ name: values[name] for name in conflict })
+        self._known_(dict.fromkeys((*conflict, *update)))
 
-        if found is None: return await self.create(**values)
+        if not conflict or any(name not in values for name in conflict):
 
+            raise Fault(Code.INTERNAL, reason="database.conflict")
+
+        if self._key in update: raise Fault(Code.INTERNAL, reason="database.primary")
+
+        where   = { name: values[name] for name in conflict }
+        found   = await self.first(**where)
         changes = { name: values[name] for name in update if name in values }
 
-        return await self.update(getattr(found, self._key), **changes) if changes else found
+        if found is not None: return await self.update(getattr(found, self._key), **changes) if changes else found
+
+        made     = self.make(**{ self._key: str(rand.uuid7()), **values })
+        initial  = self._dump_(made)
+        assigned = { name: initial[name] for name in changes }
+
+        for name in assigned: initial.pop(name)
+
+        operation = { "$setOnInsert": initial }
+
+        if assigned: operation["$set"] = assigned
+
+        result = await self._guard_(self._collection_().find_one_and_update(
+            self._filter_(where), operation, upsert=True, return_document=True,
+        ))
+
+        if result is None: raise Fault(Code.INTERNAL, reason=f"{self._name}.upsert")
+
+        return self._load_(result)
 
     def _collection_ ( self ) -> AsyncCollection[dict[str, Any]]:
 

@@ -1,40 +1,9 @@
-import type * as cache from "engine-cache";
 import * as crypto from "engine-crypto";
 import * as date from "engine-date";
 import * as error from "engine-error";
 import * as json from "engine-json";
 import * as state from "engine-state";
-
-export type Tokens = { access: string; refresh?: string | undefined; expires?: number | undefined };
-export type Signed<U> = { tokens: Tokens | null; user: U | null; since: number | null };
-export type Renew = ( refresh: string, signal: AbortSignal ) => Promise<Tokens>;
-export type SessionOptions = {
-    name: string;
-    box: cache.Box;
-    renew?: Renew | undefined;
-    skew?: number | undefined;
-    now?: (() => number) | undefined;
-    sync?: boolean | undefined;
-    version?: number | undefined;
-    fail?: (( fault: error.Fault ) => void) | undefined;
-};
-export type SessionMoves<U> = { begin: ( tokens: Tokens, user: U ) => void; end: () => void; renewed: ( tokens: Tokens ) => void; update: ( user: U ) => void };
-export type Session<U> = {
-    state: state.Instance<Signed<U>, SessionMoves<U>>;
-    begin: ( tokens: Tokens, user: U ) => void;
-    end: () => void;
-    update: ( user: U ) => void;
-    signed: () => boolean;
-    user: () => U | null;
-    token: () => Promise<string | null>;
-    renew: () => Promise<string | null>;
-    expiresIn: () => number | undefined;
-    watch: ( listener: ( user: U | null ) => void ) => () => void;
-    hydrate: () => Promise<void>;
-    flush: () => Promise<void>;
-};
-
-type Renewing = { controller: AbortController; used: string };
+import type { Renew, Renewing, Session, SessionMoves, SessionOptions, Signed, Tokens } from "./arch.ts";
 
 const final = new Set<error.Code>(["bad_request", "unauthorized", "forbidden", "not_found", "gone", "validation"]);
 
@@ -50,7 +19,7 @@ function held ( tokens: Tokens ): Tokens {
 
     if ( !sound(tokens) ) throw error.fault("internal", "auth.tokens");
 
-    return withExpiry(tokens);
+    return { ...withExpiry(tokens) };
 
 }
 export function expiryOf ( token: string ): number | undefined {
@@ -75,6 +44,20 @@ export function session<U> ( options: SessionOptions ): Session<U> {
 
     if ( !Number.isFinite(skew) || skew < 0 ) throw new RangeError("not a duration");
 
+    let revision = 0;
+    let flight: Promise<string | null> | undefined;
+    let renewing: Renewing | undefined;
+    const invalidate = (): void => {
+
+        revision += 1;
+        flight = undefined;
+
+        const gone = renewing;
+
+        renewing = undefined;
+        gone?.controller.abort();
+
+    };
     const kept = state.define<Signed<U>, SessionMoves<U>>({
         name,
         initial: { tokens: null, user: null, since: null },
@@ -93,14 +76,25 @@ export function session<U> ( options: SessionOptions ): Session<U> {
             },
         },
         actions: ( set ) => ({
-            begin: ( tokens, user ) => set({ tokens: held(tokens), user, since: now() }),
-            end: () => set({ tokens: null, user: null, since: null }),
+            begin: ( tokens, user ) => {
+
+                const owned = held(tokens);
+                const since = now();
+
+                invalidate();
+                set({ tokens: owned, user, since });
+
+            },
+            end: () => {
+
+                invalidate();
+                set({ tokens: null, user: null, since: null });
+
+            },
             renewed: ( tokens ) => set(( current ) => ({ tokens: held({ ...tokens, refresh: tokens.refresh ?? current.tokens?.refresh }) })),
             update: ( user ) => set({ user }),
         }),
     }).create();
-    let flight: Promise<string | null> | undefined;
-    let renewing: Renewing | undefined;
     const fresh = ( tokens: Tokens ): boolean => tokens.expires === undefined || tokens.expires - skew > now();
     const current = (): string | null => {
 
@@ -109,16 +103,18 @@ export function session<U> ( options: SessionOptions ): Session<U> {
         return tokens && fresh(tokens) ? tokens.access : null;
 
     };
-    const exchange = async ( used: string ): Promise<string | null> => {
+    const exchange = async ( used: string, turn: number ): Promise<string | null> => {
 
         await kept.reload();
 
-        if ( kept.getState().tokens?.refresh !== used ) return current();
+        const owned = kept.getState().tokens;
+
+        if ( turn !== revision || !owned || owned.refresh !== used ) return current();
 
         const controller = new AbortController();
-        const moved = (): boolean => kept.getState().tokens?.refresh !== used;
+        const moved = (): boolean => turn !== revision || kept.getState().tokens !== owned;
 
-        renewing = { controller, used };
+        renewing = { controller, tokens: owned };
 
         try {
 
@@ -128,9 +124,12 @@ export function session<U> ( options: SessionOptions ): Session<U> {
 
             renewing = undefined;
             kept.getState().renewed(next);
+
+            const written = kept.getState().tokens;
+
             await kept.flush();
 
-            return next.access;
+            return turn !== revision || kept.getState().tokens !== written ? current() : next.access;
 
         } catch ( thrown ) {
 
@@ -161,8 +160,9 @@ export function session<U> ( options: SessionOptions ): Session<U> {
         }
 
         const lock = box.storage.lock;
+        const turn = revision;
 
-        return lock === undefined ? exchange(used) : lock(`${kept.key}.renew`, () => exchange(used));
+        return lock === undefined ? exchange(used, turn) : lock(`${kept.key}.renew`, () => exchange(used, turn));
 
     };
     const renewal = ( tokens: Tokens ): Promise<string | null> => {
@@ -183,7 +183,7 @@ export function session<U> ( options: SessionOptions ): Session<U> {
 
     kept.subscribe(( next ) => {
 
-        if ( !renewing || next.tokens?.refresh === renewing.used ) return;
+        if ( !renewing || next.tokens === renewing.tokens ) return;
 
         renewing.controller.abort();
         renewing = undefined;

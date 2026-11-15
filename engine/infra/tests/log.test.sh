@@ -23,3 +23,11 @@ test:core:log:honors-the-level () {
     @eq "$(core:log:print a b)" $'a\nb'
 
 }
+test:core:log:keeps-the-terminal-safe () {
+
+    @eq "$(core:log:redact $'a\e]0;title\ab\rc')" $'a^[]0;title\ab^Mc'
+    @eq "$(LANG=C.UTF-8 core:log:icon '[+]')" '✓'
+    @eq "$(LANG=C LC_ALL=C core:log:icon '[+]')" '[+]'
+    @eq "$(core:log:warn 'plain line' 2>&1)" '[!] plain line'
+
+}

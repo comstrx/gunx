@@ -1,7 +1,6 @@
 import * as error from "engine-error";
 import * as net from "engine-net";
-
-export type Stage = { release?: boolean | undefined; insecure?: boolean | undefined };
+import type { Stage } from "./arch.ts";
 
 function refused ( value: unknown ): error.Fault {
 

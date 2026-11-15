@@ -7,8 +7,8 @@ SRC     = ROOT / "src"
 KEPT    = frozenset({ "__pycache__", "py.typed" })
 MEMBERS = sorted(p.name for p in SRC.iterdir() if p.is_dir() and p.name != "engine")
 HEADER  = re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+\S.*:\s*$")
-IMPORT  = re.compile(r"^from engine\.([a-z]+)")
-LIBRARY = re.compile(r"^(?:from|import)\s+([A-Za-z_][\w]*)")
+IMPORT  = re.compile(r"^(?:lazy )?from engine\.([a-z]+)")
+LIBRARY = re.compile(r"^(?:lazy )?(?:from|import)\s+([A-Za-z_][\w]*)")
 NATIVE  = frozenset(sys.stdlib_module_names) | { "engine" }
 
 def test_workspace_law_every_member_is_declared_once () -> None:
@@ -25,11 +25,18 @@ def test_workspace_law_every_member_is_declared_once () -> None:
         manifest = parse.toml((SRC / member / "pyproject.toml").read_text())
         project  = manifest["project"]
 
-        assert project["name"] == f"engine-{member}" and project["dynamic"] == ["version"] and len(project["description"]) <= 80
+        assert project["name"] == f"engine-{member}" and project["dynamic"] == ["version", "requires-python", "license"] and len(project["description"]) <= 80
         assert sorted(project) == ["dependencies", "description", "dynamic", "name"], member
+        assert manifest["tool"]["hatch"]["metadata"]["hooks"]["custom"]["path"] == "../../metadata.py"
+        assert manifest["tool"]["hatch"]["build"]["targets"]["sdist"]["hooks"]["custom"]["path"] == "../../distribution.py"
         assert sorted(manifest) == ["build-system", "project", "tool"] and sorted(manifest["tool"]) == ["hatch"], member
 
-        for dependency in project["dependencies"]: assert re.fullmatch(r"[a-zA-Z0-9_.-]+(\[[a-z,]+\])?", dependency), dependency
+        for dependency in project["dependencies"]:
+
+            name, _, marker = dependency.partition(";")
+
+            assert re.fullmatch(r"[a-zA-Z0-9_.-]+(\[[a-z,]+\])?", name.strip()), dependency
+            assert not marker or marker.strip() == "sys_platform != 'win32'", dependency
 
     assert sorted(SRC.rglob("py.typed")) == sorted(SRC / member / "src" / "engine" / member / "py.typed" for member in MEMBERS)
 
@@ -104,7 +111,7 @@ def test_shape_law_domains_form_a_dag_and_declare_their_imports () -> None:
 LADDER = (
     ("error", "context", "log"),
     ("rand", "func", "thread", "adapter", "exception"),
-    ("json", "parse", "number", "date", "string", "array"),
+    ("json", "parse", "number", "date", "string", "array", "cast"),
     ("crypto", "token", "validate", "config", "translate", "metric", "health", "cli"),
     ("fs", "net", "cache", "stream", "storage", "view"),
     ("database", "search"),

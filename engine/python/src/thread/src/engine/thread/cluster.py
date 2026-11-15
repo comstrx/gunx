@@ -1,46 +1,57 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, ClassVar
 
 from engine.error import Code, Fault
-from .arch import REMOTES
-import asyncio, contextlib, inspect, threading
+from engine.log import log
+from .arch import Link, REMOTES, environment, space
+import asyncio, contextlib, inspect, sys, threading
 
 class Cluster:
 
-    _address: ClassVar[str] = ""
-    _module: ClassVar[Any] = None
+    __slots__ = ("_held",)
+
+    _link: ClassVar[Link | None] = None
     _lock: ClassVar[threading.Lock] = threading.Lock()
-    _remotes: ClassVar[dict[Callable[..., Any], Any]] = {}
 
-    def __init__ ( self, module: Any ) -> None:
+    def __init__ ( self, link: Link ) -> None:
 
-        self._ray = module
+        self._held = link
 
     @classmethod
-    async def connect ( cls, address: str | None = None ) -> Cluster:
+    async def connect (
+        cls, address: str | None = None, *, namespace: str | None = None,
+        runtime_env: Mapping[str, Any] | None = None,
+    ) -> Cluster:
 
-        if address is not None and (type(address) is not str or not address):
+        if address is not None and (type(address) is not str or not address.strip()):
 
             raise Fault(Code.INTERNAL, reason="thread.address")
 
-        return cls(await asyncio.to_thread(cls._linked_, address))
+        name = space(namespace)
+        env  = environment(runtime_env)
+
+        return cls(await asyncio.to_thread(cls._linked_, address, name, env))
 
     async def call ( self, handler: Callable[..., Any], item: Any ) -> Any:
 
+        ray = self._live_()
         ref = self._remote_(handler).remote(item)
 
-        try: return await (ref if inspect.isawaitable(ref) else asyncio.to_thread(self._ray.get, ref))
+        pending = asyncio.create_task(self._result_(ray, ref))
+
+        try: return await asyncio.shield(pending)
         except asyncio.CancelledError:
 
-            with contextlib.suppress(Exception): self._ray.cancel(ref)
+            pending.add_done_callback(self._settled_)
+
+            with contextlib.suppress(Exception): ray.cancel(ref)
 
             raise
 
-        except (SystemExit, KeyboardInterrupt) as error: raise Fault.wrap(error, reason="thread.failed") from error
-
     async def nodes ( self ) -> int:
 
-        found = await asyncio.to_thread(self._ray.nodes)
+        ray   = self._live_()
+        found = await asyncio.to_thread(ray.nodes)
 
         return sum(1 for node in found if not isinstance(node, dict) or node.get("Alive", True))
 
@@ -48,55 +59,105 @@ class Cluster:
 
         await asyncio.to_thread(self._shut_)
 
+    @staticmethod
+    async def _result_ ( ray: Any, ref: Any ) -> Any:
+
+        try: return await ref if inspect.isawaitable(ref) else await asyncio.to_thread(ray.get, ref)
+        except (SystemExit, KeyboardInterrupt) as error: raise Fault.wrap(error, reason="thread.failed") from error
+
+    @staticmethod
+    def _settled_ ( pending: asyncio.Future[Any] ) -> None:
+
+        if not pending.cancelled(): pending.exception()
+
+    def _live_ ( self ) -> Any:
+
+        held = self._held
+
+        if held is not Cluster._link or not held.module.is_initialized():
+
+            raise Fault(Code.CONFLICT, reason="thread.cluster", message="Ray connection is no longer active")
+
+        return held.module
+
     def _remote_ ( self, handler: Callable[..., Any] ) -> Any:
 
-        remotes = Cluster._remotes
+        held = self._held
+        remotes = held.remotes
 
         try: made = remotes.get(handler)
-        except TypeError: return self._ray.remote(handler)
+        except TypeError: return self._wrapped_(handler)
 
         if made is None:
 
             if len(remotes) >= REMOTES: remotes.clear()
 
-            made = remotes[handler] = self._ray.remote(handler)
+            made = remotes[handler] = self._wrapped_(handler)
 
         return made
+
+    def _wrapped_ ( self, handler: Callable[..., Any] ) -> Any:
+
+        if inspect.isfunction(handler): return self._held.module.remote(handler)
+
+        def call ( item: Any ) -> Any: return handler(item)
+
+        return self._held.module.remote(call)
 
     def _shut_ ( self ) -> None:
 
         with Cluster._lock:
 
-            if self._ray.is_initialized(): self._ray.shutdown()
+            held = self._held
 
-            Cluster._address = ""
+            if held is not Cluster._link: return
+            if held.module.is_initialized(): held.module.shutdown()
 
-            Cluster._remotes.clear()
+            held.remotes.clear()
+
+            Cluster._link = None
 
     @classmethod
-    def _linked_ ( cls, address: str | None ) -> Any:
+    def _linked_ ( cls, address: str | None, namespace: str | None, runtime_env: dict[str, Any] | None ) -> Link:
 
         try: import ray
-        except ImportError as error:
+        except (ImportError, OSError) as error:
 
-            raise Fault(Code.INTERNAL, reason="thread.ray", message="ray is required") from error
+            version = ".".join(str(part) for part in sys.version_info[:3])
+            message = (
+                f"Ray could not be loaded on Python {version}. Install a Ray build compatible with this interpreter "
+                "and use matching Python versions on the driver and cluster. Changing the host format cannot fix this."
+            )
 
-        with Cluster._lock:
+            log.warning("thread.ray", python=version, message=message)
 
-            if ray is not Cluster._module:
+            raise Fault(Code.INTERNAL, reason="thread.ray", message=message) from error
 
-                Cluster._module, Cluster._address = ray, ""
+        with cls._lock:
 
-                Cluster._remotes.clear()
+            held = cls._link
 
             if not ray.is_initialized():
 
-                ray.init(address=address, ignore_reinit_error=True, log_to_driver=False)
+                options: dict[str, Any] = {}
 
-                Cluster._address = address or "local"
+                if namespace is not None: options["namespace"] = namespace
+                if runtime_env is not None: options["runtime_env"] = environment(runtime_env)
 
-            elif address is not None and Cluster._address and address != Cluster._address:
+                ray.init(address=address, ignore_reinit_error=True, log_to_driver=False, **options)
 
-                raise Fault(Code.CONFLICT, reason="thread.cluster")
+                held = cls._link = Link(ray, address or "local", namespace, runtime_env or {})
 
-        return ray
+            elif held is None or held.module is not ray:
+
+                raise Fault(Code.CONFLICT, reason="thread.cluster", message="Ray was initialized outside this owner")
+
+            elif (
+                (address is not None and address != held.address)
+                or (namespace is not None and namespace != held.namespace)
+                or (runtime_env is not None and runtime_env != held.runtime_env)
+            ):
+
+                raise Fault(Code.CONFLICT, reason="thread.cluster", message="Ray connection options differ")
+
+            return held

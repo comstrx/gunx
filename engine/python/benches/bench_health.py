@@ -2,7 +2,7 @@ from engine.health import Health
 from engine.log import log
 from engine.test import Bench
 from pathlib import Path
-import asyncio
+import asyncio, os
 
 bench  = Bench()
 idle   = Health()
@@ -10,7 +10,7 @@ single = Health()
 wide   = Health()
 sick   = Health()
 
-log.setup("info", "json", Path("/dev/null"))
+log.setup("info", "json", Path(os.devnull))
 
 async def good () -> bool: return True
 

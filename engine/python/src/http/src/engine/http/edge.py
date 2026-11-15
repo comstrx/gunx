@@ -1,14 +1,14 @@
 from collections.abc import Awaitable, Sequence
 
 from sanic import HTTPResponse
-from engine.context import context, Deferral, Opened
+from engine.context import context, Deferral, Opened, Trace
 from engine.date import date
 from engine.error import Code, Fault
 from engine.exception import exception
 from engine.log import log
 from engine.rand import rand
 from engine.thread import Tasks
-from engine.token import token
+from engine.token import Issuer, token
 from .arch import (
     AGE, Answer, ASKED, BACKLOG, BEARER, CACHE, CACHED, DEFERRED, EXPOSED, FIXED, Guard, HEADERS, IDENTITY, METHODS,
     ORIGIN, REFUSED, SECURITY, TRACE, UNIQUE,
@@ -21,6 +21,7 @@ class Edge:
 
     def __init__ ( self, origins: Sequence[str] = (), headers: Sequence[str] = () ) -> None:
 
+        self.issuer: Issuer | None = None
         self.origins = tuple(origins)
         self.allowed = ", ".join(dict.fromkeys((*HEADERS, *headers)))
         self.guards: dict[str, tuple[Guard, ...]] = {}
@@ -58,7 +59,9 @@ class Edge:
 
         if log.debugging: ctx.started = date.monotonic()
 
-        ctx.token = context.open(request_id=identity, locale=request.locale(), actor=None)
+        parents = headers.getall("traceparent", ())
+        parent = Trace.clean(parents[0]) if len(parents) == 1 else None
+        ctx.token = context.open(request_id=identity, locale=request.locale(), actor=None, traceparent=parent)
 
         for name in UNIQUE:
 
@@ -72,7 +75,7 @@ class Edge:
 
         if request.method == "OPTIONS" and headers.get(ASKED): return self.preflight(request)
 
-        carried = headers.get(BEARER) if token.ready() else None
+        carried = headers.get(BEARER) if self.issuer is None and token.ready() else None
         found   = token.bearer(carried) if carried else None
 
         if found:
@@ -82,13 +85,33 @@ class Edge:
 
             if ctx.actor is not None: context.put(actor=ctx.actor)
 
+        if self.issuer is not None: ctx.token_issuer = self.issuer
+
         return None
+
+    async def identify ( self, request: Request ) -> None:
+
+        if self.issuer is None or not request.bearer(): return
+
+        try: claims = await request.authenticate(self.issuer)
+        except Fault as error:
+
+            if error.code is not Code.UNAUTHORIZED: raise
+
+            return
+
+        request.ctx.actor = claims.subject
+        context.put(actor=claims.subject)
 
     async def enter ( self, request: Request ) -> HTTPResponse | None:
 
         early = self.trace(request)
 
-        if early is None: await self.guard(request)
+        if early is None:
+
+            if self.issuer is not None: await self.identify(request)
+
+            await self.guard(request)
 
         return early
 
@@ -134,7 +157,13 @@ class Edge:
 
             headers["Access-Control-Allow-Origin"]   = origin
             headers["Access-Control-Expose-Headers"] = EXPOSED
-            headers["Vary"] = "Origin"
+
+        if self.origins:
+
+            vary = ", ".join(headers.getall("Vary", ()))
+            keys = { key.strip().lower() for key in vary.split(",") }
+
+            if "*" not in keys and "origin" not in keys: headers["Vary"] = f"{vary}, Origin" if vary else "Origin"
 
         started = held.get("started")
 
@@ -149,9 +178,20 @@ class Edge:
 
         opened = held.get("token")
 
-        return self._release_(opened, response) if opened is not None else None
+        return self._release_(opened, response.status >= REFUSED) if opened is not None else None
 
-    def _release_ ( self, opened: Opened, response: Answer ) -> Awaitable[None] | None:
+    def cancel ( self, request: Request ) -> Awaitable[None] | None:
+
+        held = vars(request.ctx)
+
+        if held.get("stamped"): return None
+
+        held["stamped"] = True
+        opened = held.get("token")
+
+        return self._release_(opened, failed=True) if opened is not None else None
+
+    def _release_ ( self, opened: Opened, failed: bool ) -> Awaitable[None] | None:
 
         pending = context.deferred()
 
@@ -160,8 +200,6 @@ class Edge:
             context.close(opened)
 
             return None
-
-        failed = response.status >= REFUSED
 
         if self.later.count() >= self.backlog: return self._drain_(pending, opened, failed)
 

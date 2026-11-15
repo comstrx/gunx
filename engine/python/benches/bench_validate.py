@@ -15,3 +15,8 @@ mapping = { "email": "a@b.co", "name": "Ann", "age": 30 }
 
 bench.measure("validate.shape", lambda: validator.shape(Signup, payload))
 bench.measure("validate.rules", lambda: rules.check(mapping, spec))
+
+bench.measure("validate.fields", Signup.fields)
+bench.measure("validate.members", Signup.members)
+buffer = bytearray(payload)
+bench.measure("validate.buffer", lambda: validator.shape(Signup, buffer))

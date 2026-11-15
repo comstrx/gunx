@@ -16,6 +16,7 @@ app:root () {
 
     local root=""
 
+    core:cli:given --root || return 0
     root="$(core:cli:value --root)" || return 0
 
     [[ -d "${root}" ]] || { @err "Not a directory: ${root}"; return; }

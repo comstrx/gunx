@@ -2,43 +2,11 @@ import * as adapter from "engine-adapter";
 import * as error from "engine-error";
 import * as json from "engine-json";
 import * as parse_ from "engine-parse";
-
-export type Href = { path: string; query: parse_.Query; hash: string };
-export type Target = string | Partial<Href>;
-export type Action = "push" | "replace" | "pop";
-export type Entry = Href & { href: string; state: unknown; index: number };
-export type Listener = ( entry: Entry, action: Action, previous: Entry ) => void;
-export type Block = ( next: Entry, previous: Entry, action: Action ) => boolean;
-export type Saved = { href: string; state: unknown };
-export type Snapshot = { entries: readonly Saved[]; index: number };
-export type Adapter = {
-    read: () => Saved;
-    push: ( href: string, state: unknown ) => void;
-    replace: ( href: string, state: unknown ) => void;
-    go: ( delta: number ) => void;
-    listen: ( onPop: ( state: unknown ) => void ) => () => void;
-};
-export type Memory = Adapter & { entries: () => string[]; snapshot: () => Snapshot };
-export type History = {
-    current: () => Entry;
-    push: ( to: Target, state?: unknown ) => Entry;
-    replace: ( to: Target, state?: unknown ) => Entry;
-    back: () => void;
-    forward: () => void;
-    go: ( delta: number ) => void;
-    listen: ( listener: Listener ) => () => void;
-    block: ( blocked: Block ) => () => void;
-    href: ( to: Target ) => string;
-    isCurrent: ( path: string, exact?: boolean ) => boolean;
-    destroy: () => void;
-};
-
-type Held = { at: number | undefined; state: unknown };
-type Seen = { href: string; state: unknown; entry: Entry };
-type Failed = { failure: unknown };
+import type { Action, Adapter, Block, Entry, Failed, Held, History, Href, Listener, Memory, Saved, Seen, Snapshot, Target } from "./arch.ts";
 
 const plain = /^(?:\/[A-Za-z0-9_~-]+)+$/;
 const blanks = /[\t\n\r]/g;
+const unpaired = /[\ud800-\udfff]/gu;
 const stray = /%(?![0-9A-Fa-f]{2})/g;
 const rough = /[^A-Za-z0-9._~!$&'()*+,;=:@/%-]+/g;
 const loose = /[^A-Za-z0-9._~!$&'()*+,;=:@/?-]+/g;
@@ -54,7 +22,7 @@ function tidy ( text: string ): string {
     while ( from < to && text.charCodeAt(from) <= 32 ) from += 1;
     while ( to > from && text.charCodeAt(to - 1) <= 32 ) to -= 1;
 
-    return text.slice(from, to).replace(blanks, "");
+    return text.slice(from, to).replace(unpaired, "\ufffd").replace(blanks, "");
 
 }
 function encoded ( text: string, unsafe: RegExp ): string {

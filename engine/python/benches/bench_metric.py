@@ -1,3 +1,4 @@
+import os
 from engine.log import log
 from engine.metric import Counter, Gauge, Histogram, Metrics
 from engine.test import Bench
@@ -12,11 +13,17 @@ tight   = Counter("tight", series=8)
 board   = Metrics("svc")
 wide    = Metrics("wide")
 many    = wide.histogram("took", "Seconds per call")
+packed  = Metrics("packed")
+deep    = packed.histogram("took", buckets=tuple(range(64)))
+full    = Gauge("full", series=1)
+
+full.set(1)
+
 ROUTES  = tuple(f"/v1/orders/{index}" for index in range(20))
 VERBS   = ("get", "post", "put", "delete")
 SPANS   = (0.0004, 0.003, 0.02, 0.08, 0.4, 1.7, 6.0, 30.0)
 
-log.setup("info", "json", Path("/dev/null"))
+log.setup("info", "json", Path(os.devnull))
 
 for index in range(10):
 
@@ -32,6 +39,8 @@ for index in range(10):
 
 for index in range(500): many.observe(SPANS[index % 8], route=f"/v1/items/{index}", verb=VERBS[index % 4])
 for index in range(8): tight.inc(user=str(index))
+for index in range(200): deep.observe(index % 70, route=f"/r{index}")
+
 
 def bare () -> None: calls.inc()
 
@@ -88,6 +97,13 @@ def broad () -> None: wide.render()
 
 def summed () -> None: board.describe()
 
+def rejected () -> None:
+
+    with full.track(lane="other"): pass
+
+def bucketed () -> None: packed.render()
+
+
 def gauged () -> None: Gauge("fresh").set(1)
 
 def built () -> None: Histogram("fresh", buckets=(0.1, 0.5, 1, 5))
@@ -116,5 +132,7 @@ bench.measure("metric.render.small", small, 5000)
 bench.measure("metric.render.page600", page, 300)
 bench.measure("metric.render.histogram500", broad, 100)
 bench.measure("metric.describe.page", summed, 5000)
+bench.measure("metric.gauge.track.rejected", rejected)
+bench.measure("metric.render.buckets64", bucketed, 100)
 
 log.close()

@@ -2,97 +2,113 @@ from collections.abc import Mapping
 from typing import Any
 
 from engine.crypto import crypto
-from engine.date import date
 from engine.error import Code, Fault
-from engine.string import string
-from engine.json import json
 from engine.rand import rand
 from .arch import (
-    ACCESS, Claims, DIGESTS, HEADERS, LEEWAY, LONGEST, Opaque, PREFIX, Pair, REFRESH, REQUIRED, RESERVED, URLSAFE,
+    ACCESS, Claims, LEEWAY, LIFETIME, LONGEST, MINIMUM, Opaque, PREFIX, Pair, REFRESH, Settings, Store, setting,
 )
-import binascii, math
+from .codec import Codec
+from .issuer import Issuer
+from .jwt import Jwt
+lazy from .paseto import Paseto
+from .reference import Reference
 
 class Token:
 
     def __init__ ( self ) -> None:
 
-        self._secret: str | None = None
-        self._digest    = "sha256"
-        self._issuer    = "engine"
-        self._algorithm = "HS256"
-        self._access    = ACCESS
-        self._refresh   = REFRESH
-        self._key       = b""
-        self._head      = b""
+        self._state: tuple[Issuer, int] | None = None
+
+    def options (
+        self, *, format: str = "jwt", purpose: str = "access", secret: str | bytes | None = None,
+        issuer: str = "engine", audience: str | None = None, ttl: int = ACCESS, leeway: int = LEEWAY,
+        algorithm: str | None = None, protection: str | None = None, store: Store | None = None,
+    ) -> Issuer:
+
+        codec: Codec
+
+        if format == "jwt":
+
+            if protection is not None: raise setting("protection")
+
+            codec = Jwt(secret if secret is not None else b"", "HS256" if algorithm is None else algorithm)
+
+        elif format == "paseto":
+
+            if algorithm is not None: raise setting("algorithm")
+
+            codec = Paseto(secret if secret is not None else b"", "local" if protection is None else protection)
+
+        elif format == "opaque":
+
+            if secret is not None or algorithm is not None or protection is not None: raise setting("format")
+
+            codec = Reference()
+
+        else: raise setting("format")
+
+        return self.use(codec, purpose=purpose, issuer=issuer, audience=audience, ttl=ttl, leeway=leeway, store=store)
+
+    def use (
+        self, codec: Codec, *, purpose: str = "access", issuer: str = "engine", audience: str | None = None,
+        ttl: int = ACCESS, leeway: int = LEEWAY, store: Store | None = None,
+    ) -> Issuer:
+
+        return Issuer(codec, Settings(issuer, purpose, audience, ttl, leeway), store)
 
     def setup (
         self, secret: str, issuer: str = "engine", algorithm: str = "HS256", access: int = ACCESS,
-        refresh: int = REFRESH,
+        refresh: int = REFRESH, *, audience: str | None = None,
     ) -> None:
 
-        found = DIGESTS.get(algorithm)
+        if type(refresh) is not int or not 0 < refresh <= LIFETIME: raise setting("refresh")
 
-        if found is None: raise Fault(Code.INTERNAL, "The token algorithm is not supported", "token.algorithm")
+        scoped = self.options(secret=secret, issuer=issuer, algorithm=algorithm, ttl=access, audience=audience)
+        self._state = (scoped, refresh)
 
-        digest, least = found
-        key           = secret.encode()
+    def rotate ( self, keys: Mapping[str, str | bytes], active: str ) -> None:
 
-        if len(key) < least: raise Fault(Code.INTERNAL, "The token secret is too short", "token.secret")
-
-        self._secret    = secret
-        self._digest    = digest
-        self._issuer    = issuer
-        self._algorithm = algorithm
-        self._access    = access
-        self._refresh   = refresh
-        self._key       = key
-        self._head      = self._pack_(json.encode({ "alg": algorithm, "typ": "JWT" }))
+        issuer, refresh = self._configured_()
+        self._state = (issuer.rotate(keys, active), refresh)
 
     def ready ( self ) -> bool:
 
-        return self._secret is not None
+        return self._state is not None
 
-    def issue ( self, subject: str, kind: str = "access", ttl: int | None = None, **facts: Any ) -> str:
+    def issue (
+        self, subject: str, kind: str = "access", ttl: int | None = None, *, fingerprint: str | None = None,
+        **facts: Any,
+    ) -> str:
 
-        return self._sign_(subject, kind, ttl, self._free_(facts))
+        issuer, refresh = self._configured_()
+        lifetime = ttl if ttl is not None else issuer.ttl if kind == "access" else refresh
+
+        return issuer._issue_(subject, kind, lifetime, fingerprint, facts)
 
     def verify ( self, token: str, kind: str = "access", fingerprint: str | None = None ) -> Claims:
 
-        payload = self._checked_(token)
-
-        if payload["kind"] != kind: raise Fault(Code.UNAUTHORIZED, reason="token.kind")
-
-        bound = payload.get("fp")
-
-        if bound is not None and not self._bound_(bound, fingerprint):
-
-            raise Fault(Code.UNAUTHORIZED, reason="token.fingerprint")
-
-        facts = { key: value for key, value in payload.items() if key not in RESERVED }
-
-        return Claims(str(payload["sub"]), kind, str(payload["jti"]), int(payload["iat"]), int(payload["exp"]), facts)
+        return self._configured_()[0]._verify_(token, kind, fingerprint)
 
     def pair ( self, subject: str, fingerprint: str | None = None, **facts: Any ) -> Pair:
 
-        bound = { "fp": crypto.fingerprint(fingerprint) } if fingerprint else {}
+        issuer, refresh = self._configured_()
 
-        return Pair(
-            self._sign_(subject, "access", None, { **self._free_(facts), **bound }),
-            self._sign_(subject, "refresh", None, bound),
-            self._access,
-        )
+        return issuer._pair_(subject, refresh, fingerprint, facts)
 
     def refresh ( self, token: str, fingerprint: str | None = None, **facts: Any ) -> Pair:
 
-        claims = self.verify(token, "refresh", fingerprint)
+        issuer, refresh = self._configured_()
+        claims = issuer._verify_(token, "refresh", fingerprint)
 
-        return self.pair(claims.subject, fingerprint, **facts)
+        return issuer._pair_(claims.subject, refresh, fingerprint, facts)
 
     def peek ( self, token: str ) -> Mapping[str, Any]:
 
-        return self._claims_(self._split_(token)[2])
+        return Jwt.peek_unconfigured(token)
 
     def opaque ( self, size: int = 32 ) -> Opaque:
+
+        if type(size) is not int or not MINIMUM <= size <= LONGEST: raise setting("size")
 
         plain = rand.token(size)
 
@@ -108,7 +124,7 @@ class Token:
 
     def bearer ( self, header: str | None ) -> str | None:
 
-        if not header: return None
+        if type(header) is not str or not header or len(header) > LONGEST + 16: return None
 
         scheme, _, value = header.strip().partition(" ")
 
@@ -116,128 +132,23 @@ class Token:
 
     def describe ( self ) -> dict[str, object]:
 
+        if self._state is None:
+
+            return { "issuer": "engine", "algorithm": "HS256", "access": ACCESS, "refresh": REFRESH }
+
+        issuer, refresh = self._state
+        found = issuer.describe()
+        codec = found["adapter"]
+
+        if not isinstance(codec, dict): raise setting("adapter")
+
         return {
-            "issuer": self._issuer, "algorithm": self._algorithm, "access": self._access, "refresh": self._refresh,
+            "issuer": found["issuer"], "algorithm": codec["algorithm"],
+            "access": issuer.ttl, "refresh": refresh,
         }
 
-    def _sign_ ( self, subject: str, kind: str, ttl: int | None, facts: Mapping[str, Any] ) -> str:
+    def _configured_ ( self ) -> tuple[Issuer, int]:
 
-        self._secret_()
+        if self._state is None: raise Fault(Code.INTERNAL, reason="token.setup")
 
-        now     = int(date.stamp())
-        expires = now + (ttl if ttl is not None else self._access if kind == "access" else self._refresh)
-        payload = { "sub": subject, "iss": self._issuer, "iat": now, "exp": expires, "jti": rand.hex(8), "kind": kind }
-
-        payload.update(facts)
-
-        signed = self._head + b"." + self._pack_(json.encode(payload))
-
-        return (signed + b"." + self._pack_(crypto.mac(signed, self._key, self._digest))).decode()
-
-    def _checked_ ( self, token: str ) -> dict[str, Any]:
-
-        self._secret_()
-
-        signed, head, body, mark = self._split_(token)
-
-        if not rand.constant_equal(self._pack_(crypto.mac(signed, self._key, self._digest)), mark):
-
-            raise self._refused_()
-
-        if head != self._head and not self._headed_(head): raise self._refused_()
-
-        payload = self._claims_(body)
-
-        for name in REQUIRED:
-
-            if name not in payload: raise self._refused_()
-
-        now     = date.stamp()
-        issued  = self._instant_(payload["iat"])
-        expires = self._instant_(payload["exp"])
-        starts  = self._instant_(payload["nbf"]) if "nbf" in payload else 0
-
-        if issued is None or expires is None or starts is None: raise self._refused_()
-        if issued > now + LEEWAY or starts > now + LEEWAY: raise self._refused_()
-        if expires <= now - LEEWAY: raise Fault(Code.UNAUTHORIZED, reason="token.expired")
-        if payload["iss"] != self._issuer or payload.get("aud"): raise self._refused_()
-        if type(payload["sub"]) is not str or type(payload["jti"]) is not str: raise self._refused_()
-
-        return payload
-
-    def _split_ ( self, token: str ) -> tuple[bytes, bytes, bytes, bytes]:
-
-        if len(token) > LONGEST: raise self._refused_()
-
-        try: raw = token.encode("ascii")
-        except UnicodeEncodeError as error: raise self._refused_() from error
-
-        signed, _, mark = raw.rpartition(b".")
-        head, dot, body = signed.partition(b".")
-
-        if not dot or b"." in body: raise self._refused_()
-
-        return signed, head, body, mark
-
-    def _headed_ ( self, head: bytes ) -> bool:
-
-        try: found = json.decode(self._unpack_(head))
-        except (Fault, ValueError): return False
-
-        if type(found) is not dict or found.get("alg") != self._algorithm: return False
-
-        return HEADERS.issuperset(found) and all(type(value) is str for value in found.values())
-
-    def _claims_ ( self, body: bytes ) -> dict[str, Any]:
-
-        try: found = json.decode(self._unpack_(body))
-        except (Fault, ValueError) as error: raise self._refused_() from error
-
-        if type(found) is not dict: raise self._refused_()
-
-        return found
-
-    def _bound_ ( self, bound: object, fingerprint: str | None ) -> bool:
-
-        if fingerprint is None or type(bound) is not str: return False
-
-        return rand.constant_equal(bound, crypto.fingerprint(fingerprint))
-
-    def _free_ ( self, facts: dict[str, Any] ) -> dict[str, Any]:
-
-        taken = RESERVED.intersection(facts)
-
-        if taken: raise Fault(Code.INTERNAL, reason="token.claim", errors={ "claims": sorted(taken) })
-
-        return facts
-
-    def _secret_ ( self ) -> str:
-
-        if self._secret is None: raise Fault(Code.INTERNAL, reason="token.setup")
-
-        return self._secret
-
-    @staticmethod
-    def _instant_ ( value: Any ) -> float | None:
-
-        kind = type(value)
-
-        if kind is int: return float(value) if abs(value) < 2 ** 62 else None
-        if kind is float and math.isfinite(value): return float(value)
-
-        return None
-
-    @staticmethod
-    def _pack_ ( raw: bytes ) -> bytes:
-
-        return string.base64(raw, url=True).encode("ascii")
-
-    @staticmethod
-    def _unpack_ ( part: bytes ) -> bytes:
-
-        return binascii.a2b_base64(part.translate(URLSAFE) + b"=" * (-len(part) % 4), strict_mode=True)
-
-    @staticmethod
-    def _refused_ () -> Fault:
-
-        return Fault(Code.UNAUTHORIZED, reason="token.invalid")
+        return self._state

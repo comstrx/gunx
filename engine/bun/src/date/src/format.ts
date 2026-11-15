@@ -1,18 +1,11 @@
 import * as number from "engine-number";
 import * as string from "engine-string";
-import { from, type Input, mod } from "./calendar.ts";
-import { type Parts, parts } from "./extra.ts";
-import { type Held, held, tongue } from "./intl.ts";
-import { type Names, names } from "./names.ts";
+import type { Duration, FormatOptions, Held, Input, Scale, Style, Voice, Writer } from "./arch.ts";
+import { from, mod } from "./calendar.ts";
+import { parts } from "./extra.ts";
+import { held, tongue } from "./intl.ts";
+import { names } from "./names.ts";
 import { inTimeZone, offset } from "./zone.ts";
-
-export type Style = "date" | "time" | "datetime" | "long" | "short" | "clock" | "month" | "weekday" | "near";
-export type FormatOptions = { locale?: string | undefined; numerals?: number.Numerals | undefined; timeZone?: string | undefined };
-export type Duration = { days: number; hours: number; minutes: number; seconds: number; total: number };
-
-type Scale = "year" | "month" | "week" | "day" | "hour" | "minute" | "second";
-type Writer = ( read: Parts, table: Names, east: number ) => string;
-type Voice = readonly [Intl.RelativeTimeFormat, Intl.RelativeTimeFormat];
 
 const tokens = /YYYY|YY|MMMM|MMM|MM|M|DDDD|DDD|DD|D|HH|H|hh|h|mm|m|SSS|ss|s|A|a|Z|\[[^\]]*\]/g;
 const ladder: readonly (readonly [Scale, number])[] = [["year", 31_557_600], ["month", 2_629_800], ["week", 604_800], ["day", 86_400], ["hour", 3600], ["minute", 60], ["second", 1]];

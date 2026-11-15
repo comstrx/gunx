@@ -5,6 +5,8 @@ from .meter import Meter
 
 class Counter(Meter):
 
+    __slots__ = ()
+
     kind     : ClassVar[str]             = "counter"
     family   : ClassVar[str]             = TOTAL
     suffixes : ClassVar[tuple[str, ...]] = (TOTAL,)

@@ -44,7 +44,7 @@ config:meta:authors () {
 }
 config:meta:author () {
 
-    [[ "${MANIFEST[meta.authors]:-0}" -ge 1 ]] || { core:error:fail "No [meta] authors in the manifest"; return; }
+    config:manifest:counted meta.authors || { core:error:fail "No [meta] authors in the manifest"; return; }
 
     core:log:print "${MANIFEST[meta.authors.0]}"
 

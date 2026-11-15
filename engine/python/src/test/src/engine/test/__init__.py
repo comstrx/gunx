@@ -1,7 +1,7 @@
-from .arch import Sample
-from .bench import Bench
-from .client import Client
-from .reply import Reply
+lazy from .arch import Sample
+lazy from .bench import Bench
+lazy from .client import Client
+lazy from .reply import Reply
 from .stage import Stage
 
 stage = Stage()

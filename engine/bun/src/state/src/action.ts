@@ -1,17 +1,7 @@
 import * as error from "engine-error";
 import * as event from "engine-event";
-import { createStore, type StoreApi } from "./zustand.ts";
-
-export type Status = "idle" | "running" | "done" | "failed";
-export type ActionState<R> = { status: Status; result: R | undefined; error: error.Fault | undefined; runs: number };
-export type ActionOptions = { mode?: "latest" | "first" | undefined };
-export type Action<I, R> = StoreApi<ActionState<R>> & {
-    run: ( input: I ) => Promise<R | undefined>;
-    abort: () => void;
-    reset: () => void;
-};
-
-type Flight<R> = { controller: AbortController; promise: Promise<R | undefined>; settle: ( value: R | undefined ) => void };
+import type { Action, ActionOptions, ActionState, ActionFlight as Flight } from "./arch.ts";
+import { createStore } from "./zustand.ts";
 
 function flight<R> (): Flight<R> {
 
@@ -49,6 +39,14 @@ export function action<I, R> ( perform: ( input: I, signal: AbortSignal ) => Pro
                 store.setState({ status: "failed", error: error.of(caught) });
 
             }
+
+            mine.settle(undefined);
+
+            return;
+
+        }
+
+        if ( current !== mine ) {
 
             mine.settle(undefined);
 

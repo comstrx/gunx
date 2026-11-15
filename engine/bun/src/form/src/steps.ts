@@ -1,22 +1,6 @@
 import * as event from "engine-event";
-import { type Form, root } from "./form.ts";
-
-export type Steps = readonly (readonly string[])[];
-export type StepState = { index: number; total: number; fields: readonly string[]; first: boolean; last: boolean; done: boolean };
-export type Stepper = {
-    state: () => StepState;
-    index: () => number;
-    fields: () => readonly string[];
-    first: () => boolean;
-    last: () => boolean;
-    done: () => boolean;
-    total: () => number;
-    valid: () => boolean;
-    next: () => boolean;
-    back: () => void;
-    go: ( index: number ) => void;
-    watch: ( listener: ( state: StepState ) => void ) => () => void;
-};
+import type { Form, Stepper, StepState, Steps } from "./arch.ts";
+import { root } from "./form.ts";
 
 function stateOf ( steps: Steps, index: number ): StepState {
 

@@ -9,11 +9,16 @@ core:yaml:indent () {
 }
 core:yaml:prune () {
 
-    local file="${1}" pattern="${2}" mode="${3:-block}" staging=""
+    local file="${1}" pattern="${2}" mode="${3:-block}"
 
     [[ -f "${file}" ]] || return 0
 
-    staging="$(core:fs:temp:file)" || return
+    core:fs:file:write "${file}" 644 core:yaml:prune:filter "${file}" "${pattern}" "${mode}" || { core:error:fail "Cannot prune ${file}"; return; }
+
+}
+core:yaml:prune:filter () {
+
+    local file="${1}" pattern="${2}" mode="${3}"
 
     awk -v pattern="${pattern}" -v mode="${mode}" '
         function ind ( s ) { match(s, /^ */); return RLENGTH }
@@ -23,9 +28,7 @@ core:yaml:prune () {
             for ( i = 1; i <= n; i++ ) if ( !X[i] && L[i] ~ pattern ) { if ( mode ~ /^[0-9]+$/ ) { for ( j = i; j && !(ind(L[j]) == mode + 0 && L[j] ~ /[^ ]/); j-- ); cut(j ? j : i) } else if ( mode == "self" || L[i] ~ /^ *- / || L[i] ~ /^ *[A-Za-z_.$-][^:]*: *$/ ) cut(i); else { for ( j = i - 1; j && !((L[j] ~ /^ *- / || L[j] ~ /^ *[A-Za-z_.$-][^:]*: *$/) && ind(L[j]) < ind(L[i])); j-- ); cut(j ? j : i) } }
             for ( i = p = 1; i <= n; i++ ) if ( !X[i] ) { b = (L[i] !~ /[^ ]/); if ( !(b && p) ) print L[i]; p = b }
         }
-    ' "${file}" > "${staging}" || { core:error:fail "Cannot prune ${file}"; return; }
-
-    core:fs:file:read "${staging}" | core:fs:file:write "${file}" 644
+    ' "${file}"
 
 }
 core:yaml:erase () {
@@ -37,22 +40,25 @@ core:yaml:erase () {
 }
 core:yaml:hollow () {
 
-    local file="${1}" key="${2:-with}" staging=""
+    local file="${1}" key="${2:-with}"
 
     [[ -f "${file}" ]] || return 0
 
-    staging="$(core:fs:temp:file)" || return
+    core:fs:file:write "${file}" 644 core:yaml:hollow:filter "${file}" "${key}" || { core:error:fail "Cannot hollow ${file}"; return; }
+
+}
+core:yaml:hollow:filter () {
+
+    local file="${1}" key="${2}"
 
     awk -v key="${key}" '
         function ind ( s ) { match(s, /^ */); return RLENGTH }
         { L[++n] = $0 }
         END {
-            for ( i = 1; i <= n; i++ ) if ( L[i] ~ ("^ *(- )?" key ": *$") ) { for ( j = i + 1; j <= n && L[j] !~ /[^ ]/; j++ ); X[i] = (j > n || ind(L[j]) <= ind(L[i])) }
+            for ( i = n; i >= 1; i-- ) if ( L[i] ~ ("^ *(- )?" key ": *$") ) { for ( j = i + 1; j <= n && (X[j] || L[j] !~ /[^ ]/); j++ ); X[i] = (j > n || ind(L[j]) <= ind(L[i])) }
             for ( i = p = 1; i <= n; i++ ) if ( !X[i] ) { b = (L[i] !~ /[^ ]/); if ( !(b && p) ) print L[i]; p = b }
         }
-    ' "${file}" > "${staging}" || { core:error:fail "Cannot hollow ${file}"; return; }
-
-    core:fs:file:read "${staging}" | core:fs:file:write "${file}" 644
+    ' "${file}"
 
 }
 core:yaml:sub () {

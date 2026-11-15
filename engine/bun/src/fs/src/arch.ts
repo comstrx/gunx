@@ -1,0 +1,37 @@
+import type * as error from "engine-error";
+
+export type Parsed = { dir: string; base: string; name: string; ext: string };
+export type Glob = { dot?: boolean | undefined; insensitive?: boolean | undefined };
+export type Matcher = ( path: string ) => boolean;
+export type Split = { root: string; parts: string[] };
+export type Class = { not: boolean; loose: boolean; singles: Set<string>; ranges: number[] };
+export type Unit = string | number | Class;
+export type Piece = readonly Unit[] | null;
+export type Plan = { rooted: boolean; pieces: Piece[] };
+export type EntryKind = "file" | "dir" | "link" | "other";
+export type Entry = { name: string; path: string; kind: EntryKind };
+export type Stat = { size: number; modified: number; kind: EntryKind };
+export type Walked = Entry & { relative: string };
+export type Prune = ( entry: Entry, relative: string ) => boolean;
+export type Walk = { prune?: Prune | undefined; depth?: number | undefined };
+export type Disk = {
+    read: ( path: string ) => Promise<Uint8Array>;
+    write: ( path: string, content: Uint8Array | string, append?: boolean ) => Promise<void>;
+    list: ( path: string ) => Promise<Entry[]>;
+    stat: ( path: string ) => Promise<Stat | undefined>;
+    mkdir: ( path: string ) => Promise<void>;
+    remove: ( path: string, recursive?: boolean ) => Promise<void>;
+    rename: ( from: string, to: string ) => Promise<void>;
+    copy: ( from: string, to: string ) => Promise<void>;
+    temp: ( prefix: string ) => Promise<string>;
+};
+export type MemoryDisk = Disk & { files: Map<string, Uint8Array> };
+export type Step = { entry: Entry; relative: string; level: number };
+export type Reason = readonly [code: error.Code, reason: string];
+export type Kind = "image" | "video" | "audio" | "document" | "archive" | "text" | "font" | "data" | "other";
+export type Limits = { maxBytes: number; maxFiles: number; types?: readonly string[] | undefined; maxPixels?: number | undefined };
+export type FileRef = { uri: string; name: string; type: string; size?: number | undefined };
+export type Part = Blob | FileRef | string | number | boolean | bigint | Date;
+export type Size = { width: number; height: number; type: string; orientation?: number | undefined };
+export type Seen = { type: string; size: number; name: string; width?: number | undefined; height?: number | undefined };
+export type Slice = { index: number; start: number; end: number; blob: Blob };

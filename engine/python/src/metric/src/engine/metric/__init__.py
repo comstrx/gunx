@@ -1,8 +1,8 @@
-from .arch import MEDIA
-from .counter import Counter
-from .gauge import Gauge
-from .histogram import Histogram
-from .meter import Meter
+lazy from .arch import MEDIA
+lazy from .counter import Counter
+lazy from .gauge import Gauge
+lazy from .histogram import Histogram
+lazy from .meter import Meter
 from .metrics import Metrics
 
 metrics = Metrics()

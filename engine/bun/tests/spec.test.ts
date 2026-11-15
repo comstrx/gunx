@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import { resolve } from "node:path";
 import * as error from "engine/error";
 import * as event from "engine/event";
 import * as spec from "engine/spec";
@@ -129,6 +130,44 @@ describe("spec", () => {
         expect(compiled.issues.filter(( issue ) => issue.rule === "port.unbound")).toEqual([]);
         expect(spec.compile(loose, { topics: ["payments.*"] }).issues.some(( issue ) => issue.rule === "trigger.topic")).toBe(false);
         expect(spec.compile(spec.surface({ name: "k", role: "a", screens: [spec.screen({ name: "x", path: "/x", title: "X", blocks: [spec.block("weird")] })] }), { kinds: ["stack"] }).issues).toEqual([{ path: "screens.x", rule: "block.kind", fix: "declare the kind in the surface's blocks", message: "unknown block kind: weird" }]);
+
+    });
+    it("serialized surfaces retain runtime behavior and reject malformed artifacts without the compiler", () => {
+
+        const original = spec.compile(admin, { features: manifests, catalogue, kinds: ["stack", "feature"] });
+        const serialized = spec.serialize(original);
+        const revived = spec.revive(serialized);
+
+        expect(spec.serialize(revived)).toEqual(spec.serialize(original));
+        expect(spec.match(revived, "/orders/7")?.screen.name).toBe(spec.match(original, "/orders/7")?.screen.name);
+        expect(spec.screenOf(revived, "orders")?.features.map(( feature ) => feature.manifest)).toEqual([undefined]);
+        expect(spec.screenOf(revived, "toString")).toBeUndefined();
+
+        const first = spec.screenOf(revived, "home") as spec.CompiledScreen;
+
+        for ( const broken of [
+            { ...serialized, surface: { ...revived.surface, name: "constructor" } },
+            { ...serialized, surface: { ...revived.surface, locales: [1] } },
+            { ...serialized, screens: [{ ...first, features: [{ ...first.features[0], id: "__proto__" }] }] },
+            { ...serialized, screens: [{ ...first, blocks: [{ ...first.blocks[0], children: {} }] }] },
+            { ...serialized, screens: [{ ...first, params: [1] }] },
+        ] ) expect(() => spec.revive(broken)).toThrow(error.Fault);
+
+    });
+    it("reviving a built artifact ships without the schema compiler", async () => {
+
+        const entry = resolve(import.meta.dir, "revive.entry.ts");
+        const built = await Bun.build({
+            entrypoints: [entry],
+            files: { [entry]: 'export { revive } from "engine/spec";' },
+            target: "browser",
+            minify: true,
+            throw: false,
+        });
+
+        expect(built.success).toBe(true);
+        expect(built.outputs.length).toBe(1);
+        expect(built.outputs.reduce(( total, output ) => total + output.size, 0)).toBeLessThan(5000);
 
     });
     it("conditions parse from shorthand and evaluate against the context", () => {
@@ -514,5 +553,18 @@ describe("spec", () => {
         await mounted.unmount();
 
     });
+
+});
+
+
+it("features declare their world catalogs and compilation refuses missing shipment", () => {
+
+    const screen = spec.screen({ name: "home", path: "/", title: { en: "Home" }, features: [spec.feature("places")] });
+    const surface = spec.surface({ name: "web-admin", role: "admin", screens: [screen] });
+    const features: Readonly<Record<string, spec.Manifest>> = { places: { name: "places", world: ["countries", "currencies"] } };
+
+    expect(spec.compile(surface, { features }).issues.map(( issue ) => issue.rule)).toEqual(["feature.world", "feature.world"]);
+    expect(spec.compile({ ...surface, world: ["countries"] }, { features }).issues.map(( issue ) => issue.rule)).toEqual(["feature.world"]);
+    expect(spec.compile({ ...surface, world: ["countries", "currencies"] }, { features }).issues).toEqual([]);
 
 });

@@ -4,14 +4,14 @@ from engine.http.outgoing import Outgoing
 from engine.http.arch import KNOWN, NAME
 from engine.log import log
 from engine.test import stage
-from engine.validate import Shape
-from collections.abc import Awaitable, Coroutine, Mapping
+from engine.validate import Spec, Shape
+from collections.abc import AsyncIterator, Awaitable, Coroutine
 from hypothesis import HealthCheck, given, settings, strategies as st
 from multidict import CIMultiDict
 from pathlib import Path
 from typing import Any, ClassVar, cast
-from urllib.parse import parse_qsl, urlsplit, unquote
-import aiohttp, asyncio, json, re
+from urllib.parse import parse_qsl, urlsplit, unquote, quote_plus
+import aiohttp, asyncio, json, re, os
 
 EXAMPLES = 300
 CODES    = frozenset(code.value for code in Code)
@@ -36,7 +36,7 @@ class Note ( Shape ):
 
 class Named ( Form ):
 
-    rules : ClassVar[Mapping[str, str]] = { "name": "required|max:5" }
+    rules : ClassVar[Spec] = { "name": "required|max:5" }
 
     name : str
 
@@ -92,7 +92,7 @@ class Served:
 loop   = asyncio.new_event_loop()
 served = Served()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 stage.wire()
 loop.run_until_complete(served.start())
 
@@ -262,7 +262,7 @@ def answers ( target: str, name: str, headers: dict[str, str] ) -> None:
 
     if moved is None:
 
-        assert Response.redirect(target).headers["Location"] == target
+        assert Response.redirect(target).headers["Location"] == quote_plus(target, safe=":/%#?&=@[]!$&'()*+,;")
         assert target.isascii()
         assert target.isprintable()
         assert not target.startswith(("//", "/\\"))
@@ -270,9 +270,12 @@ def answers ( target: str, name: str, headers: dict[str, str] ) -> None:
     else: assert moved.reason == "http.redirect"
 
     download = Response.download(b"x", name)
-    filename = download.headers["Content-Disposition"].split('filename="')[1].rstrip('"')
+    filename = download.headers["Content-Disposition"].split('filename="', 1)[1].split('"', 1)[0]
 
     assert SAFE.fullmatch(filename)
+    assert download.headers["Content-Disposition"].isascii()
+    assert "\r" not in download.headers["Content-Disposition"]
+    assert "\n" not in download.headers["Content-Disposition"]
 
     outgoing = cast("Outgoing", Response.raw(b"{}", headers=headers))
 
@@ -287,14 +290,57 @@ def answers ( target: str, name: str, headers: dict[str, str] ) -> None:
     assert set(failure) == { "data", "message", "errors", "code", "reason", "meta" }
     assert failure["code"] == "conflict"
 
-requests()
-routes()
-policies()
-urls()
-answers()
 
-run(served.stop())
-loop.close()
-log.close()
+@settings(max_examples=500, deadline=None, database=None)
+@given(st.integers(-10, 10 ** 400), st.floats(), st.sampled_from(("fixed", "bucket", "invalid")))
+def constructor_policies ( limit: int, window: float, mode: str ) -> None:
 
-print(f"fuzz http  examples={EXAMPLES * 5}  ok")
+    fault = denied(lambda: Throttle(limit, window, mode=mode))
+
+    if fault is not None:
+
+        assert fault.reason == "throttle.policy"
+
+        return
+
+    policy = Throttle(limit, window, mode=mode)
+
+    assert policy.limit > 0 and policy.window > 0
+    assert policy.mode in ("fixed", "bucket")
+
+@settings(max_examples=200, deadline=None, database=None)
+@given(st.lists(st.one_of(st.none(), st.booleans(), st.integers(-(2 ** 63), 2 ** 63 - 1), st.text(max_size=50)), max_size=50))
+def streamed_arrays_match_json ( rows: list[object] ) -> None:
+
+    async def source () -> AsyncIterator[object]:
+
+        for row in rows: yield row
+
+    sent: list[bytes] = []
+
+    class Sink:
+
+        async def write ( self, chunk: bytes ) -> None: sent.append(chunk)
+
+    run(Response.json_stream(source()).streaming_fn(cast("Any", Sink())))
+
+    assert json.loads(b"".join(sent)) == rows
+
+
+try:
+
+    streamed_arrays_match_json()
+    constructor_policies()
+    requests()
+    routes()
+    policies()
+    urls()
+    answers()
+
+finally:
+
+    run(served.stop())
+    loop.close()
+    log.close()
+
+print(f"fuzz http  examples={EXAMPLES * 5 + 500}  ok")

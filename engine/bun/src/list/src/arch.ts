@@ -1,0 +1,23 @@
+export type Lanes = { lanes?: number | undefined; signal?: AbortSignal | undefined };
+export type Settled<T> = { done: T[]; failed: unknown[] };
+export type Catalog<T> = {
+    readonly all: readonly T[];
+    readonly size: number;
+    get: ( key: string ) => T | undefined;
+    has: ( key: string ) => boolean;
+    keys: () => string[];
+    search: ( query: string, limit?: number ) => T[];
+    pick: ( keys: readonly string[] ) => T[];
+    where: ( test: ( item: T ) => boolean ) => T[];
+};
+export type Indexed = { texts: readonly string[]; weights: readonly number[] };
+export type Scored<T> = { item: T; index: number; value: number; weight: number };
+export type Scalar = string | number | bigint | boolean | null | undefined;
+export type Key<T> = keyof T | (( item: T ) => Scalar);
+export type Direction = "asc" | "desc";
+export type Order<T> = { by: Key<T>; direction?: Direction | undefined };
+export type Changes<T> = { added: T[]; removed: T[]; kept: T[] };
+export type Where<T> = Partial<{ [K in keyof T]: T[K] | readonly T[K][] }>;
+export type Page<T> = { items: T[]; page: number; limit: number; total: number; pages: number };
+export type Branch<T> = { item: T; depth: number; children: Branch<T>[] };
+export type Ranked<T> = { item: T; index: number };

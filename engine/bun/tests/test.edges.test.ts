@@ -2,8 +2,9 @@ import { describe, expect, test as it } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, sep } from "node:path";
+import * as api from "engine/api";
 import * as error from "engine/error";
-import * as socket from "engine/socket";
+import type * as socket from "engine/socket";
 import * as stage from "engine/test";
 
 const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return error.isFault(caught) ? caught.reason ?? "?" : "?"; } };
@@ -13,12 +14,12 @@ function frames ( url: string, token: string | undefined ): { socket: WebSocket;
 
     const raw = new WebSocket(url);
     const seen: socket.Frame[] = [];
-    const ready = new Promise<void>(( resolve ) => { raw.onopen = () => { if ( token !== undefined ) raw.send(socket.encode({ event: "auth", data: { token } })); resolve(); }; });
+    const ready = new Promise<void>(( resolve ) => { raw.onopen = () => { if ( token !== undefined ) raw.send(api.encodeFrame({ event: "auth", data: { token } })); resolve(); }; });
     const closed = new Promise<number>(( resolve ) => { raw.onclose = ( event ) => resolve(event.code); });
 
     raw.onmessage = ( message ) => {
 
-        const frame = socket.decode(String(message.data));
+        const frame = api.decodeFrame(String(message.data));
 
         if ( frame ) seen.push(frame);
 
@@ -184,8 +185,8 @@ describe("test.edges", () => {
     });
     it("the live server gates channels, names a handler's fault, echoes unhandled requests, pongs, routes broadcasts only to members, forgets left channels and closes unauthenticated callers", async () => {
 
-        const server = stage.live({ auth: ( token ) => token === "good", gate: ( channel ) => channel !== "secret", onFrame: async ( frame ) => { if ( frame.event === "boom" ) throw error.fault("conflict", "x.taken"); return false; } });
-        const link = socket.open({ url: server.url, auth: "good", heartbeat: 0, reconnect: false });
+        const server = stage.live({ codec: { encode: api.encodeFrame, decode: api.decodeFrame }, auth: ( token ) => token === "good", gate: ( channel ) => channel !== "secret", onFrame: async ( frame ) => { if ( frame.event === "boom" ) throw error.fault("conflict", "x.taken"); return false; } });
+        const link = api.connect({ url: server.url, auth: "good", heartbeat: 0, reconnect: false });
 
         try {
 
@@ -195,14 +196,14 @@ describe("test.edges", () => {
             const raw = frames(server.url, "good");
 
             await raw.ready;
-            raw.socket.send(socket.encode({ event: "join", channel: "news", id: "j1" }));
-            raw.socket.send(socket.encode({ event: "ping", id: "p1" }));
+            raw.socket.send(api.encodeFrame({ event: "join", channel: "news", id: "j1" }));
+            raw.socket.send(api.encodeFrame({ event: "ping", id: "p1" }));
             await stage.until(() => raw.seen.some(( frame ) => frame.event === "pong") && raw.seen.some(( frame ) => frame.event === "joined"), { timeout: 1000 });
             server.broadcast({ event: "for.news", channel: "news", data: 1 });
             server.broadcast({ event: "for.open", channel: "open", data: 2 });
             server.broadcast({ event: "for.all", data: 3 });
             await stage.until(() => raw.seen.some(( frame ) => frame.event === "for.all"), { timeout: 1000 });
-            raw.socket.send(socket.encode({ event: "leave", channel: "news", id: "l1" }));
+            raw.socket.send(api.encodeFrame({ event: "leave", channel: "news", id: "l1" }));
             await stage.until(() => raw.seen.some(( frame ) => frame.event === "left"), { timeout: 1000 });
             server.broadcast({ event: "after.leave", channel: "news", data: 4 });
             server.broadcast({ event: "marker", data: 5 });
@@ -213,7 +214,7 @@ describe("test.edges", () => {
             const stranger = frames(server.url, undefined);
 
             await stranger.ready;
-            stranger.socket.send(socket.encode({ event: "join", channel: "news", id: "1" }));
+            stranger.socket.send(api.encodeFrame({ event: "join", channel: "news", id: "1" }));
             expect(await stranger.closed).toBe(4001);
 
             const response = await fetch(server.url.replace("ws:", "http:"));

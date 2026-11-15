@@ -4,7 +4,7 @@ from typing import Any
 
 from engine.error import Code, Fault
 from engine.thread import thread
-from PIL import Image as Pil, ImageOps, UnidentifiedImageError
+lazy from PIL import Image as Pil, ImageOps, UnidentifiedImageError
 from .arch import ALIASES, BEST, FORMATS, MAX_READ, MEDIA, OPAQUE, Picture, PIXELS, QUALITY, SIGNS, SWATCH, Target
 from .file import File
 

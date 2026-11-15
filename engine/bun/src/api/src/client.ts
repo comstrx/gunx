@@ -1,54 +1,15 @@
 import * as date from "engine-date";
 import * as error from "engine-error";
+import * as event from "engine-event";
 import * as json from "engine-json";
 import * as net from "engine-net";
-import type * as parse from "engine-parse";
 import * as rand from "engine-rand";
 import * as validate from "engine-validate";
 import { address } from "./address.ts";
-import { type Endpoint, idOf, type Part, partsOf } from "./contract.ts";
-import { type Envelope, type Page, pageOf, unwrap } from "./envelope.ts";
-import { house, type Wire } from "./wire.ts";
-
-export type Reply<T> = { data: T; message: string | null; meta: Envelope["meta"]; page: Page | undefined; requestId: string; ms: number; status: number; attempts: number; cached: boolean };
-export type Call = {
-    signal?: AbortSignal | undefined;
-    headers?: Record<string, string> | undefined;
-    idempotencyKey?: string | undefined;
-    timeout?: number | undefined;
-    retries?: number | undefined;
-    fresh?: boolean | undefined;
-};
-export type ClientOptions = {
-    baseUrl: string;
-    wire?: Wire | undefined;
-    token?: (() => string | null | undefined | Promise<string | null | undefined>) | undefined;
-    locale?: (() => string) | undefined;
-    currency?: (() => string) | undefined;
-    tenant?: (() => string | undefined) | undefined;
-    scope?: (() => string | undefined) | undefined;
-    client?: string | undefined;
-    headers?: (() => Record<string, string>) | undefined;
-    fetcher?: net.Fetcher | undefined;
-    timeout?: number | undefined;
-    retries?: number | undefined;
-    onFault?: (( fault: error.Fault, endpoint: Endpoint ) => void) | undefined;
-    onReply?: (( reply: Reply<unknown>, endpoint: Endpoint ) => void) | undefined;
-    fail?: (( cause: unknown ) => void) | undefined;
-};
-export type Client = {
-    readonly wire: Wire;
-    call: <I extends validate.Schema, O extends validate.Schema, M extends boolean>( endpoint: Endpoint<I, O, M>, input: validate.infer<I>, options?: Call ) => Promise<Reply<M extends true ? validate.infer<O>[] : validate.infer<O>>>;
-    url: ( endpoint: Endpoint, input: Record<string, unknown> ) => string;
-    cached: ( endpoint: Endpoint, input: Record<string, unknown> ) => unknown;
-    forget: ( target?: Endpoint | string ) => void;
-};
-
-type Kept = { value: Reply<unknown>; until: number; owner: string; id: string; feature: string };
-type Sent = { path: string; query: parse.QueryInput; body: Record<string, unknown> | undefined };
-type Ambient = { locale: string; currency: string; tenant: string; scope: string };
-type Ready = { record: Record<string, unknown>; ambient: Ambient; bearer: string; owner: string; key: string; life: number; shared: boolean; kept: Reply<unknown> | undefined };
-type Refusal = ( status: number, body: unknown, headers: Record<string, string> ) => error.Fault;
+import type { Ambient, Call, CallScope, Client, ClientOptions, Endpoint, Kept, Part, Ready, Refusal, Reply, Sent, Wire } from "./arch.ts";
+import { idOf, partsOf } from "./contract.ts";
+import { pageOf, unwrap } from "./envelope.ts";
+import { house } from "./wire.ts";
 
 const capacity = 256;
 const printable = /^[!-~]{1,255}$/;
@@ -58,6 +19,11 @@ const arrays = new WeakMap<object, validate.Schema>();
 function isPromise<T> ( value: T | Promise<T> ): value is Promise<T> {
 
     return typeof value === "object" && value !== null && typeof (value as { then?: unknown }).then === "function";
+
+}
+function interrupted ( call: CallScope ): error.Fault {
+
+    return call.interruption?.() ?? error.fault("timeout", "api.aborted", { cause: call.signal?.reason });
 
 }
 function unbound ( endpoint: Endpoint, name: string, message: string ): error.Fault {
@@ -314,21 +280,21 @@ export function create ( options: ClientOptions ): Client {
         cache.set(key, kept);
 
     }
-    function ambience (): Ambient {
+    function ambience ( call?: Call ): Ambient {
 
-        return { locale: options.locale?.() ?? "", currency: options.currency?.() ?? "", tenant: options.tenant?.() ?? "", scope: options.scope?.() ?? "" };
+        return { locale: call?.locale ?? options.locale?.() ?? "", currency: options.currency?.() ?? "", tenant: options.tenant?.() ?? "", scope: options.scope?.() ?? "" };
 
     }
     function keyOf ( endpoint: Endpoint, ambient: Ambient, record: Record<string, unknown> ): string {
 
-        return `${idOf(endpoint)}:${ambient.locale}|${ambient.currency}|${ambient.tenant}|${ambient.scope}:${json.stringify(record, { stable: true })}`;
+        return json.stringify([idOf(endpoint), ambient.locale, ambient.currency, ambient.tenant, ambient.scope, record], { stable: true });
 
     }
     function settled ( endpoint: Endpoint, record: Record<string, unknown>, call: Call, ambient: Ambient, token: string | null | undefined ): Ready {
 
         const bearer = typeof token === "string" ? token : "";
         const read = endpoint.method === "GET";
-        const life = read ? endpoint.cache || wire.cache : 0;
+        const life = read && call.headers === undefined ? endpoint.cache || wire.cache : 0;
         const key = read ? keyOf(endpoint, ambient, record) : "";
         const owner = endpoint.auth ? bearer : "";
         const shared = read && !call.fresh && !call.signal && !call.headers && call.timeout === undefined && call.retries === undefined;
@@ -346,26 +312,40 @@ export function create ( options: ClientOptions ): Client {
         return { record, ambient, bearer, owner, key, life, shared, kept: live ? { ...kept.value, cached: true } : undefined };
 
     }
-    function prepared ( endpoint: Endpoint, input: unknown, call: Call ): Ready | Promise<Ready> {
+    function prepared ( endpoint: Endpoint, input: unknown, call: CallScope ): Ready | Promise<Ready> {
+
+        if ( call.signal?.aborted ) throw interrupted(call);
 
         const checked = validate.check(endpoint.input, input, `${idOf(endpoint)}.input`);
 
         if ( !checked.ok ) throw checked.fault;
 
         const record = (json.isRecord(checked.value) ? checked.value : {}) as Record<string, unknown>;
-        const ambient = ambience();
+        const ambient = ambience(call);
         const given = endpoint.auth ? asked(() => options.token?.()) : undefined;
 
-        return isPromise(given) ? given.then(( token ) => settled(endpoint, record, call, ambient, token), untold) : settled(endpoint, record, call, ambient, given);
+        return isPromise(given) ? event.race(given, call.signal).then(( token ) => {
+
+            if ( call.signal?.aborted ) throw interrupted(call);
+
+            return settled(endpoint, record, call, ambient, token);
+
+        }, ( cause: unknown ) => {
+
+            if ( call.signal?.aborted ) throw interrupted(call);
+
+            return untold(cause);
+
+        }) : settled(endpoint, record, call, ambient, given);
 
     }
-    async function sent ( endpoint: Endpoint, ready: Ready, call: Call ): Promise<Reply<unknown>> {
+    async function sent ( endpoint: Endpoint, ready: Ready, call: CallScope ): Promise<Reply<unknown>> {
 
         const born = epoch;
         const write = endpoint.method !== "GET";
         const safe = endpoint.idempotent || wire.idempotent.includes(endpoint.method);
         const once = call.idempotencyKey ?? (safe ? undefined : rand.uuid7());
-        const requestId = rand.trace();
+        const requestId = options.trace === false ? "" : rand.trace();
         const headers = merged(options.headers?.(), call.headers);
         const { path, query, body } = split(endpoint, ready.record);
 
@@ -378,7 +358,7 @@ export function create ( options: ClientOptions ): Client {
         if ( options.client ) headers[wire.headers.client] = options.client;
         if ( once !== undefined ) headers[wire.headers.idempotency] = once;
 
-        headers[wire.headers.requestId] = requestId;
+        if ( options.trace !== false ) headers[wire.headers.requestId] = requestId;
 
         const reply = await net.request(net.joinUrl(base, path), {
             method: endpoint.method,
@@ -386,12 +366,19 @@ export function create ( options: ClientOptions ): Client {
             body,
             headers,
             requestId,
+            trace: options.trace,
             fetcher: options.fetcher,
             timeout: call.timeout ?? options.timeout ?? wire.timeout,
             retries: call.retries ?? options.retries ?? (write ? wire.retries.write : wire.retries.read),
             idempotent: safe || (once !== undefined && (call.retries !== undefined || wire.retries.write > 0)),
             signal: call.signal,
             failure: refuse,
+        }).catch(( cause: unknown ) => {
+
+            if ( call.signal?.aborted ) throw interrupted(call);
+
+            throw cause;
+
         }).finally(() => {
 
             if ( write ) wipe();
@@ -416,7 +403,7 @@ export function create ( options: ClientOptions ): Client {
         return made;
 
     }
-    async function answered ( endpoint: Endpoint, input: unknown, call: Call ): Promise<Reply<unknown>> {
+    async function answered ( endpoint: Endpoint, input: unknown, call: CallScope ): Promise<Reply<unknown>> {
 
         let ready: Ready;
 
@@ -465,9 +452,28 @@ export function create ( options: ClientOptions ): Client {
 
     }
 
+    async function bounded ( endpoint: Endpoint, input: unknown, call: Call ): Promise<Reply<unknown>> {
+
+        if ( call.budget === undefined ) return answered(endpoint, input, call);
+        if ( !(call.budget >= 0) ) throw new RangeError("not a duration");
+
+        const scope = event.deadline(call.budget, call.signal);
+
+        try {
+
+            return await answered(endpoint, input, { ...call, signal: scope.signal, interruption: () => error.fault("timeout", call.signal?.aborted ? "api.aborted" : "api.budget", { cause: scope.signal.reason }) });
+
+        } finally {
+
+            scope.release();
+
+        }
+
+    }
+
     return {
         wire,
-        call: ( endpoint, input, call = {} ) => answered(endpoint, input, call) as never,
+        call: ( endpoint, input, call = {} ) => bounded(endpoint, input, call) as never,
         url: ( endpoint, input ) => {
 
             const { path, query } = split(endpoint, input);
@@ -483,7 +489,15 @@ export function create ( options: ClientOptions ): Client {
 
             const kept = cache.get(keyOf(endpoint, ambience(), (json.isRecord(checked.value) ? checked.value : {}) as Record<string, unknown>));
             const now = endpoint.auth ? asked(() => options.token?.()) : "";
-            const owner = typeof now === "string" ? now : isPromise(now) ? seen : "";
+            if ( isPromise(now) ) {
+
+                void Promise.resolve(now).catch(( cause: unknown ) => grieved(endpoint, error.isFault(cause) ? cause : error.fault("internal", "api.token", { cause })));
+
+                return undefined;
+
+            }
+
+            const owner = typeof now === "string" ? now : "";
 
             return kept && kept.owner === owner && kept.until > date.now() ? kept.value.data : undefined;
 

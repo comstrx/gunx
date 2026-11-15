@@ -1,8 +1,8 @@
-from .arch import Charge, Refund, Webhook
+lazy from .arch import Charge, Refund, Webhook
 from .gateway import Gateway
-from .http import Http
-from .mock import Mock
-from .provider import Provider
+lazy from .http import Http
+lazy from .mock import Mock
+lazy from .provider import Provider
 
 gateway = Gateway()
 

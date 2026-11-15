@@ -1,38 +1,4 @@
-export type Platform = "web" | "ios" | "android" | "desktop" | "server";
-export type Scheme = "light" | "dark";
-export type Orientation = "portrait" | "landscape";
-export type Network = "wifi" | "cellular" | "ethernet" | "none" | "unknown";
-export type Pointer = "fine" | "coarse" | "none";
-export type Contrast = "more" | "less" | "normal";
-export type Insets = { top: number; right: number; bottom: number; left: number };
-export type Info = {
-    platform: Platform;
-    os: string;
-    version: string;
-    browser: string;
-    model: string;
-    mobile: boolean;
-    touch: boolean;
-    pointer: Pointer;
-    language: string;
-    languages: string[];
-    timeZone: string;
-    online: boolean;
-    network: Network;
-    reducedMotion: boolean;
-    contrast: Contrast;
-    scheme: Scheme;
-    width: number;
-    height: number;
-    pixelRatio: number;
-    orientation: Orientation;
-    insets: Insets;
-    standalone: boolean;
-    visible: boolean;
-    focused: boolean;
-};
-export type Agent = { os: string; version: string; browser: string; mobile: boolean };
-export type Hints = { platform?: string | undefined; mobile?: boolean | undefined; touch?: number | undefined };
+import type { Agent, Hints, Info, Orientation } from "./arch.ts";
 
 const longest = 1024;
 const systems: [string, RegExp][] = [

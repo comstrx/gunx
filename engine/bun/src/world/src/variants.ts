@@ -1,24 +1,5 @@
 import * as string from "engine-string";
-
-export type ClassValue = string | number | null | undefined | false | readonly ClassValue[] | Readonly<Record<string, boolean | null | undefined>>;
-export type Axes = Record<string, Record<string, string>>;
-export type Choice<O> = keyof O | ("true" extends keyof O ? true : never) | ("false" extends keyof O ? false : never);
-export type Picked<A extends Axes> = { [K in keyof A]?: Choice<A[K]> | null | undefined };
-export type When<A extends Axes> = { [K in keyof A]?: Choice<A[K]> | readonly Choice<A[K]>[] | undefined };
-export type Recipe<A extends Axes> = {
-    base?: ClassValue | undefined;
-    axes: A;
-    defaults?: Picked<A> | undefined;
-    compound?: readonly { when: When<A>; add: ClassValue }[] | undefined;
-};
-export type Variants<A extends Axes> = (( picked?: Picked<A> & { className?: ClassValue | undefined } ) => string) & {
-    readonly axes: A;
-    readonly defaults: Readonly<Picked<A>>;
-    options: ( axis: keyof A ) => string[];
-};
-
-type Plan = { name: string; index: Map<string, number>; added: string[]; fallback: number };
-type Rule = { when: readonly (readonly [number, ReadonlySet<number>])[]; add: string };
+import type { Axes, ClassValue, Picked, Plan, Recipe, Rule, Variants } from "./arch.ts";
 
 const deepest = 8;
 const held = 1024;

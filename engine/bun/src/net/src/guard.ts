@@ -1,15 +1,8 @@
 import * as error from "engine-error";
 import * as event from "engine-event";
 import { isLoopback } from "./address.ts";
-import type { Fetcher } from "./transport.ts";
+import type { Body, Fetcher, Policy, Reader, Wild } from "./arch.ts";
 import { originOf, parseUrl } from "./url.ts";
-
-export type Policy = { origins: readonly string[]; allowLoopback?: boolean | undefined };
-export type Body = { body?: ReadableStream<Uint8Array> | null | undefined; arrayBuffer: () => Promise<ArrayBuffer>; headers?: { get: ( name: string ) => string | null } | undefined };
-
-type Reader = { read: () => Promise<{ done: boolean; value?: Uint8Array | undefined }> };
-
-type Wild = { protocol: string; suffix: string; port: string };
 
 const longest = 2_147_483_647;
 const moved = new Set([301, 302, 303, 307, 308]);

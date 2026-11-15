@@ -1,8 +1,8 @@
-from .arch import Text
-from .http import Http
-from .log import Log
+lazy from .arch import Text
+lazy from .http import Http
+lazy from .log import Log
 from .sms import Sms
-from .texter import Texter
+lazy from .texter import Texter
 
 sms = Sms()
 

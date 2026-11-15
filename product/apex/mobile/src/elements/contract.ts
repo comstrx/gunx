@@ -35,6 +35,7 @@ export type ButtonProps = {
 export type HeadingProps = { children: ReactNode; level?: 1 | 2 | 3 | 4 | undefined; look?: "display" | "title" | "section" | "eyebrow" | undefined; id?: string | undefined };
 
 export type TextProps = {
+    isolate?: boolean | undefined;
     children: ReactNode;
     tone?: "default" | "muted" | "danger" | "success" | undefined;
     size?: "sm" | "md" | "lg" | undefined;

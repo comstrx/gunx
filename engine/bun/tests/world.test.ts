@@ -13,6 +13,19 @@ beforeAll(async () => {
 
 describe("world", () => {
 
+    it("dial-code search normalizes the international prefix on both sides exactly once", () => {
+
+        expect(world.keys.search("000", 1)).toEqual([]);
+        expect(world.keys.search("0000", 1)).toEqual([]);
+        expect(world.keys.search("0", 1)).toEqual([]);
+        expect(world.keys.search("0020", 1).map(( key ) => key.code)).toEqual(["EG"]);
+        expect(world.keys.search("+20", 1).map(( key ) => key.code)).toEqual(["EG"]);
+        expect(world.keys.search("20", 1).map(( key ) => key.code)).toEqual(["EG"]);
+        expect(world.keys.search("00", 1)).toEqual(world.keys.all.slice(0, 1));
+
+    });
+
+
     it("the data is loaded, indexed and searchable in both languages", () => {
 
         expect(world.countries.size).toBeGreaterThan(240);
@@ -278,4 +291,16 @@ describe("world", () => {
         expect([world.emojiFolder, world.flagFolder, world.fontFolder]).toEqual(["/world/emoji", "/world/flag", "/world/font"]);
 
     });
+});
+
+
+it("world display names use the locale owner outside catalog translations", async () => {
+
+    await world.load("countries", "currencies", "languages");
+
+    expect(world.countries.nameOf("EG", "fr")).toBe(new Intl.DisplayNames("fr", { type: "region" }).of("EG") ?? "");
+    expect(world.currencies.nameOf("EGP", "fr")).toBe(new Intl.DisplayNames("fr", { type: "currency" }).of("EGP") ?? "");
+    expect(world.languages.nameOf("en", "fr")).toBe(new Intl.DisplayNames("fr", { type: "language" }).of("en") ?? "");
+    expect(world.regionName("002", "fr")).toBe(new Intl.DisplayNames("fr", { type: "region" }).of("002") ?? "");
+
 });

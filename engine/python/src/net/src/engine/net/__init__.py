@@ -1,7 +1,7 @@
-from .arch import Reply
-from .egress import Egress
+lazy from .arch import Reply
+lazy from .egress import Egress
 from .net import Net
-from .remote import Remote
+lazy from .remote import Remote
 
 net = Net()
 

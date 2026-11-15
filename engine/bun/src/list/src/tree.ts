@@ -1,6 +1,5 @@
-import { type Key, keyOf } from "./core.ts";
-
-export type Branch<T> = { item: T; depth: number; children: Branch<T>[] };
+import type { Branch, Key } from "./arch.ts";
+import { keyOf } from "./core.ts";
 
 function looped<T> ( branch: Branch<T>, above: ReadonlyMap<Branch<T>, Branch<T>> ): Branch<T> {
 

@@ -1,15 +1,20 @@
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
+
+from engine.error import Code, Fault
 from .arch import Isolation, Record
 from .driver import Driver
+import asyncio
 
 class Session:
 
-    __slots__ = ("_connection", "_depth", "_driver", "_scoped")
+    __slots__ = ("_closed", "_connection", "_depth", "_driver", "_owner", "_scoped")
 
     def __init__ ( self, driver: Driver, connection: Any ) -> None:
 
+        self._closed     = False
+        self._owner      = asyncio.current_task()
         self._driver     = driver
         self._connection = connection
         self._depth      = 0
@@ -17,10 +22,14 @@ class Session:
 
     async def execute ( self, sql: str, *args: Any, timeout: float | None = None ) -> int:
 
+        self._ensure_()
+
         try: return await self._driver.execute(self._connection, sql, self._driver.binds(args), timeout)
         except self._driver.failures as error: raise self._driver.translate(error) from error
 
     async def fetch ( self, sql: str, *args: Any, timeout: float | None = None ) -> list[Record]:
+
+        self._ensure_()
 
         try: return await self._driver.fetch(self._connection, sql, self._driver.binds(args), timeout)
         except self._driver.failures as error: raise self._driver.translate(error) from error
@@ -39,6 +48,8 @@ class Session:
 
     async def many ( self, sql: str, rows: Sequence[Sequence[Any]], timeout: float | None = None ) -> int:
 
+        self._ensure_()
+
         if not rows: return 0
 
         bound = [self._driver.binds(row) for row in rows]
@@ -48,12 +59,18 @@ class Session:
 
     async def copy ( self, table: str, columns: Sequence[str], rows: Sequence[Sequence[Any]] ) -> int:
 
+        self._ensure_()
+
         if not rows: return 0
 
         try: return await self._driver.copy(self._connection, table, columns, rows)
         except self._driver.failures as error: raise self._driver.translate(error) from error
 
     async def scope ( self, **settings: str ) -> None:
+
+        self._ensure_()
+
+        if not self.inside(): raise Fault(Code.CONFLICT, reason="database.scope.transaction")
 
         try: await self._driver.scope(self._connection, settings)
         except self._driver.failures as error: raise self._driver.translate(error) from error
@@ -69,7 +86,11 @@ class Session:
         self, isolation: Isolation = "read_committed", readonly: bool = False,
     ) -> AsyncIterator[Session]:
 
-        depth = self._depth
+        self._ensure_()
+
+        depth     = self._depth
+        scoped    = dict(self._scoped)
+        committed = False
 
         self._depth += 1
 
@@ -77,8 +98,14 @@ class Session:
 
             async with self._driver.transaction(self._connection, isolation, readonly, depth): yield self
 
+            committed = True
+
         except self._driver.failures as error: raise self._driver.translate(error) from error
-        finally: self._depth -= 1
+        finally:
+
+            self._depth -= 1
+
+            if not committed or not depth: self._scoped = scoped
 
     def inside ( self ) -> bool:
 
@@ -86,8 +113,19 @@ class Session:
 
     def raw ( self ) -> Any:
 
+        self._ensure_()
+
         return self._connection
 
     def driver ( self ) -> Driver:
 
         return self._driver
+
+    def _end_ ( self ) -> None:
+
+        self._closed = True
+
+    def _ensure_ ( self ) -> None:
+
+        if self._closed: raise Fault(Code.CONFLICT, reason="database.session.closed")
+        if asyncio.current_task() is not self._owner: raise Fault(Code.CONFLICT, reason="database.session.task")

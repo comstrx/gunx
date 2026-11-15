@@ -1,47 +1,6 @@
-import type * as date from "engine-date";
 import * as json from "engine-json";
-import { cleaned, located, type Site, shaped, stamped } from "./metadata.ts";
-
-export type Thing = json.Dictionary & { "@type": string };
-export type Crumb = { name: string; path: string };
-export type Rating = { value: number; count: number; best?: number | undefined };
-export type Address = { street?: string | undefined; city?: string | undefined; region?: string | undefined; postal?: string | undefined; country?: string | undefined };
-export type Asked = { question: string; answer: string };
-export type Known = { logo?: string | undefined; description?: string | undefined; sameAs?: readonly string[] | undefined; email?: string | undefined; phone?: string | undefined };
-export type Viewed = { title: string; path?: string | undefined; description?: string | undefined; modified?: date.Input };
-export type Sold = {
-    name: string;
-    path: string;
-    description?: string | undefined;
-    image?: string | readonly string[] | undefined;
-    sku?: string | undefined;
-    brand?: string | undefined;
-    price: string | number;
-    currency: string;
-    available?: boolean | undefined;
-    rating?: Rating | undefined;
-};
-export type Written = {
-    title: string;
-    path: string;
-    description?: string | undefined;
-    image?: string | undefined;
-    published?: date.Input;
-    modified?: date.Input;
-    author?: string | undefined;
-    section?: string | undefined;
-};
-export type Placed = {
-    type?: string | undefined;
-    path?: string | undefined;
-    image?: string | undefined;
-    phone?: string | undefined;
-    email?: string | undefined;
-    priceRange?: string | undefined;
-    address?: Address | undefined;
-    point?: { lat: number; lng: number } | undefined;
-    hours?: readonly string[] | undefined;
-};
+import type { Address, Asked, Crumb, Known, Placed, Rating, Site, Sold, Thing, Viewed, Written } from "./arch.ts";
+import { cleaned, located, shaped, stamped } from "./metadata.ts";
 
 const context = "https://schema.org";
 const risky = /[<>&\u2028\u2029]/g;

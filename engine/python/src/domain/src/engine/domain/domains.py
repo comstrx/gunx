@@ -5,7 +5,7 @@ from engine.adapter import Manager
 from engine.error import Code, Fault
 from engine.log import log
 from engine.rand import rand
-from .arch import HOST, LONGEST, PREFIX, RESERVED, Record
+from .arch import HOST, LONGEST, PREFIX, RESERVED, Record, SUFFIXES
 from .dns import Dns
 from .memory import Memory
 from .registrar import Registrar
@@ -40,7 +40,7 @@ class Domains:
         try: cleaned = host.strip().strip(".").lower().encode("idna").decode()
         except UnicodeError: cleaned = ""
 
-        reserved = cleaned in RESERVED or cleaned.endswith(tuple(f".{r}" for r in RESERVED))
+        reserved = cleaned in RESERVED or cleaned.endswith(SUFFIXES)
 
         if not cleaned or not HOST.match(cleaned) or reserved:
 
@@ -96,4 +96,6 @@ class Domains:
 
         root = self.normalize(apex)
 
-        return [self.normalize(host) for host in hosts if self.normalize(host).endswith(f".{root}")]
+        suffix = f".{root}"
+
+        return [found for host in hosts if (found := self.normalize(host)).endswith(suffix)]

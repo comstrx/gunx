@@ -6,7 +6,7 @@ from engine.log import log
 from engine.number import Money
 from engine.test import Bench
 from pathlib import Path
-import asyncio, contextlib
+import asyncio, contextlib, os
 
 bench = Bench()
 loop  = asyncio.new_event_loop()
@@ -16,7 +16,7 @@ money = Money(1999, "EGP")
 body  = json.encode({ "event": "charge.captured", "charge": "ch_1", "status": "captured", "reference": "order-1" })
 heads = { "x-signature": mock.sign(body) }
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 crypto.setup([crypto.key("k1")])
 pay.use(mock)
 

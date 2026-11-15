@@ -67,3 +67,12 @@ describe("elements", () => {
     });
 
 });
+
+
+it("data text can isolate mixed direction content explicitly", () => {
+
+    const markup = renderToStaticMarkup(<Text isolate>USD 12 · القاهرة</Text>);
+
+    expect(markup).toContain('<bdi dir="auto">USD 12 · القاهرة</bdi>');
+
+});

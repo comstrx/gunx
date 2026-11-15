@@ -8,6 +8,8 @@ import bisect, itertools, time
 
 class Histogram(Meter):
 
+    __slots__ = ("_bounds", "_buckets")
+
     kind     : ClassVar[str]             = "histogram"
     suffixes : ClassVar[tuple[str, ...]] = ("", "_bucket", "_sum", "_count")
     reserved : ClassVar[frozenset[str]]  = frozenset({ "le" })
@@ -53,12 +55,21 @@ class Histogram(Meter):
     @contextmanager
     def time ( self, **labels: str ) -> Iterator[None]:
 
-        self._cell_(labels, read=True)
-
+        cell = self._cell_(labels)
         started = time.perf_counter()
 
         try: yield
-        finally: self.observe(time.perf_counter() - started, **labels)
+        finally:
+
+            if cell is not None:
+
+                value = time.perf_counter() - started
+                index = bisect.bisect_left(self._buckets, value) + 1
+
+                with self._lock:
+
+                    cell[0]     += value
+                    cell[index] += 1
 
     @override
     def _fresh_ ( self ) -> Cell:
@@ -78,7 +89,10 @@ class Histogram(Meter):
 
             rows.append(f'{name}_bucket{{{joint}le="{bound}"}} {running}')
 
-        return [*rows, self._row_(f"{name}_sum", text, cell[0]), self._row_(f"{name}_count", text, running)]
+        rows.append(self._row_(f"{name}_sum", text, cell[0]))
+        rows.append(self._row_(f"{name}_count", text, running))
+
+        return rows
 
     def _bounded_ ( self, buckets: Sequence[float] ) -> tuple[float, ...]:
 

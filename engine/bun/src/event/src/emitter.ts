@@ -1,25 +1,6 @@
 import * as error from "engine-error";
-import { awaited, linked, type Wait } from "./abort.ts";
-
-export type Events = Record<string, unknown>;
-export type Handler<T> = ( payload: T ) => void;
-export type Fail = ( cause: unknown ) => void;
-export type Listen = { once?: boolean | undefined; signal?: AbortSignal | undefined };
-export type EmitterOptions = { fail?: Fail | undefined };
-export type Emitter<E extends Events> = {
-    on: <K extends keyof E & string>( name: K, handler: Handler<E[K]>, options?: Listen ) => () => void;
-    once: <K extends keyof E & string>( name: K, handler: Handler<E[K]> ) => () => void;
-    off: <K extends keyof E & string>( name: K, handler?: Handler<E[K]> ) => void;
-    emit: <K extends keyof E & string>( name: K, payload: E[K] ) => number;
-    wait: <K extends keyof E & string>( name: K, options?: number | Wait ) => Promise<E[K]>;
-    any: ( handler: ( payload: E[keyof E & string], name: keyof E & string ) => void ) => () => void;
-    has: ( name: keyof E & string ) => boolean;
-    count: ( name?: keyof E & string ) => number;
-    names: () => string[];
-    clear: () => void;
-};
-
-type Held = { handler: ( payload: unknown, name: string ) => void; once: boolean; live: boolean };
+import { awaited, linked } from "./abort.ts";
+import type { Emitter, EmitterOptions, Events, Fail, Held } from "./arch.ts";
 
 const none: readonly Held[] = [];
 const deepest = 256;

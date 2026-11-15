@@ -355,7 +355,7 @@ describe("geo", () => {
         let released = 0;
         const stop = geo.follow({ follow: ( _: unknown, listener: typeof push ) => { push = listener; return () => { released += 1; }; } }, { radius: 50, signal: controller.signal }, ( position ) => { samples.push(position.at); });
 
-        expect(released).toBe(1);
+        expect(released).toBe(0);
         push?.(sharp);
         expect(samples).toEqual([]);
 
@@ -371,7 +371,7 @@ describe("geo", () => {
         end();
         end();
         push?.(sharp);
-        expect([released, samples]).toEqual([2, [2, 1]]);
+        expect([released, samples]).toEqual([1, [2, 1]]);
         stop();
 
     });

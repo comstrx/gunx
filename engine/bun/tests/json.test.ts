@@ -39,6 +39,26 @@ describe("json", () => {
         expect(json.stringify(undefined)).toBe("null");
 
     });
+    it("safe parsing keeps native JSON acceptance across prefixes, primitives and escaped keys", () => {
+
+        const samples = ['{"a":1}', "[1,true,null]", '"hello"', "0", "-0", "1e3", "-2.5", "true", "false", "null", "", "example", "trueish", "+1", "NaN", "Infinity", '{"__proto__":1,"a":{"\\u005f_proto__":2,"kept":3}}'];
+
+        for ( const sample of samples ) {
+
+            for ( const prefix of ["", " ", "\t\r\n ", "\u00a0", "\ufeff", "\0", "x"] ) {
+
+                const text = prefix + sample;
+                let expected: unknown;
+
+                try { expected = JSON.parse(text, ( key, value: unknown ) => key === "__proto__" ? undefined : value); } catch { expected = undefined; }
+
+                expect(json.parse(text)).toEqual(expected);
+
+            }
+
+        }
+
+    });
     it("objects are shaped without mutation", () => {
 
         const base = { a: 1, b: { c: 2, d: [1, 2] }, e: undefined, f: null, g: "" };
@@ -146,6 +166,31 @@ describe("json", () => {
         expect(json.kindOf(Number.POSITIVE_INFINITY)).toBe("other");
         expect(json.isJson(ring()) || json.isJson([undefined]) || json.isJson(new Box())).toBe(false);
         expect(json.isJson({ a: undefined, b: [shared, shared] })).toBe(true);
+
+    });
+    it("pretty serialization keeps native observable behavior and bounds cyclic fallback", () => {
+
+        const shared = { id: 1 };
+        const calls: string[] = [];
+        const custom = { toJSON ( key: string ) { calls.push(key); return { kept: key }; } };
+        const value = { shared, again: shared, list: [undefined, Number.NaN, -0, custom], custom, at: new Date(0) };
+
+        for ( const pretty of [true, 0, 4, 10, 100, -1, Number.NaN] as const ) {
+
+            calls.length = 0;
+
+            const expected = JSON.stringify(value, undefined, pretty === true ? 2 : pretty);
+            const visited = [...calls];
+
+            calls.length = 0;
+
+            expect(json.stringify(value, { pretty })).toBe(expected);
+            expect(calls).toEqual(visited);
+
+        }
+
+        expect(json.stringify(ring(), { pretty: true })).toBe(JSON.stringify({ a: 1, self: "[Circular]" }, undefined, 2));
+        expect(json.stringify([ring(), 2n], { pretty: 2 })).toBe(JSON.stringify([{ a: 1, self: "[Circular]" }, "2"], undefined, 2));
 
     });
     it("clone copies what the host cannot and keeps cycles", () => {
@@ -308,7 +353,7 @@ describe("json", () => {
     });
     it("csv guards formulas, reads any separator and keeps a stray quote", () => {
 
-        expect(json.toCsv([{ a: "=1+1", b: "-5", c: 3, d: "@x" }], { guard: true, header: false })).toBe("'=1+1,'-5,3,'@x");
+        expect(json.toCsv([{ a: "=1+1", b: "-5", c: 3, d: "@x" }], { guard: true, header: false })).toBe('"\'=1+1","\'-5",3,"\'@x"');
         expect(json.toCsv([{ a: "=1+1" }], { header: false })).toBe("=1+1");
         expect(json.toCsv([{ at: new Date(0), o: { x: 1 }, l: [1, 2], n: null, bad: new Date(Number.NaN) }], { header: false })).toBe('1970-01-01T00:00:00.000Z,"{""x"":1}","[1,2]",,');
         expect(json.toCsv([{ a: "x" }], { separator: "" })).toBe("a\r\nx");
@@ -337,4 +382,22 @@ describe("json", () => {
         expect(json.toLines([])).toBe("");
 
     });
+});
+
+
+it("CSV spreadsheet protection covers controls, whitespace and full-width formula prefixes", () => {
+
+    for ( const text of ["=1+1", "+1", "-1", "@SUM(A1)", "\tvalue", "\rvalue", "\nvalue", "  =1+1", "＝1+1", "＋1", "－1", "＠SUM(A1)"] ) {
+
+        const rows = [{ value: text }];
+        const safe = json.toCsv(rows, { guard: true });
+
+        expect(safe.split("\r\n")[1]?.startsWith("\"'")).toBe(true);
+        expect(json.fromCsv(safe)[0]?.value).toBe(`'${text}`);
+        expect(json.fromCsv(json.toCsv(rows))[0]?.value).toBe(text);
+
+    }
+
+    expect(json.fromCsv(json.toCsv([{ value: -12 }], { guard: true }))[0]?.value).toBe("-12");
+
 });

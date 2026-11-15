@@ -1,8 +1,11 @@
 from argon2 import PasswordHasher, Type
-from engine.crypto import Crypto, Key, Pair, Password, Sealed, crypto, password
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, AESGCMSIV, ChaCha20Poly1305
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Event
+from engine.crypto import Crypto, Hasher, Key, Pair, Sealed, crypto
 from engine.error import Code, Fault
 from typing import Any
-import base64, pytest
+import base64, hashlib, hmac, importlib, pytest
 
 RFC    = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 HEAVY  = "$argon2id$v=19$m=4194304,t=64,p=1$c29tZXNhbHQ$" + "A" * 43
@@ -27,7 +30,7 @@ def test_seals_open_and_rotate () -> None:
 
     sealed = crypto.seal("hello", b"ctx")
 
-    assert sealed.startswith("v1.k1.") and crypto.open_text(sealed, b"ctx") == "hello" and not crypto.stale(sealed)
+    assert sealed.startswith("v2.0.k1.") and crypto.open_text(sealed, b"ctx") == "hello" and not crypto.stale(sealed)
     assert crypto.open(crypto.seal(b"\x00\x01")) == b"\x00\x01" and crypto.open(crypto.seal("")) == b""
     assert crypto.ready() and crypto.current() is first and crypto.names() == ("k1",) and crypto.describe()["current"] == "k1"
     assert crypto.seal("hello", b"ctx") != sealed and Sealed.decode(sealed).encode() == sealed
@@ -42,7 +45,7 @@ def test_seals_open_and_rotate () -> None:
 
     crypto.setup([second, first], current="k2")
 
-    assert crypto.stale(sealed) and crypto.rotate(sealed, b"ctx").startswith("v1.k2.") and crypto.names() == ("k1", "k2")
+    assert crypto.stale(sealed) and crypto.rotate(sealed, b"ctx").startswith("v2.0.k2.") and crypto.names() == ("k1", "k2")
     assert crypto.open_text(crypto.rotate(sealed, b"ctx"), b"ctx") == "hello" and crypto.current() is second
 
     for wrong, reason in (([], "crypto.keys"), ([first, first], "crypto.keys"), ([first], "crypto.current")):
@@ -135,9 +138,9 @@ def test_derived_keys_and_raw_seals () -> None:
 
     blob = crypto.seal_bytes(b"\x00" * 1000, b"file")
 
-    assert blob.startswith(b"E1\x02k1") and crypto.open_bytes(blob, b"file") == b"\x00" * 1000 and len(blob) == 5 + 12 + 1000 + 16
+    assert blob.startswith(b"E2\x00\x02k1") and crypto.open_bytes(blob, b"file") == b"\x00" * 1000 and len(blob) == 6 + 12 + 1000 + 16
 
-    for bad in (b"", b"E1", b"E2" + blob[2:], b"E1\x02k1short", b"E1\x02zz" + b"\x00" * 40, blob[:-1] + b"\xff", b"E1\xff" + blob[3:], blob[:32]):
+    for bad in (b"", b"E1", b"E9" + blob[2:], b"E1\x02k1short", b"E1\x02zz" + b"\x00" * 40, blob[:-1] + bytes((blob[-1] ^ 1,)), b"E1\xff" + blob[3:], blob[:32]):
 
         with pytest.raises(Fault) as refused: crypto.open_bytes(bad, b"file")
 
@@ -175,8 +178,8 @@ def test_derived_keys_and_raw_seals () -> None:
 
     sealed = vault.seal("report", b"aad")
 
-    assert files.id == "k1.files" and sealed.startswith("v1.k1.files.") and vault.open_text(sealed, b"aad") == "report" and not vault.stale(sealed)
-    assert vault.open_bytes(vault.seal_bytes(b"frame")) == b"frame" and vault.seal_bytes(b"frame").startswith(b"E1\x08k1.files")
+    assert files.id == "k1.files" and sealed.startswith("v2.0.k1.files.") and vault.open_text(sealed, b"aad") == "report" and not vault.stale(sealed)
+    assert vault.open_bytes(vault.seal_bytes(b"frame")) == b"frame" and vault.seal_bytes(b"frame").startswith(b"E2\x00\x08k1.files")
     assert crypto.derive("sessions").id == "k1.sessions" and crypto.derive("files") == files and crypto.derive("x", "named").id == "named"
     assert files.secret == crypto.hkdf(crypto.current().secret, "files") and files.secret != crypto.derive("other").secret
 
@@ -345,68 +348,427 @@ def test_totp_follows_the_rfc_and_its_bounds () -> None:
 
         assert labelled.value.reason == reason, (account, issuer)
 
-def test_passwords_use_argon2id () -> None:
+def test_slow_hashes_preserve_arbitrary_data_and_bound_encoded_costs () -> None:
 
-    hashed = password.hash("correct horse battery")
+    quick = crypto.options(time_cost=1, memory_cost=8192, parallelism=1)
+    words = ("", "x", "café", "cafe\u0301", "\uff46", "a\x00b", "x" * 4096, b"\xff\x00")
 
-    assert hashed.startswith("$argon2id$v=19$m=65536,t=3,p=2$") and password.verify(hashed, "correct horse battery")
-    assert not password.verify(hashed, "wrong") and not password.verify("", "x") and not password.verify(hashed, "")
-    assert not password.stale(hashed) and password.stale("$argon2id$v=19$m=8,t=1,p=1$c2FsdHNhbHQ$aGFzaA") and password.stale("junk") and password.stale("")
-    assert password.hash("correct horse battery") != hashed and not password.verify(hashed, "correct horse batterY")
+    for plain in words:
 
-    with pytest.raises(Fault) as short: password.hash("short")
+        hashed = quick.hash(plain, "argon2id")
 
-    assert short.value.code is Code.VALIDATION and short.value.reason == "password.short" and "short" not in str(short.value.errors)
+        assert hashed.startswith("$argon2id$v=19$m=8192,t=1,p=1$")
+        assert quick.check(plain, hashed) and quick.check(plain, hashed, "argon2id")
+        assert not quick.check("different", hashed) and not quick.rehash(hashed)
+        assert quick.hash(plain, "argon2id") != hashed
 
-    with pytest.raises(Fault) as long_: password.hash("x" * 600)
+    assert not quick.check("cafe\u0301", quick.hash("café", "argon2id"))
+    assert not quick.check("f", quick.hash("\uff46", "argon2id"))
+    assert quick.check(b"hello", quick.hash("hello", "argon2id"))
 
-    assert long_.value.reason == "password.long" and not password.verify(hashed, "x" * 600)
+    for values in COSTS:
 
-    for plain, reason in (("e\u0301" * 4, "password.short"), ("\ufdfa" * 200, "password.long"), ("", "password.short"), ("\ud800" * 600, "password.long")):
+        with pytest.raises(Fault) as invalid: crypto.options(time_cost=values[0], memory_cost=values[1], parallelism=values[2])
 
-        with pytest.raises(Fault) as counted: password.hash(plain)
+        assert invalid.value.reason == "crypto.cost"
 
-        assert counted.value.reason == reason and counted.value.code is Code.VALIDATION, ascii(plain[:8])
+    malformed = (
+        "", "junk", "lone\ud800", HEAVY,
+        "$argon2id$v=19$m=1048576,t=1,p=1$c29tZXNhbHQ$" + "A" * 43,
+        "$argon2id$v=19$m=8192,t=16,p=1$c29tZXNhbHQ$" + "A" * 43,
+        "$argon2id$v=19$m=8192,t=1,p=16$c29tZXNhbHQ$" + "A" * 43,
+        "$argon2id$v=19$m=8192,t=1,p=1$c29tZXNhbHQ$" + "A" * 600,
+    )
 
-    with pytest.raises(Fault) as lone: password.hash("lone\ud800surrogate")
+    for hashed in malformed:
 
-    assert lone.value.reason == "password.encoding" and lone.value.code is Code.VALIDATION and lone.value.errors == { "password": ["is not valid text"] }
-    assert not password.verify(hashed, "lone\ud800surrogate") and not password.verify("lone\ud800surrogate", "correct horse battery")
+        assert not quick.check("x", hashed, "argon2id") and quick.rehash(hashed)
 
-    quick = Password(1, 8, 1)
-    typed = quick.hash("café au lait")
-    bound = quick.hash("a\x00bcdefgh")
+    for legacy in (Type.I, Type.D, Type.ID):
 
-    assert quick.verify(typed, "cafe\u0301 au lait") and quick.verify(quick.hash("\uff46\uff55\uff4c\uff4c\uff57\uff49\uff44\uff54\uff48"), "fullwidth") and not quick.verify(typed, "cafe au lait")
-    assert quick.verify(bound, "a\x00bcdefgh") and not quick.verify(bound, "a\x00bcdefgX") and not quick.verify(bound, "a")
-    assert quick.verify(quick.hash("x" * 512), "x" * 512) and quick.verify(quick.hash("كلمة السر"), "كلمة السر") and quick.stale(hashed)
-    assert not quick.verify(HEAVY, "correct horse battery") and quick.stale(HEAVY) and not password.verify(HEAVY, "x")
-    assert not quick.verify(f"{typed}{'A' * 512}", "café au lait") and not quick.verify("$argon2id$v=19$m=8,t=1,p=1$c2FsdA$", "password")
-    assert not quick.verify("$argon2id$v=19$m=8,t=17,p=1$c29tZXNhbHQ$" + "A" * 43, "x") and not quick.verify("$argon2id$v=19$m=8,t=1,p=17$c29tZXNhbHQ$" + "A" * 43, "x")
-    assert not quick.verify("$argon2id$v=19$m=1048577,t=1,p=1$c29tZXNhbHQ$" + "A" * 43, "x") and not quick.verify("$argon2id$v=19$m=7,t=1,p=1$c29tZXNhbHQ$" + "A" * 43, "x")
+        hashed = PasswordHasher(time_cost=1, memory_cost=8192, parallelism=1, type=legacy).hash(b"legacy data")
 
-    older = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1, type=Type.I).hash("legacy password")
+        assert quick.check("legacy data", hashed) and quick.rehash(hashed) == (legacy is not Type.ID)
 
-    assert older.startswith("$argon2i$") and quick.verify(older, "legacy password") and quick.stale(older) and not quick.verify(older, "legacy passw0rd")
+    default = crypto.hash("exact data", "argon2id")
 
-    wide = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1, hash_len=400).hash("legacy password")
+    assert not crypto.rehash(default) and crypto.check("exact data", default)
+    assert not quick.check("exact data", default) and quick.rehash(default)
 
-    assert len(wide) > 512 and not quick.verify(wide, "legacy password") and quick.stale(wide)
+@pytest.mark.parametrize(("algorithm", "factory", "index"), [
+    ("aes-gcm", AESGCM, 0), ("chacha20-poly1305", ChaCha20Poly1305, 1), ("aes-gcm-siv", AESGCMSIV, 2),
+])
+def test_ciphers_interoperate_and_bind_the_header ( algorithm: str, factory: Any, index: int ) -> None:
 
-    for cost in COSTS:
+    key   = Key("current", bytes(range(32)))
+    vault = Crypto().options(cipher=algorithm)
+    alias = Key("changed", key.secret)
 
-        with pytest.raises(Fault) as costly: Password(*cost)
+    vault.setup([key, alias])
 
-        assert costly.value.reason == "password.cost" and costly.value.code is Code.INTERNAL, cost
+    for plain in (b"", b"x", "عربي", b"\x00\xff" * 65536):
 
-        with pytest.raises(Fault): quick.setup(*cost)
+        raw    = plain.encode() if isinstance(plain, str) else plain
+        text   = vault.seal(plain, b"context")
+        sealed = Sealed.decode(text)
+        frame  = vault.seal_bytes(plain, b"context")
+        header = b"E2" + bytes((index, len(key.id))) + key.id.encode()
 
-    assert quick.verify(typed, "café au lait") and not quick.stale(typed)
+        assert text.startswith(f"v2.{index}.current.")
+        assert sealed.algorithm == algorithm and sealed.version == 2
+        assert vault.open(text, b"context") == raw and vault.open_bytes(frame, b"context") == raw
+        assert factory(key.secret).decrypt(sealed.nonce, sealed.body, header + b"context") == raw
 
-    password.setup(time_cost=1, memory_cost=8192, parallelism=1)
+        external = factory(key.secret).encrypt(bytes(12), raw, header + b"context")
+        encoded  = base64.urlsafe_b64encode(bytes(12) + external).rstrip(b"=").decode()
 
-    assert password.verify(password.hash("another password"), "another password") and password.stale(hashed) and password.verify(hashed, "correct horse battery")
+        assert vault.open(f"v2.{index}.current.{encoded}", b"context") == raw
+        assert vault.open_bytes(header + bytes(12) + external, b"context") == raw
 
-    password.setup()
+        for corrupt in (text.replace(".current.", ".changed."), text[:-1] + ("A" if text[-1] != "A" else "B")):
 
-    assert not password.stale(hashed)
+            with pytest.raises(Fault): vault.open(corrupt, b"context")
+
+        with pytest.raises(Fault): vault.open(text, b"different")
+        with pytest.raises(Fault): vault.open_bytes(frame[:-1], b"context")
+        with pytest.raises(Fault): vault.open_bytes(frame + b"x", b"context")
+
+def test_legacy_ciphertexts_remain_readable_and_upgrade_explicitly () -> None:
+
+    key   = Key("old.key", bytes(range(32)))
+    vault = Crypto()
+
+    vault.setup([key])
+
+    nonce  = bytes(range(12))
+    body   = AESGCM(key.secret).encrypt(nonce, b"legacy", b"bound")
+    text   = "v1.old.key." + base64.urlsafe_b64encode(nonce + body).rstrip(b"=").decode()
+    binary = b"E1" + bytes((len(key.id),)) + key.id.encode() + nonce + body
+
+    assert vault.open(text, b"bound") == b"legacy" and vault.open_bytes(binary, b"bound") == b"legacy"
+    assert Sealed.decode(text).encode() == text and vault.stale(text)
+    assert vault.open(vault.rotate(text, b"bound"), b"bound") == b"legacy"
+    assert vault.rotate(text, b"bound").startswith("v2.0.old.key.")
+
+def test_options_are_isolated_and_input_limits_are_bytes () -> None:
+
+    vault = Crypto()
+    first = vault.key("first")
+
+    vault.setup([first])
+
+    tiny = vault.options(cipher="chacha20-poly1305", limit=8)
+
+    assert vault.describe()["algorithm"] == "aes-gcm" and tiny.describe()["algorithm"] == "chacha20-poly1305"
+    assert tiny.open(tiny.seal("é" * 4)) == ("é" * 4).encode()
+
+    for plain in ("é" * 5, b"x" * 9, "x" * 9):
+
+        for operation in (tiny.seal, tiny.seal_bytes, tiny.hash):
+
+            with pytest.raises(Fault) as limited: operation(plain)
+
+            assert limited.value.reason == "crypto.size"
+
+    with pytest.raises(Fault): tiny.open(vault.seal(b"x" * 9))
+    with pytest.raises(Fault): tiny.open_bytes(vault.seal_bytes(b"x" * 9))
+    with pytest.raises(Fault): tiny.seal("ok", b"x" * 9)
+
+    vault.setup([vault.key("second")])
+
+    assert tiny.current() == first and vault.current().id == "second"
+
+    for limit in (0, -1, True, 2 ** 31):
+
+        with pytest.raises(Fault): vault.options(limit=limit)
+
+    for algorithm in ("", "aes-cbc", "xor"):
+
+        with pytest.raises(Fault): vault.options(cipher=algorithm)
+
+def test_boundary_failures_are_typed_and_do_not_expand_fixed_inputs () -> None:
+
+    vault = Crypto()
+
+    vault.setup([vault.key("key")])
+
+    inputs: tuple[Any, ...] = (None, 12, [], True)
+
+    for value in inputs:
+
+        for operation in (vault.hash, vault.seal, vault.seal_bytes):
+
+            with pytest.raises(Fault) as refused: operation(value)
+
+            assert refused.value.reason == "crypto.data"
+
+        assert not vault.attested("x", value, bytes(32))
+        assert not vault.check("x", value) and not vault.verify("x", value)
+
+    for value in ("x" * 1000000, "k:" + "A" * 1000000):
+
+        with pytest.raises(Fault) as invalid: vault.parse_key(value)
+
+        assert invalid.value.reason == "crypto.key"
+        assert not vault.attested("x", value, bytes(32))
+
+    prior = vault.current()
+
+    badkeys: tuple[Any, ...] = ([object()], [prior, prior], [], [prior] * 257)
+
+    for keys in badkeys:
+
+        with pytest.raises(Fault): vault.setup(keys)
+
+        assert vault.current() == prior
+
+def test_streaming_hashes_are_owned_and_copyable () -> None:
+
+    for algorithm in ("sha256", "blake3", "sha512"):
+
+        stream = crypto.hasher(algorithm)
+        left   = stream.update("hello ").copy().update("left")
+        right  = stream.update("right")
+
+        assert isinstance(stream, Hasher)
+        assert left.hexdigest() == crypto.hash("hello left", algorithm)
+        assert right.hexdigest() == crypto.hash("hello right", algorithm)
+        assert right.digest().hex() == right.hexdigest()
+        assert right.hexdigest() == right.hexdigest()
+        assert crypto.check("hello left", left.hexdigest(), algorithm)
+
+    stream = crypto.options(limit=4).hasher("sha256")
+
+    for _ in range(1000): stream.update(b"abcd")
+
+    assert stream.hexdigest() == hashlib.sha256(b"abcd" * 1000).hexdigest()
+
+    with pytest.raises(Fault): stream.update(b"abcde")
+
+def test_key_rotation_publishes_one_snapshot_under_concurrency () -> None:
+
+    vault = Crypto()
+    left  = Key("left", b"a" * 32)
+    right = Key("right", b"b" * 32)
+    gate  = Barrier(3)
+
+    vault.setup([left, right])
+
+    def rotate () -> None:
+
+        gate.wait()
+
+        for index in range(400): vault.setup([left, right], "left" if index % 2 else "right")
+
+    def consume () -> None:
+
+        gate.wait()
+
+        for _ in range(1000):
+
+            assert vault.open(vault.seal(b"payload")) == b"payload"
+            assert vault.open_bytes(vault.seal_bytes(b"payload")) == b"payload"
+
+    with ThreadPoolExecutor(max_workers=3) as workers:
+
+        futures = [workers.submit(rotate), workers.submit(consume), workers.submit(consume)]
+
+        for future in futures: future.result(timeout=20)
+
+def test_keyring_is_not_published_while_a_provider_is_still_constructing ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    vault = Crypto()
+    first = Key("first", b"a" * 32)
+    second = Key("second", b"b" * 32)
+    entered, release = Event(), Event()
+    module = importlib.import_module("engine.crypto.cipher")
+
+    vault.setup([first])
+
+    def delayed ( secret: bytes ) -> AESGCM:
+
+        if secret == second.secret:
+
+            entered.set()
+            assert release.wait(5)
+
+        return AESGCM(secret)
+
+    monkeypatch.setattr(module, "AESGCM", delayed)
+
+    with ThreadPoolExecutor(max_workers=1) as worker:
+
+        pending = worker.submit(vault.setup, [second])
+
+        try:
+
+            assert entered.wait(5)
+            assert vault.current() == first
+            assert vault.open(vault.seal("during setup")) == b"during setup"
+
+        finally: release.set()
+
+        pending.result(timeout=5)
+
+    assert vault.current() == second
+    assert vault.open(vault.seal("after setup")) == b"after setup"
+
+def test_unsupported_provider_preserves_the_previous_keyring ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    module = importlib.import_module("engine.crypto.cipher")
+    vault = Crypto()
+    key = vault.key("held")
+
+    vault.setup([key])
+
+    def missing ( secret: bytes ) -> AESGCM:
+
+        raise module.UnsupportedAlgorithm("unavailable")
+
+    monkeypatch.setattr(module, "AESGCM", missing)
+
+    with pytest.raises(Fault) as refused: vault.setup([vault.key("replacement")])
+
+    assert refused.value.reason == "crypto.algorithm" and refused.value.code is Code.UNAVAILABLE
+    assert vault.current() == key and vault.open(vault.seal("preserved")) == b"preserved"
+
+@pytest.mark.parametrize("algorithm", ["sha256", "sha384", "sha512", "sha3_256", "blake2b"])
+@pytest.mark.parametrize("chunks", [[], [b""], [b"a", b"\x00\xff", "عربي"], [b"abcd"] * 40])
+def test_streaming_authentication_matches_independent_hmac ( algorithm: str, chunks: list[bytes | str] ) -> None:
+
+    key    = b"k" * 32
+    vault  = Crypto()
+    signer = vault.signer(key, algorithm)
+    raw    = b"".join(chunk.encode() if isinstance(chunk, str) else chunk for chunk in chunks)
+    want   = hmac.new(key, raw, algorithm)
+
+    for chunk in chunks: assert signer.update(chunk) is signer
+
+    assert signer.digest() == want.digest() and signer.hexdigest() == want.hexdigest()
+    assert signer.check(want.digest()) and signer.check(want.hexdigest())
+    assert vault.verify(raw, signer.digest(), key, algorithm)
+    assert vault.verify(raw, signer.hexdigest(), key, algorithm)
+    assert not signer.check(want.digest() + b"\x00") and not signer.check(want.hexdigest().upper())
+    assert not signer.check("") and not signer.check("\ud800") and not signer.check("é")
+    assert not signer.check(want.hexdigest() + "0") and not signer.check(b"x" * 513)
+    assert not signer.check(bytes([want.digest()[0] ^ 1]) + want.digest()[1:])
+    assert not vault.verify(raw + b"x", signer.digest(), key, algorithm)
+    assert not vault.verify(raw, signer.digest(), b"other", algorithm)
+    assert signer.check(want.digest()) and signer.copy().update(b"tail").check(hmac.digest(key, raw + b"tail", algorithm))
+
+def test_streaming_key_snapshot_and_forks_are_independent () -> None:
+
+    vault = Crypto()
+    first = Key("first", b"a" * 32)
+    other = Key("other", b"b" * 32)
+
+    vault.setup([first])
+
+    root = vault.signer().update(b"prefix")
+
+    vault.setup([other])
+
+    assert root.check(hmac.digest(first.secret, b"prefix", "sha256"))
+    assert not root.check(vault.mac(b"prefix"))
+
+    def branch ( number: int ) -> bytes:
+
+        return root.copy().update(str(number)).digest()
+
+    with ThreadPoolExecutor(max_workers=4) as pool: signed = list(pool.map(branch, range(40)))
+
+    for number, value in enumerate(signed):
+        assert value == hmac.digest(first.secret, f"prefix{number}".encode(), "sha256")
+
+    assert root.check(hmac.digest(first.secret, b"prefix", "sha256"))
+    assert root.update(b"tail").check(hmac.digest(first.secret, b"prefixtail", "sha256"))
+
+def test_streaming_authentication_bounds_leave_state_unchanged () -> None:
+
+    wrong: Any
+    vault = Crypto()
+
+    vault.setup([Key("held", b"k" * 32)])
+
+    tiny   = vault.options(limit=4)
+    signer = tiny.signer()
+    raw    = b"abcd" * 100
+
+    for _ in range(100): signer.update(b"abcd")
+
+    assert signer.check(hmac.digest(vault.current().secret, raw, "sha256"))
+
+    for wrong, reason in ((b"abcde", "crypto.size"), ("ééé", "crypto.size"), ("\ud800", "crypto.encoding"), (None, "crypto.data")):
+
+        with pytest.raises(Fault) as refused: signer.update(wrong)
+
+        assert refused.value.reason == reason
+        assert signer.check(hmac.digest(vault.current().secret, raw, "sha256"))
+
+    for wrong in ("", b""):
+
+        with pytest.raises(Fault) as empty: tiny.signer(wrong)
+
+        assert empty.value.reason == "crypto.secret"
+
+    with pytest.raises(Fault) as secret: tiny.signer(b"12345")
+
+    assert secret.value.reason == "crypto.size"
+
+    for name in NAMES:
+
+        with pytest.raises(Fault) as bad: tiny.signer(b"k", name)
+
+        assert bad.value.reason == "crypto.algorithm"
+
+    for wrong in (None, 1, [], bytearray(b"x")):
+
+        assert not signer.check(wrong) and not tiny.verify(b"a", wrong, b"k")
+
+    for limit in (True, 0, -1, 2 ** 31):
+
+        with pytest.raises(Fault) as bounded: Hasher.keyed(b"k", limit=limit)
+
+        assert bounded.value.reason == "crypto.limit"
+
+def test_digest_checks_do_not_consume_the_stream () -> None:
+
+    for algorithm in ("blake3", "sha256", "sha512", "sha3_256"):
+
+        stream = crypto.hasher(algorithm).update("ab")
+
+        assert stream.check(crypto.hash("ab", algorithm))
+        assert stream.check(bytes.fromhex(crypto.hash("ab", algorithm)))
+        assert not stream.check("é") and not stream.check("\ud800") and not stream.check("0" * 513)
+        assert stream.update("c").check(crypto.hash("abc", algorithm))
+
+@pytest.mark.parametrize("size", [0, 1, 31, 32, 33, 65536])
+def test_text_decoding_keeps_public_values_and_legacy_bytes ( size: int ) -> None:
+
+    vault = Crypto()
+    key   = Key("dots.in.name", b"k" * 32)
+    raw   = b"x" * size
+    nonce = bytes(range(12))
+    body  = AESGCM(key.secret).encrypt(nonce, raw, b"aad")
+
+    vault.setup([key])
+
+    old = "v1." + key.id + "." + base64.urlsafe_b64encode(nonce + body).decode().rstrip("=")
+    new = vault.seal(raw, b"aad")
+
+    for text in (old, new):
+
+        record = Sealed.decode(text, limit=max(1, size))
+
+        assert type(record.nonce) is bytes and type(record.body) is bytes
+        assert record.encode() == text and vault.open(text, b"aad") == raw
+
+        with pytest.raises(Fault) as wrong: vault.open(text, b"other")
+
+        assert wrong.value.reason == "crypto.tampered"
+
+        if size > 1:
+
+            with pytest.raises(Fault) as limit: vault.options(limit=size - 1).open(text, b"aad")
+
+            assert limit.value.reason == "crypto.sealed"

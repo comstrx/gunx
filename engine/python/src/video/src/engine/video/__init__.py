@@ -1,7 +1,7 @@
-from .arch import Asset, Playback, Preset, Probe, RENDITIONS, Track
-from .cloudflare import Cloudflare
-from .driver import Driver
-from .local import Local
+lazy from .arch import Asset, Playback, Preset, Probe, RENDITIONS, Track
+lazy from .cloudflare import Cloudflare
+lazy from .driver import Driver
+lazy from .local import Local
 from .videos import Videos
 
 video = Videos()

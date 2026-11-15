@@ -17,6 +17,7 @@ test:core:str:tests-and-rewrites () {
     @fails core:str:starts hello lo
     @eq "$(core:str:replace 'a.b.c' . /)" 'a/b/c'
     @eq "$(core:str:replace abc '' x)" abc
+    @eq "$(core:str:replace 'a<b' '<' '&lt;')" 'a&lt;b' 'an ampersand in the replacement stays literal'
 
 }
 test:core:str:splits-and-joins () {

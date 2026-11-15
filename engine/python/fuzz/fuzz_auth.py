@@ -10,7 +10,7 @@ from functools import partial
 from hypothesis import HealthCheck, given, settings, strategies as st
 from pathlib import Path
 from typing import Any, cast
-import asyncio, fnmatch
+import asyncio, fnmatch, os
 
 type Made[T] = T | Fault
 
@@ -29,7 +29,7 @@ CODES    = st.one_of(st.from_regex(r"[0-9]{4,8}", fullmatch=True), st.text(max_s
 
 loop = asyncio.new_event_loop()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 crypto.setup([crypto.key("k1")])
 token.setup("fuzz-secret-that-is-long-enough-000000001")
 
@@ -159,7 +159,7 @@ def codes ( subject: str, other: str, guess: Any, wrongs: int ) -> None:
     store = Memory()
     auth  = Auth()
 
-    auth.setup(Cache(store), fixed_code="246810")
+    auth.setup(Cache(store), fixed_code="246810", testing=True)
 
     otp = run(tried(auth.otp(subject)))
 

@@ -1,9 +1,11 @@
-from engine.rand import rand
+from engine.rand import Rand, rand
 from engine.test import Bench
+import tracemalloc
 
 bench   = Bench()
 deck    = list(range(52))
 weights = [float(card + 1) for card in deck]
+wide    = "".join(chr(point) for point in range(1024, 1324))
 
 def quick () -> None: rand.quick(8)
 
@@ -53,3 +55,39 @@ bench.measure("rand.uuid", uuid)
 bench.measure("rand.uuid7", uuid7)
 bench.measure("rand.ulid", ulid)
 bench.measure("rand.constant_equal", equal)
+
+
+bench.measure("rand.bits", lambda: rand.bits(128))
+bench.measure("rand.below", lambda: rand.below(1000))
+bench.measure("rand.uniform", lambda: rand.uniform(-100, 100))
+bench.measure("rand.integer.step", lambda: rand.integer(0, 1000, 5))
+bench.measure("rand.choices.weighted", lambda: rand.choices(deck, 100, weights=weights), rounds=1000)
+bench.measure("rand.sample.large", lambda: rand.sample(range(100_000), 5), rounds=1000)
+bench.measure("rand.sample.counts", lambda: rand.sample("ab", 5, counts=[10 ** 9, 10 ** 9]), rounds=1000)
+bench.measure("rand.string.large", lambda: rand.string(4096), rounds=1000)
+bench.measure("rand.string.wide", lambda: rand.string(16, wide))
+
+for name, work in (
+    ("string4096", lambda: rand.string(4096)),
+    ("sample100k", lambda: rand.sample(range(100_000), 5)),
+    ("shuffle20k", lambda: rand.shuffle(range(20_000))),
+):
+
+    tracemalloc.start()
+    work()
+    retained, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    print(f"rand.{name} retained_bytes={retained} peak_bytes={peak}")
+
+secure = Rand()
+small_population = tuple(range(30))
+large_population = tuple(range(1000))
+
+bench.measure("rand.choices.secure100", lambda: secure.choices(small_population, 100), rounds=2000)
+bench.measure("rand.choices.secure1000", lambda: secure.choices(large_population, 1000), rounds=500)
+bench.measure("rand.string.unicode", lambda: secure.string(20, "αβγδεζηθ"), rounds=5000)
+
+bench.measure("rand.constant_equal.bytes", lambda: rand.constant_equal(b"a" * 64, b"a" * 64))
+bench.measure("rand.constant_equal.unicode", lambda: rand.constant_equal("عربي", "عربي"))
+bench.measure("rand.constant_equal.mixed", lambda: rand.constant_equal("ascii", b"ascii"))

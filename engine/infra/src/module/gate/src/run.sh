@@ -2,6 +2,7 @@ declare -ga GATE_TYPES=( deps check lint test safety audit quality security twin
 declare -ga GATE_DEFAULT=( deps check lint test safety audit quality security twins )
 declare -ga GATE_ENGINE_ONLY=( audit fuzz )
 declare -ga GATE_FRAGMENT_ONLY=( twins )
+declare -ga GATE_RESULTS=()
 
 module:gate:run () {
 
@@ -65,6 +66,8 @@ module:gate:each () {
 
     done
 
+    module:gate:summary
+
     (( ${#failed[@]} == 0 )) || { @err "A gate failed: $(core:str:join ', ' "${failed[@]}")"; return; }
 
 }
@@ -117,8 +120,8 @@ module:gate:fits () {
 }
 module:gate:one () {
 
-    local root="${1}" part="${2}" product="${3}" wanted="${4}" seconds="${5}" pass="${6}" home="" chain="" type="" status=0 ran=""
-    local -a types=()
+    local root="${1}" part="${2}" product="${3}" wanted="${4}" seconds="${5}" pass="${6}" home="" chain="" type="" state="" ran="" status=0 started=0 index=0
+    local -a types=() broken=()
 
     home="$(module:gate:home "${root}" "${part}" "${product}")" || return
     [[ -d "${home}" ]] || { @err "Not a directory: ${home}"; return; }
@@ -131,46 +134,126 @@ module:gate:one () {
 
     [[ "${types[*]}" != deps || "${wanted}" == deps ]] || { @debug "deps alone prepares nothing; ${part} skips it"; types=(); }
 
-    for type in "${types[@]}"; do
+    for (( index = 0; index < ${#types[@]}; index++ )); do
+
+        type="${types[index]}"
 
         @info "gate ${part}:${type} in ${home} (${seconds}s)"
 
         status=0
+        started="${EPOCHSECONDS}"
+
         module:gate:budget "${home}" "${seconds}" "module:gate:${chain}:${type}" || status=$?
 
-        if (( status == 0 )); then ran+="${ran:+ }${type}"; continue; fi
+        if (( status == 0 )); then
 
-        (( status != 124 )) || @warn "gate ${part}:${type} ran out of its ${seconds}s budget"
+            module:gate:record "${part}" "${type}" passed "${started}"
+            ran+="${ran:+ }${type}"
 
-        if [[ "${pass}" == true ]]; then
-
-            @warn "gate ${part}:${type} failed with ${status}; passing as asked"
-
-            ran+="${ran:+ }${type}!"
             continue
 
         fi
 
-        @err "gate ${part} failed at ${type}"
+        state=failed
+        (( status != 124 )) || { state=timed-out; @warn "gate ${part}:${type} ran out of its ${seconds}s budget"; }
+
+        module:gate:record "${part}" "${type}" "${state}" "${started}"
+
+        if [[ "${pass}" == true ]]; then
+
+            @warn "gate ${part}:${type} ${state} with ${status}; going on as asked"
+
+            broken+=( "${type}" )
+            continue
+
+        fi
+
+        for type in "${types[@]:index + 1}"; do
+            module:gate:record "${part}" "${type}" not-run "${EPOCHSECONDS}"
+        done
+
+        @err "gate ${part} failed at ${types[index]}"
         return
 
     done
 
+    (( ${#broken[@]} == 0 )) || { @warn "gate ${part} failed at ${broken[*]}; passing as asked"; return 0; }
+
     @succ "gate ${part} passed: ${ran:-nothing to run}"
+
+}
+module:gate:record () {
+
+    local part="${1}" type="${2}" state="${3}" started="${4}"
+
+    GATE_RESULTS+=( "${part}"$'\t'"${type}"$'\t'"${state}"$'\t'"$(( EPOCHSECONDS - started ))" )
+
+}
+module:gate:summary () {
+
+    local row="" part="" type="" state="" seconds="" counts=""
+    local -A tally=()
+
+    (( ${#GATE_RESULTS[@]} > 0 )) || return 0
+
+    core:ui:section "Gates"
+
+    for row in "${GATE_RESULTS[@]}"; do
+
+        IFS=$'\t' read -r part type state seconds <<< "${row}"
+
+        printf '%s:%s\t%s\t%ss\n' "${part}" "${type}" "${state}" "${seconds}"
+
+    done | core:ui:grid
+
+    for state in passed failed timed-out not-run; do
+
+        for row in "${GATE_RESULTS[@]}"; do
+            [[ "${row}" != *$'\t'"${state}"$'\t'* ]] || tally["${state}"]=$(( ${tally[${state}]:-0} + 1 ))
+        done
+
+        counts+="${counts:+ }${state}=${tally[${state}]:-0}"
+
+    done
+
+    printf '\n  %s\n' "${counts}"
+
+    module:gate:report
+
+}
+module:gate:report () {
+
+    local row="" part="" type="" state="" seconds=""
+
+    [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] || return 0
+
+    {
+        printf '| Part | Gate | Result | Seconds |\n| --- | --- | --- | ---: |\n'
+
+        for row in "${GATE_RESULTS[@]}"; do
+            IFS=$'\t' read -r part type state seconds <<< "${row}"
+            printf '| %s | %s | %s | %s |\n' "${part}" "${type}" "${state}" "${seconds}"
+        done
+    } >> "${GITHUB_STEP_SUMMARY}" || @warn "Cannot write the step summary"
+
+}
+module:gate:share () {
+
+    local count="${1:-1}" share=0
+
+    if ! core:num:natural "${count}" || (( count == 0 )); then @err "A share needs a positive count: ${count}"; return; fi
+    core:num:natural "${GATE_SECONDS:-}" || { @err "GATE_SECONDS is not a number of seconds"; return; }
+
+    share=$(( GATE_SECONDS * 9 / 10 / count ))
+    (( share > 0 )) || share=1
+
+    @print "${share}"
 
 }
 module:gate:budget () {
 
-    local home="${1}" seconds="${2}" verb="${3}" pid=0 status=0
+    local home="${1}" seconds="${2}" verb="${3}"
 
-    ( cd -- "${home}" && GATE_SECONDS="${seconds}" "${verb}" ) &
-    pid=$!
-
-    core:process:wait "${pid}" "${seconds}" 2>/dev/null \
-        || { core:process:stop "${pid}" 5; return 124; }
-
-    wait "${pid}" || status=$?
-
-    return "${status}"
+    GATE_SECONDS="${seconds}" core:process:timeout "${seconds}" core:process:within "${home}" "${verb}"
 
 }

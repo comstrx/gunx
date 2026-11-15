@@ -1,0 +1,34 @@
+export type Source = { getRandomValues: ( data: Uint8Array<ArrayBuffer> ) => unknown; randomUUID?: (() => string) | undefined };
+export type Track = { time: number; tail: Uint8Array<ArrayBuffer> };
+export type Charset = "alpha" | "upper" | "lower" | "digits" | "alnum" | "hex" | "safe";
+export type PasswordRules = {
+    length?: number | undefined;
+    lower?: boolean | undefined;
+    upper?: boolean | undefined;
+    digits?: boolean | undefined;
+    symbols?: boolean | string | undefined;
+    safe?: boolean | undefined;
+};
+export type Random = {
+    next: () => number;
+    int: ( low: number, high: number ) => number;
+    float: ( low?: number, high?: number, digits?: number ) => number;
+    boolean: ( truth?: number ) => boolean;
+    chance: ( percent: number ) => boolean;
+    index: ( length: number ) => number;
+    pick: <T>( items: readonly T[] ) => T | undefined;
+    pickMany: <T>( items: readonly T[], count: number ) => T[];
+    shuffle: <T>( items: readonly T[] ) => T[];
+    weighted: <T>( items: readonly { item: T; weight: number }[] ) => T | undefined;
+    bytes: ( size: number ) => Uint8Array<ArrayBuffer>;
+    uuid: () => string;
+    letters: ( length: number, alphabet: string ) => string;
+    string: ( length: number, charset?: Charset ) => string;
+    hex: ( length: number ) => string;
+    digits: ( length: number ) => string;
+    password: ( rules?: PasswordRules ) => string;
+    gaussian: ( mean?: number, deviation?: number ) => number;
+    jitter: ( value: number, ratio?: number ) => number;
+    color: () => string;
+    date: ( from: Date | number, to: Date | number ) => Date;
+};

@@ -3,7 +3,7 @@ from engine.log import log
 from engine.test import Bench
 from engine.view import View
 from pathlib import Path
-import contextlib
+import contextlib, os
 
 bench = Bench()
 view  = View()
@@ -14,7 +14,7 @@ page  = "{% extends 'base.html' %}{% block body %}{% for row in rows if row.tota
 bomb  = "{% for a in range(99999) %}{% for b in range(99999) %}x{% endfor %}{% endfor %}"
 text  = "Dear {{ name | title }}, {{ items | join(', ') }} ship on {{ day }}."
 
-log.setup("info", "json", Path("/dev/null"))
+log.setup("info", "json", Path(os.devnull))
 view.setup(templates={
     "mail.html": mail, "foot.html": "<hr>{{ brand }}", "table.html": table, "base.html": "<main>{% block body %}{% endblock %}</main>",
     "page.html": page, "note.txt": text,

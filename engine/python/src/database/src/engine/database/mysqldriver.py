@@ -8,14 +8,15 @@ from engine.error import Code, Fault
 from engine.parse import parse
 from engine.json import json
 from .arch import (
-    Isolation, JSON, LEVELS, Live, MODE, MYSQL_CHECK, MYSQL_COLUMNS, MYSQL_FOREIGN, MYSQL_INDEXES, MYSQL_LOCKED,
+    Isolation, JSON, LEVELS, Live, LOOPBACK, MODE,
+    MYSQL_CHECK, MYSQL_COLUMNS, MYSQL_FOREIGN, MYSQL_INDEXES, MYSQL_LOCKED,
     MYSQL_SERIAL, MYSQL_SQL, MYSQL_UNIQUE, REQUIRED,
 )
 from .dialect import Dialect
 from .driver import Driver
 from .mysql import MYSQL
 from .vector import Vector
-import inspect
+import asyncio, inspect, ssl
 
 if TYPE_CHECKING:
 
@@ -51,13 +52,17 @@ class MysqlDriver(Driver):
 
         self.failures = (asyncmy.errors.MySQLError, OSError, TimeoutError)
 
-        address = parse.url(self._url, schemes=("mysql",))
+        address = parse.url(self._url, schemes=("mysql", "mariadb"))
+
+        secure = self._ssl
+
+        if secure is None and address.host not in LOOPBACK: secure = ssl.create_default_context()
 
         self._pool = await asyncmy.create_pool(
             host=address.host, port=address.port or 3306, user=address.user or "",
             password=address.password or "", db=address.path.strip("/") or None, minsize=self._min,
             maxsize=self._max, autocommit=True, charset=self._charset, connect_timeout=self._wait,
-            cursor_cls=DictCursor, ssl=self._ssl, program_name=self._application,
+            cursor_cls=DictCursor, ssl=secure, program_name=self._application,
             init_command=f"SET SESSION sql_mode = '{MODE}', time_zone = '+00:00'",
         )
 
@@ -91,12 +96,16 @@ class MysqlDriver(Driver):
 
         if self._pool is None: raise Fault(Code.UNAVAILABLE, "The database is not connected", "database.setup")
 
-        return await self._pool.acquire()
+        async with asyncio.timeout(wait): return await self._pool.acquire()
 
     @override
     async def release ( self, connection: Any ) -> None:
 
-        if self._pool is None: return
+        if self._pool is None:
+
+            connection.close()
+
+            return
 
         result = self._pool.release(connection)
 
@@ -105,30 +114,49 @@ class MysqlDriver(Driver):
     @override
     async def execute ( self, connection: Any, sql: str, params: Sequence[Any], timeout: float | None = None ) -> int:
 
-        async with connection.cursor() as cursor: return int(await cursor.execute(sql, tuple(params)) or 0)
+        async with self._timed_(connection, timeout), connection.cursor() as cursor:
+
+            return int(await cursor.execute(sql, tuple(params)) or 0)
 
     @override
     async def fetch (
         self, connection: Any, sql: str, params: Sequence[Any], timeout: float | None = None,
     ) -> list[Mapping[str, Any]]:
 
-        async with connection.cursor() as cursor:
+        async with self._timed_(connection, timeout):
 
-            await cursor.execute(sql, tuple(params))
+            async with connection.cursor() as cursor:
 
-            rows  = await cursor.fetchall()
-            jsons = { column[0] for column in (cursor.description or ()) if column[1] == JSON }
+                await cursor.execute(sql, tuple(params))
 
-        return [{ key: self._decode_(key in jsons, value) for key, value in row.items() } for row in rows]
+                rows  = await cursor.fetchall()
+                jsons = { column[0] for column in (cursor.description or ()) if column[1] == JSON }
+
+            return [{ key: self._decode_(key in jsons, value) for key, value in row.items() } for row in rows]
 
     @override
     async def many (
         self, connection: Any, sql: str, rows: Sequence[Sequence[Any]], timeout: float | None = None,
     ) -> int:
 
-        async with connection.cursor() as cursor: await cursor.executemany(sql, [tuple(row) for row in rows])
+        async with self._timed_(connection, timeout):
 
-        return len(rows)
+            async with connection.cursor() as cursor: await cursor.executemany(sql, [tuple(row) for row in rows])
+
+            return len(rows)
+
+    @asynccontextmanager
+    async def _timed_ ( self, connection: Any, seconds: float | None ) -> AsyncIterator[None]:
+
+        try:
+
+            async with asyncio.timeout(self._wait if seconds is None else seconds): yield
+
+        except (TimeoutError, asyncio.CancelledError):
+
+            connection.close()
+
+            raise
 
     @override
     @asynccontextmanager

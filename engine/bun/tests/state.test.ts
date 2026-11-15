@@ -3,8 +3,14 @@ import * as cache from "engine/cache";
 import * as error from "engine/error";
 import * as event from "engine/event";
 import * as state from "engine/state";
-import { createElement, useState } from "react";
+import { createElement, useRef, useState, useSyncExternalStore } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+
+function binding<T> ( source: state.Source<T>, server?: () => T ): state.Binding<T> {
+
+    return state.bind(source, server, { ref: useRef, read: useSyncExternalStore });
+
+}
 
 type Cart = { items: string[]; coupon: string | undefined };
 type CartActions = { add: ( sku: string ) => void; clear: () => void; apply: ( code: string ) => void };
@@ -234,7 +240,7 @@ describe("state", () => {
     it("bindings select for React and plain code", () => {
 
         const instance = cart.create();
-        const bound = state.bind(instance);
+        const bound = binding(instance);
 
         instance.getState().add("x");
         expect(bound.select(( current ) => current.items.length)).toBe(1);
@@ -251,7 +257,7 @@ describe("state", () => {
         expect(renderToStaticMarkup(createElement(Count))).toBe("1:x");
 
         const flag = event.signal<{ on: boolean } | undefined>(undefined);
-        const watched: state.Binding<{ on: boolean } | undefined> = state.bind(flag satisfies state.Watched<{ on: boolean } | undefined>);
+        const watched: state.Binding<{ on: boolean } | undefined> = binding(flag satisfies state.Watched<{ on: boolean } | undefined>);
         const seen: (boolean | undefined)[] = [];
 
         function Flag (): string {
@@ -265,7 +271,7 @@ describe("state", () => {
         flag.set({ on: true });
         expect(seen).toEqual([true]);
         expect(renderToStaticMarkup(createElement(Flag))).toBe("true");
-        expect(renderToStaticMarkup(createElement(() => String(state.bind(flag, () => ({ on: false })).useState()?.on)))).toBe("false");
+        expect(renderToStaticMarkup(createElement(() => String(binding(flag, () => ({ on: false })).useState()?.on)))).toBe("false");
 
         const shapes: { count: number }[] = [];
 
@@ -1179,7 +1185,7 @@ describe("state", () => {
 
         const bagged = bag(cache.open({ storage: cache.memory() }));
         const server: state.State<Bag, BagActions> = { items: ["server"], user: null, n: -1, ready: true, kept: false, add: () => undefined, put: () => undefined, sign: () => undefined };
-        const bound = state.bind(bagged, () => server);
+        const bound = binding(bagged, () => server);
         const picks: Pick<state.State<Bag, BagActions>, "items" | "n">[] = [];
 
         bagged.getState().add("a");
@@ -1201,7 +1207,7 @@ describe("state", () => {
         expect(bound.select(( current ) => current.items)).toEqual(["a"]);
         expect(bound.select(( current ) => current.n)).toBe(0);
 
-        const plain = state.bind(bagged);
+        const plain = binding(bagged);
 
         expect(renderToStaticMarkup(createElement(() => plain.useSelect(( current ) => current.items.join("|"))))).toBe("a");
         expect(renderToStaticMarkup(createElement(() => String(plain.usePick("n").n)))).toBe("0");
@@ -1290,6 +1296,7 @@ describe("state", () => {
 
         };
         const delayed: cache.Storage = {
+            flush: async () => undefined,
             get: async ( key ) => data.get(key) ?? null,
             set: async ( key, value ) => {
 
@@ -1488,4 +1495,18 @@ describe("state", () => {
         expect([state.shallow({ length: 1, 0: 1 }, [1]), state.shallow([1], { length: 1, 0: 1 })]).toEqual([false, false]);
 
     });
+});
+
+
+it("saved-state inspection is read-only and never guesses a migration", () => {
+
+    const saved = { version: 1, state: { locale: "en" } };
+
+    expect(state.inspect(saved)).toBe(saved.state);
+    expect(state.inspect({ version: 9, state: { locale: "en" } })).toBeUndefined();
+    expect(state.inspect({ version: 0, state: { locale: "en" } })).toBeUndefined();
+    expect(state.inspect({ version: 1, state: null })).toBeUndefined();
+    expect(state.inspect(undefined)).toBeUndefined();
+    expect(() => state.inspect(saved, -1)).toThrow("not a version");
+
 });

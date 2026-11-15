@@ -1,31 +1,31 @@
-from .arch import Operation, Provision, Record
-from .clickhouse import CLICKHOUSE, Clickhouse
-from .clickhousedriver import ClickhouseDriver
-from .cluster import Cluster
-from .column import Column
+lazy from .arch import Operation, Provision, Record
+lazy from .clickhouse import CLICKHOUSE, Clickhouse
+lazy from .clickhousedriver import ClickhouseDriver
+lazy from .cluster import Cluster
+lazy from .column import Column
 from .database import Database
-from .dialect import Dialect
-from .documents import Documents
-from .driver import Driver
-from .index import Index
-from .listener import Listener
-from .memory import Memory
-from .migrator import Migrator
-from .model import Model
-from .mongo import Mongo
-from .mysql import MYSQL, Mysql
-from .mysqldriver import MysqlDriver
+lazy from .dialect import Dialect
+lazy from .documents import Documents
+lazy from .driver import Driver
+lazy from .index import Index
+lazy from .listener import Listener
+lazy from .memory import Memory
+lazy from .migrator import Migrator
+lazy from .model import Model
+lazy from .mongo import Mongo
+lazy from .mysql import MYSQL, Mysql
+lazy from .mysqldriver import MysqlDriver
 from .outbox import Outbox
-from .plan import Plan
-from .postgres import POSTGRES, Postgres
-from .postgresdriver import PostgresDriver
-from .repository import Repository
-from .session import Session
-from .sql import Sql
-from .sqlite import SQLITE, Sqlite
-from .sqlitedriver import SqliteDriver
-from .table import Table
-from .vector import Vector
+lazy from .plan import Plan
+lazy from .postgres import POSTGRES, Postgres
+lazy from .postgresdriver import PostgresDriver
+lazy from .repository import Repository
+lazy from .session import Session
+lazy from .sql import Sql
+lazy from .sqlite import SQLITE, Sqlite
+lazy from .sqlitedriver import SqliteDriver
+lazy from .table import Table
+lazy from .vector import Vector
 
 database = Database()
 outbox   = Outbox(database)

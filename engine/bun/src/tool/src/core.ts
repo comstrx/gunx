@@ -3,12 +3,7 @@ import { type Dirent, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, 
 import { dirname, join } from "node:path";
 import * as error from "engine-error";
 import * as json from "engine-json";
-
-export type Walked = { path: string; relative: string; size: number };
-export type WalkOptions = { extensions?: readonly string[] | undefined; ignore?: readonly string[] | undefined };
-export type Member = { name: string; folder: string; description: string; dependencies: string[] };
-
-type Pending = { folder: string; inside: string; level: number };
+import type { Member, Pending, Walked, WalkOptions } from "./arch.ts";
 
 const skipped: readonly string[] = ["node_modules", ".git", ".next", ".expo", "dist", "build", ".bun", ".cache", ".infra"];
 const deepest = 64;
@@ -132,7 +127,7 @@ export function readJson<T = unknown> ( path: string ): T | undefined {
 }
 export function writeJson ( path: string, value: unknown ): boolean {
 
-    const made = error.attemptSync(() => JSON.stringify(value, undefined, 2));
+    const made = error.attemptSync(() => JSON.stringify(value, ( _key, item: unknown ) => item, 2));
 
     if ( !made.ok || typeof made.value !== "string" ) throw error.fault("internal", "tool.json", { message: `${path}: the value has no json form`, cause: made.ok ? undefined : made.fault.cause });
 

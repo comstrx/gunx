@@ -1,9 +1,9 @@
 import * as adapter from "engine/adapter";
-import * as state from "engine/state";
 import * as world from "engine/world";
 import { useEffect } from "react";
 import { usePreferences } from "@/hooks/use-preferences.ts";
 import { compiled } from "@/specs/runtime.ts";
+import { bind } from "@/stores/bind.ts";
 import { box } from "@/stores/box.ts";
 import { type Palette, palettes } from "@/styles/tokens.ts";
 import type { Direction, Locale } from "@/types/index.ts";
@@ -12,7 +12,7 @@ export type Theme = world.ThemeState<Palette> & { locale: Locale; direction: Dir
 
 export const scheme: world.Theme<Palette> = world.theme({ tokens: palettes(compiled.role.config.themes.brand), box, key: "scheme" });
 
-const bound = state.bind(scheme);
+const bound = bind(scheme);
 
 export function useTheme (): Theme {
 

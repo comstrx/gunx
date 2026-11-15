@@ -1,7 +1,5 @@
 import * as error from "engine-error";
-
-export type Catalog = "countries" | "currencies" | "languages" | "emoji";
-export type Slot<T> = { get: () => T; ready: () => boolean; load: () => Promise<T>; fill: ( value: T ) => void };
+import type { Catalog, Slot } from "./arch.ts";
 
 export const catalogs: readonly Catalog[] = ["countries", "currencies", "languages", "emoji"];
 
@@ -52,11 +50,14 @@ export function slot<T> ( name: Catalog, read: () => Promise<T> ): Slot<T> {
 
                     if ( loading !== asked && value !== undefined ) return value;
 
+                    if ( !Array.isArray(found) || found.length === 0 ) throw new TypeError("a world catalog is a nonempty array");
+
                     value = found;
 
                     return found;
 
                 },
+            ).catch(
                 ( cause: unknown ) => {
 
                     if ( loading === asked ) loading = undefined;

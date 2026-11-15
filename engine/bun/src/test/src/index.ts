@@ -1,4 +1,5 @@
 export { bench, do_not_optimize, run } from "mitata";
-export { type Env, env, globals, type Spy, spy, type Temp, tmp } from "./harness.ts";
-export { type Caller, type Live, type LiveOptions, live } from "./live.ts";
-export { type Logs, logs, tick, until } from "./wait.ts";
+export type { Caller, Env, Live, LiveOptions, Logs, Spy, Temp } from "./arch.ts";
+export { env, globals, spy, tmp } from "./harness.ts";
+export { live } from "./live.ts";
+export { logs, tick, until } from "./wait.ts";

@@ -4,7 +4,13 @@ from engine.date import date
 from engine.error import Code, Fault
 from engine.json import json
 from engine.rand import rand
-from engine.token import Token, token
+from engine.token import Issuer, Jwt, Paseto, Token, token
+from engine.cache import Cache, Memory
+from pathlib import Path
+from typing import cast
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives import serialization
+import asyncio, pyseto
 from engine.token.arch import DIGESTS, LEEWAY, LONGEST, REQUIRED, RESERVED
 from typing import Any
 import base64, hmac, jwt, pytest
@@ -124,7 +130,7 @@ def test_tokens_interoperate_with_the_reference () -> None:
 
         assert jwt.get_unverified_header(made) == { "alg": algorithm, "typ": "JWT" }
         assert found["sub"] == "user-1" and found["kind"] == "access" and found["role"] == "admin" and found["tags"] == ["a", "b"]
-        assert found["exp"] - found["iat"] == 60 and len(found["jti"]) == 16
+        assert found["exp"] - found["iat"] == 60 and len(found["jti"]) == 32
 
         foreign = jwt.encode(claims(role="guest", nbf=int(date.stamp()) - 5), secret, algorithm=algorithm, headers={ "kid": "k1" })
         read    = engine.verify(foreign)
@@ -462,7 +468,7 @@ def test_reserved_claims_stay_with_the_engine () -> None:
     read = token.verify(made)
 
     assert read.subject == "مستخدم-واحد" and read.facts == { "role": "admin", "tenant": None, "nested": { "name": "名前", "list": [1, 2] } }
-    assert read.get("role") == "admin" and read.get("missing", 7) == 7 and len(read.id) == 16
+    assert read.get("role") == "admin" and read.get("missing", 7) == 7 and len(read.id) == 32
 
     assert len({ token.peek(token.issue("u"))["jti"] for _ in range(256) }) == 256
 
@@ -505,3 +511,497 @@ def test_refresh_rotates_and_peek_never_trusts () -> None:
         with pytest.raises(Fault) as garbage: token.peek(text)
 
         assert garbage.value.code is Code.UNAUTHORIZED and garbage.value.reason == "token.invalid", text
+
+def test_key_rotation_retirement_and_audience_are_enforced () -> None:
+
+    keeper = Token()
+
+    keeper.setup(SECRET, issuer="tests", audience="orders")
+    keeper.rotate({ "old": SECRET }, "old")
+
+    old = keeper.issue("u")
+
+    keeper.rotate({ "old": SECRET, "new": "n" * 32 }, "new")
+
+    fresh = keeper.issue("u")
+
+    assert keeper.verify(old).subject == keeper.verify(fresh).subject == "u"
+    assert jwt.decode(fresh, "n" * 32, algorithms=["HS256"], audience="orders", issuer="tests")["sub"] == "u"
+
+    foreign = jwt.encode(claims(aud="billing"), "n" * 32, algorithm="HS256", headers={ "kid": "new" })
+    unknown = jwt.encode(claims(aud="orders"), "n" * 32, algorithm="HS256", headers={ "kid": "../../new" })
+    missing = jwt.encode(claims(aud="orders"), "n" * 32, algorithm="HS256")
+    mixed   = jwt.encode(claims(aud=["orders", 1]), "n" * 32, algorithm="HS256", headers={ "kid": "new" })
+
+    for refused in (foreign, unknown, missing, mixed):
+
+        with pytest.raises(Fault): keeper.verify(refused)
+
+    keeper.rotate({ "new": "n" * 32 }, "new")
+
+    with pytest.raises(Fault): keeper.verify(old)
+    with pytest.raises(Fault): keeper.issue("u", aud="billing")
+    with pytest.raises(Fault): keeper.rotate({ "bad": "short" }, "bad")
+
+    assert keeper.verify(fresh).subject == "u"
+
+
+FORMATS = ("jwt", "paseto", "opaque")
+
+def make_issuer ( format_: str, purpose: str = "access", **options: Any ) -> Issuer:
+
+    key = b"k" * 32 if format_ != "opaque" else None
+
+    return token.options(format=format_, purpose=purpose, secret=key, issuer="tests", **options)
+
+def memory () -> Cache:
+
+    return Cache(Memory())
+
+@pytest.mark.parametrize("format_", FORMATS)
+async def test_scoped_formats_share_issue_verify_without_changing_the_default ( format_: str ) -> None:
+
+    token.setup(SECRET, issuer="legacy")
+    original = token.issue("old")
+    cache    = memory()
+    kwargs: dict[str, Any] = { "store": cache } if format_ == "opaque" else {}
+    access   = make_issuer(format_, ttl=45, audience="receiver", **kwargs)
+    refresh  = make_issuer(format_, purpose="refresh", ttl=120, audience="receiver", **kwargs)
+    made     = await access.issue("u", fingerprint="device", roles=["reader"], nested={ "a": [1, True, None] })
+    read     = await access.verify(made, fingerprint="device")
+
+    assert read.subject == "u" and read.purpose == read.kind == "access"
+    assert read.expires - read.issued == 45 and read.get("roles") == ["reader"]
+    assert read.get("nested") == { "a": [1, True, None] } and read.get("aud") == "receiver"
+    assert token.verify(original).subject == "old" and token.describe()["issuer"] == "legacy"
+    assert access.format == format_ and refresh.purpose == "refresh" and access.ttl == 45
+    assert access.can("verify") and not access.can("invented")
+    assert access.describe()["purpose"] == "access" and "secret" not in access.describe()
+    assert await refresh.issue("u") != made
+
+    with pytest.raises(Fault): await refresh.verify(made, fingerprint="device")
+    with pytest.raises(Fault): await access.verify(made, fingerprint="other")
+    with pytest.raises(Fault): await access.verify(made)
+
+    if format_ == "jwt": assert access.peek(made)["sub"] == "u"
+    else:
+
+        with pytest.raises(Fault) as unsupported: access.peek(made)
+
+        assert unsupported.value.reason == "token.capability"
+
+@pytest.mark.parametrize("format_", FORMATS)
+async def test_scoped_expiry_future_claims_and_wrong_audience ( format_: str ) -> None:
+
+    cache  = memory()
+    kwargs: dict[str, Any] = { "store": cache } if format_ == "opaque" else {}
+    access = make_issuer(format_, audience="receiver", ttl=60, leeway=0, **kwargs)
+    other  = make_issuer(format_, audience="another", **kwargs)
+    start  = datetime(2026, 1, 1, tzinfo=UTC)
+
+    try:
+
+        date.freeze(start)
+        made = await access.issue("u")
+
+        with pytest.raises(Fault): await other.verify(made)
+
+        date.freeze(start + timedelta(seconds=59))
+        assert (await access.verify(made)).subject == "u"
+        date.freeze(start + timedelta(seconds=60))
+
+        with pytest.raises(Fault) as expired: await access.verify(made)
+
+        assert expired.value.reason == "token.expired"
+
+        date.freeze(start - timedelta(seconds=1))
+
+        with pytest.raises(Fault): await access.verify(made)
+
+    finally: date.freeze(None)
+
+@pytest.mark.parametrize("format_", ["jwt", "paseto"])
+async def test_scoped_rotation_is_independent_and_retires_old_keys ( format_: str ) -> None:
+
+    source = make_issuer(format_)
+    first  = source.rotate({ "old": b"a" * 32 }, "old")
+    old    = await first.issue("u")
+    next_  = first.rotate({ "old": b"a" * 32, "new": b"b" * 32 }, "new")
+    fresh  = await next_.issue("u")
+
+    assert (await next_.verify(old)).subject == (await next_.verify(fresh)).subject == "u"
+
+    with pytest.raises(Fault): await first.verify(fresh)
+
+    last = next_.rotate({ "new": b"b" * 32 }, "new")
+
+    with pytest.raises(Fault): await last.verify(old)
+    with pytest.raises(Fault): next_.rotate({ "bad": b"short" }, "bad")
+
+    assert (await next_.verify(fresh)).subject == "u"
+
+async def test_public_paseto_uses_distinct_signing_and_verifying_keys () -> None:
+
+    key = Ed25519PrivateKey.generate()
+    private = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    public  = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    signer  = token.options(format="paseto", secret=private, protection="public", issuer="tests")
+    reader  = token.options(format="paseto", secret=public, protection="public", issuer="tests")
+    made    = await signer.issue("u", role="reader")
+    seen    = await reader.verify(made)
+
+    assert made.startswith("v4.public.") and seen.get("role") == "reader"
+    assert signer.can("issue") and reader.can("verify") and not reader.can("issue")
+    assert reader.can("signed") and not reader.can("encrypted")
+
+    with pytest.raises(Fault) as cannot_sign: await reader.issue("u")
+
+    assert cannot_sign.value.reason == "token.capability"
+    details = reader.describe()["adapter"]
+
+    assert isinstance(details, dict) and "issue" not in details["capabilities"]
+
+    with pytest.raises(Fault): await make_issuer("paseto").verify(made)
+
+    foreign = pyseto.Key.new(4, "public", public)
+    decoded = pyseto.decode(foreign, made)
+    wire    = json.decode(cast("bytes", decoded.payload))
+
+    assert wire["kind"] == "access" and isinstance(wire["exp"], str)
+
+async def test_paseto_bidirectional_interop_uses_rfc3339_and_fixed_version () -> None:
+
+    access = make_issuer("paseto")
+    key    = pyseto.Key.new(4, "local", b"k" * 32)
+    made   = await access.issue("u", nbf=int(date.stamp()) - 1)
+    found  = json.decode(cast("bytes", pyseto.decode(key, made).payload))
+
+    assert found["sub"] == "u" and found["iat"].endswith("Z") and found["exp"].endswith("Z")
+
+    raw = { **claims(), "iat": date.iso(date.now() - timedelta(seconds=10)), "exp": date.iso(date.now() + timedelta(seconds=60)) }
+    foreign = pyseto.encode(key, json.encode(raw)).decode()
+
+    assert (await access.verify(foreign)).subject == "u"
+
+    for changed in (made.replace("v4.", "v3.", 1), made + "=", made + ".", made + ".YQ", made.replace("local", "public", 1)):
+
+        with pytest.raises(Fault): await access.verify(changed)
+
+    for instant_ in (1, True, None, "2026-01-01", "2026-01-01T00:00:00", "2026-99-99T00:00:00Z"):
+
+        broken = pyseto.encode(key, json.encode({ **raw, "exp": instant_ })).decode()
+
+        with pytest.raises(Fault): await access.verify(broken)
+
+def test_all_official_paseto_v4_vectors () -> None:
+
+    vectors = json.decode((Path(__file__).parent / "data" / "token-v4.json").read_bytes())
+
+    assert len(vectors["tests"]) == 17
+
+    for item in vectors["tests"]:
+
+        public = "public-key-pem" in item
+        key = item["public-key-pem"] if public else bytes.fromhex(item["key"])
+        adapter = Paseto(key, "public" if public else "local", assertion=item["implicit-assertion"].encode())
+
+        if item["expect-fail"]:
+
+            with pytest.raises(Fault): adapter.decode(item["token"])
+
+            continue
+
+        expected = json.decode(item["payload"])
+
+        for name in ("exp", "iat", "nbf"):
+
+            if name in expected: expected[name] = date.parse(expected[name]).timestamp()
+
+        assert adapter.decode(item["token"]) == expected, item["name"]
+
+        if item["implicit-assertion"]:
+
+            other = Paseto(key, "public" if public else "local", assertion=b"wrong")
+
+            with pytest.raises(Fault): other.decode(item["token"])
+
+async def test_opaque_records_are_detached_scoped_and_never_store_plain_tokens () -> None:
+
+    cache  = memory()
+    access = make_issuer("opaque", store=cache)
+    nested = { "x": [1] }
+    made   = await access.issue("u", nested=nested)
+    key    = access.key(made)
+    stored = await cache.get(key)
+
+    assert type(stored) is bytes and made not in key and made.encode() not in stored
+    assert key.endswith(token.hash_opaque(made))
+    nested["x"].append(2)
+
+    seen = await access.verify(made)
+
+    assert seen.get("nested") == { "x": [1] }
+    seen.facts["nested"]["x"].append(3)
+    assert (await access.verify(made)).get("nested") == { "x": [1] }
+
+    other = token.options(format="opaque", purpose="reset", issuer="tests", store=cache)
+
+    with pytest.raises(Fault): await other.verify(made)
+
+    same = make_issuer("opaque", store=cache)
+
+    assert (await same.verify(made)).id == seen.id
+    await cache.forget(key)
+
+    with pytest.raises(Fault): await access.verify(made)
+
+    with pytest.raises(Fault): access.rotate({ "x": b"k" * 32 }, "x")
+
+@pytest.mark.parametrize("format_", FORMATS)
+async def test_scoped_size_and_input_refusals ( format_: str ) -> None:
+
+    kwargs: dict[str, Any] = { "store": memory() } if format_ == "opaque" else {}
+    access = make_issuer(format_, **kwargs)
+
+    subjects: list[object] = [None, 1, True, [], "s" * (LONGEST + 1)]
+
+    for subject in subjects:
+
+        with pytest.raises(Fault): await access.issue(cast("str", subject))
+
+    for lifetime in (True, "60", 1.5, 2 ** 63):
+
+        with pytest.raises(Fault): await access.issue("u", ttl=cast("int", lifetime))
+
+    with pytest.raises(Fault): await access.issue("u", data="x" * LONGEST)
+    with pytest.raises(Fault): await access.issue("u", kind="reset")
+
+    inputs: list[object] = [None, 1, [], "", "x" * (LONGEST + 1), "é", "a.b.c"]
+
+    for raw in inputs:
+
+        with pytest.raises(Fault): await access.verify(cast("str", raw))
+
+@pytest.mark.parametrize("settings_", [
+    { "format": "unknown" }, { "purpose": "" }, { "purpose": [] }, { "issuer": "" }, { "issuer": True },
+    { "ttl": True }, { "ttl": 0 }, { "ttl": -1 }, { "ttl": 2 ** 63 }, { "leeway": -1 }, { "leeway": True },
+    { "audience": "" }, { "audience": [] }, { "format": "opaque" }, { "format": "paseto", "secret": b"x" * 31 },
+    { "format": "paseto", "secret": b"x" * 33 }, { "format": "paseto", "secret": b"x" * 32, "algorithm": "HS256" },
+    { "format": "jwt", "protection": "local" }, { "store": memory() },
+])
+def test_scoped_configuration_fails_before_work ( settings_: dict[str, Any] ) -> None:
+
+    with pytest.raises(Fault): token.options(**{ "secret": b"k" * 32, **settings_ })
+
+async def test_opaque_collision_is_atomic_and_bounded ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    cache  = memory()
+    access = make_issuer("opaque", store=cache)
+    held   = rand.token(32)
+    calls  = 0
+
+    def fixed ( _size: int ) -> str:
+
+        nonlocal calls
+        calls += 1
+
+        return held
+
+    monkeypatch.setattr(rand, "token", fixed)
+    made = await access.issue("first")
+
+    with pytest.raises(Fault) as collision: await access.issue("second")
+
+    assert collision.value.reason == "token.collision" and calls == 4
+    assert made == held and (await access.verify(held)).subject == "first"
+
+async def test_opaque_cancellation_propagates_without_issuing_a_result () -> None:
+
+    class Waiting:
+
+        def __init__ ( self ) -> None:
+
+            self.started = asyncio.Event()
+            self.finished = False
+
+        async def add ( self, key: str, value: Any, ttl: float | None = None ) -> bool:
+
+            self.started.set()
+
+            try: await asyncio.Event().wait()
+            finally: self.finished = True
+
+            return True
+
+        async def get ( self, key: str, default: Any = None ) -> Any:
+
+            self.started.set()
+
+            try: await asyncio.Event().wait()
+            finally: self.finished = True
+
+            return default
+
+    store  = Waiting()
+    access = make_issuer("opaque", store=store)
+
+    for work in (access.issue("u"), access.verify(rand.token(32))):
+
+        store.started.clear()
+        store.finished = False
+        task = asyncio.create_task(work)
+        await store.started.wait()
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await task
+
+        assert store.finished
+
+def test_setup_publication_keeps_an_inflight_pair_on_one_snapshot ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    client = Token()
+    client.setup("a" * 32, issuer="old", access=60, refresh=120)
+    original = rand.hex
+    changed = False
+
+    def change ( size: int ) -> str:
+
+        nonlocal changed
+
+        if not changed:
+
+            changed = True
+            client.setup("b" * 32, issuer="new", access=90, refresh=180)
+
+        return original(size)
+
+    monkeypatch.setattr(rand, "hex", change)
+    pair = client.pair("u")
+    checker = Token()
+    checker.setup("a" * 32, issuer="old")
+
+    assert pair.expires == 60
+    assert checker.verify(pair.access).expires - checker.verify(pair.access).issued == 60
+    assert checker.verify(pair.refresh, "refresh").expires - checker.verify(pair.refresh, "refresh").issued == 120
+    assert client.describe()["issuer"] == "new"
+
+async def test_opaque_concurrent_issuers_never_overwrite_each_other () -> None:
+
+    cache = memory()
+    left  = make_issuer("opaque", store=cache)
+    right = make_issuer("opaque", store=cache)
+
+    async def use ( index: int ) -> tuple[str, str]:
+
+        issuer = left if index % 2 else right
+        made = await issuer.issue(str(index))
+        seen = await issuer.verify(made)
+
+        return made, seen.subject
+
+    found = await asyncio.gather(*(use(i) for i in range(100)))
+
+    assert len({raw for raw, _ in found}) == 100
+    assert [subject for _, subject in found] == [str(i) for i in range(100)]
+
+async def test_storage_failures_are_distinct_from_invalid_tokens () -> None:
+
+    class Broken:
+
+        async def add ( self, key: str, value: Any, ttl: float | None = None ) -> bool:
+
+            raise OSError("private backend address")
+
+        async def get ( self, key: str, default: Any = None ) -> Any:
+
+            raise OSError("private backend address")
+
+    access = make_issuer("opaque", store=Broken())
+
+    for work in (access.issue("u"), access.verify(rand.token(32))):
+
+        with pytest.raises(Fault) as caught: await work
+
+        assert caught.value.code is Code.UNAVAILABLE
+        assert caught.value.reason == "token.store"
+        assert "private backend address" not in str(caught.value)
+
+async def test_opaque_record_corruption_expiry_and_backend_fault_are_not_bypassed () -> None:
+
+    cache = memory()
+    access = make_issuer("opaque", store=cache, leeway=0)
+    made = await access.issue("u")
+    key = access.key(made)
+    raw = await cache.get(key)
+
+    corruptions: list[object] = [{}, [], b"not-json", b"[]", b"x" * (LONGEST + 1)]
+
+    for corrupt in corruptions:
+
+        await cache.set(key, corrupt)
+
+        with pytest.raises(Fault) as caught: await access.verify(made)
+
+        assert caught.value.code is Code.UNAUTHORIZED
+
+    body = json.decode(raw)
+    body["exp"] = int(date.stamp()) - 1
+    await cache.set(key, json.encode(body), ttl=60)
+
+    with pytest.raises(Fault) as expired: await access.verify(made)
+
+    assert expired.value.reason == "token.expired"
+
+@pytest.mark.parametrize("format_", FORMATS)
+async def test_foreign_formats_and_reserved_configuration_never_fall_back ( format_: str ) -> None:
+
+    cache = memory()
+    scopes = {
+        name: make_issuer(name, **cast("dict[str, Any]", {"store": cache} if name == "opaque" else {}))
+        for name in FORMATS
+    }
+    selected = scopes[format_]
+
+    for name, scope in scopes.items():
+
+        made = await scope.issue("u")
+
+        if name == format_: assert (await selected.verify(made)).subject == "u"
+        else:
+
+            with pytest.raises(Fault): await selected.verify(made)
+
+    for claimed in ("format", "purpose"):
+
+        with pytest.raises(Fault): await selected.issue("u", **cast("dict[str, Any]", {claimed: "refresh"}))
+
+@pytest.mark.parametrize("adapter", [Jwt, Paseto])
+def test_key_selection_requires_an_explicit_keyring ( adapter: type[Jwt | Paseto] ) -> None:
+
+    with pytest.raises(Fault): adapter(b"k" * 32, active="missing")
+
+@pytest.mark.parametrize(("algorithm", "size"), [("HS256", 32), ("HS384", 48), ("HS512", 64)])
+async def test_prepared_hmac_isolation_across_parallel_callers ( algorithm: str, size: int ) -> None:
+
+    key = rand.token(size)
+    issuer = token.options(secret=key, algorithm=algorithm, issuer="workers")
+
+    adapter = Jwt(key, algorithm)
+
+    def work ( index: int ) -> str:
+
+        payload = {"value": index}
+        made = adapter.encode(payload)
+
+        for _ in range(100):
+
+            made = adapter.encode(payload)
+            assert adapter.decode(made) == payload
+
+        return made
+
+    encoded = await asyncio.gather(*(asyncio.to_thread(work, i) for i in range(4)))
+
+    assert len(set(encoded)) == 4
+    made = await issuer.issue("u")
+    assert (await issuer.verify(made)).subject == "u"

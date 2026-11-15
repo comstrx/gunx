@@ -1,4 +1,4 @@
-from .arch import Context, Factory, Reporter
+lazy from .arch import Context, Factory, Reporter
 from .exceptions import Exceptions
 
 exception = Exceptions()

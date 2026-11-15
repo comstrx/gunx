@@ -25,9 +25,9 @@ class Router:
 
             self._routes[route.name] = route
 
-    def policy ( self, name: str, text: str ) -> Throttle:
+    def policy ( self, name: str, text: str | Throttle ) -> Throttle:
 
-        made = Throttle.parse(text)
+        made = text if isinstance(text, Throttle) else Throttle.parse(text)
 
         self._policies[name] = made
 

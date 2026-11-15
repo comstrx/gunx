@@ -1,34 +1,8 @@
 import * as date from "engine-date";
 import * as json from "engine-json";
 import * as string from "engine-string";
-import { cleaned, encoded, located, type Shape, type Site, shaped, stripped } from "./metadata.ts";
-
-export type Frequency = "always" | "hourly" | "daily" | "weekly" | "monthly" | "yearly" | "never";
-export type Entry = { path: string; modified?: date.Input; frequency?: Frequency | undefined; priority?: number | undefined; localized?: boolean | undefined; images?: readonly string[] | undefined };
-export type Listed = { path: string; modified?: date.Input };
-export type Rule = { allow?: readonly string[] | undefined; disallow?: readonly string[] | undefined; delay?: number | undefined };
-export type Robots = Rule & { sitemaps?: readonly string[] | undefined; agents?: Readonly<Record<string, Rule>> | undefined };
-export type Icon = { src: string; sizes: string; type?: string | undefined; purpose?: string | undefined };
-export type Shortcut = { name: string; url: string; shortName?: string | undefined; description?: string | undefined; icons?: readonly Icon[] | undefined };
-export type Screenshot = { src: string; sizes: string; type?: string | undefined; form?: "wide" | "narrow" | undefined; label?: string | undefined };
-export type Manifest = {
-    name: string;
-    shortName?: string | undefined;
-    description?: string | undefined;
-    id?: string | undefined;
-    start?: string | undefined;
-    scope?: string | undefined;
-    theme: string;
-    background: string;
-    display?: "standalone" | "minimal-ui" | "browser" | "fullscreen" | undefined;
-    orientation?: "any" | "natural" | "portrait" | "landscape" | undefined;
-    icons: readonly Icon[];
-    lang?: string | undefined;
-    dir?: "ltr" | "rtl" | "auto" | undefined;
-    categories?: readonly string[] | undefined;
-    shortcuts?: readonly Shortcut[] | undefined;
-    screenshots?: readonly Screenshot[] | undefined;
-};
+import type { Entry, Icon, Listed, Manifest, Robots, Rule, Shape, Site } from "./arch.ts";
+import { cleaned, encoded, located, shaped, stripped } from "./metadata.ts";
 
 const most = 50_000;
 const longest = 86_400;

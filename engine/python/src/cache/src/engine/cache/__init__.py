@@ -1,10 +1,10 @@
-from .arch import Hit
+lazy from .arch import Hit
 from .cache import Cache
-from .channel import Channel
-from .memory import Memory
-from .redis import Redis
-from .store import Store
-from .tagged import Tagged
+lazy from .channel import Channel
+lazy from .memory import Memory
+lazy from .redis import Redis
+lazy from .store import Store
+lazy from .tagged import Tagged
 
 cache = Cache()
 

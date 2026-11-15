@@ -3,9 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve, sep } from "node:path";
 import * as error from "engine-error";
 import * as fs from "engine-fs";
+import type { Kinded } from "./arch.ts";
 import { byText, isMissing } from "./core.ts";
-
-type Kinded = { isFile: () => boolean; isDirectory: () => boolean; isSymbolicLink: () => boolean };
 
 const unsafe = /[^A-Za-z0-9._-]/g;
 

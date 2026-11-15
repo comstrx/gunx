@@ -24,7 +24,21 @@ core:git:origin () {
 }
 core:git:files () {
 
-    git -C "${1}" ls-files -co --exclude-standard -z
+    local root="${1}" path=""
+
+    while IFS= read -r -d '' path; do
+        [[ ! -e "${root}/${path}" && ! -L "${root}/${path}" ]] || printf '%s\0' "${path}"
+    done < <(git -C "${root}" ls-files -co --exclude-standard -z)
+
+}
+core:git:dirty () {
+
+    local root="${1}"
+
+    shift
+
+    git -C "${root}" status --porcelain=v1 -z --untracked-files=all --no-renames -- "$@" 2>/dev/null \
+        || { core:error:fail "Cannot read the state of ${root}"; return; }
 
 }
 core:git:changed () {
@@ -43,6 +57,11 @@ core:git:head () {
 core:git:release () {
 
     git -C "${1}" describe --tags --exact-match --match 'v*' HEAD 2>/dev/null
+
+}
+core:git:latest () {
+
+    git -C "${1}" describe --tags --abbrev=0 --match 'v*' 2>/dev/null
 
 }
 core:git:author () {

@@ -1,8 +1,12 @@
+from engine.broker.cursor import Cursor
+from aiokafka import TopicPartition
 from engine.broker import Broker, Kafka, Memory, Message, Rabbit
 from dataclasses import dataclass
 from collections.abc import AsyncIterator, Mapping
 from engine.error import Code, Fault
-import aiormq, asyncio, os, pytest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+import aiokafka, aiokafka.admin, aiormq, asyncio, os, pytest, uuid
 
 AMQP = os.environ.get("ENGINE_AMQP_URL", "amqp://guest:guest@127.0.0.1:5672/")
 
@@ -417,7 +421,7 @@ async def test_rabbit_discards_a_malformed_body_and_keeps_the_rest ( rabbit: Rab
     await wire.basic_publish(b"", exchange="engine.test", routing_key="resume.raw")
     await rabbit.publish(Message.make("resume.good", { "n": 1 }, { "trace": "t9" }))
 
-    pulled = await rabbit.pull("engine.test.resume", 8, 2.0)
+    async with asyncio.timeout(2.0): pulled = await take(rabbit, "engine.test.resume", 2)
 
     await asyncio.sleep(0.2)
 
@@ -623,7 +627,10 @@ async def test_kafka_driver_maps_records_and_refuses_a_dead_cluster () -> None:
 
     assert marks == { "orders": { message.tag[0]: 58 }, "ledger": { other.tag[0]: 4 } } and Kafka.marks([]) == {}
 
-    await driver.ack(later, message, other)
+    with pytest.raises(Fault) as stale: await driver.ack(later, message, other)
+
+    assert stale.value.code is Code.CONFLICT and stale.value.reason == "broker.stale"
+
     await driver.ack()
 
     with pytest.raises(Fault) as down: await driver.publish(Message.make("orders.placed", {}))
@@ -639,3 +646,216 @@ async def test_kafka_driver_maps_records_and_refuses_a_dead_cluster () -> None:
     assert refused.value.reason == "broker.capability"
 
     await driver.close()
+
+
+async def test_kafka_offsets_never_commit_past_unfinished_work_or_previous_ownership () -> None:
+
+
+    cursor = Cursor()
+    part = TopicPartition("events", 0)
+
+    await cursor.on_partitions_assigned([part])
+
+    first = Message("first", "events", {}, {}, 1, cursor.seen(part, 10), "queue")
+    later = Message("later", "events", {}, {}, 1, cursor.seen(part, 13), "queue")
+
+    assert cursor.mark([later]) == {}
+    assert cursor.mark([first]) == {part: 14}
+
+    cursor.committed({part: 14})
+
+    assert cursor.count() == 0
+
+    old = Message("old", "events", {}, {}, 1, cursor.seen(part, 14), "queue")
+
+    await cursor.on_partitions_revoked([part])
+    await cursor.on_partitions_assigned([part])
+
+    fresh = Message("fresh", "events", {}, {}, 1, cursor.seen(part, 14), "queue")
+
+    with pytest.raises(Fault): cursor.mark([old])
+
+    assert cursor.mark([fresh]) == {part: 15}
+
+
+@pytest.mark.parametrize("kind", ["producer", "consumer", "admin"])
+async def test_kafka_startup_cancellation_closes_partial_clients ( kind: str, monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    closed = AsyncMock()
+    made = SimpleNamespace(start=AsyncMock(side_effect=asyncio.CancelledError), stop=closed, close=closed)
+    driver = Kafka("localhost:9092")
+
+    with pytest.raises(asyncio.CancelledError):
+
+        if kind == "producer":
+
+            monkeypatch.setattr(aiokafka, "AIOKafkaProducer", lambda **_: made)
+
+            await driver.ready()
+
+        elif kind == "admin":
+
+            monkeypatch.setattr(aiokafka.admin, "AIOKafkaAdminClient", lambda **_: made)
+
+            await driver.declare("events", ["events"])
+
+        else:
+
+            made.subscribe = lambda **_: None
+
+            monkeypatch.setattr(aiokafka, "AIOKafkaConsumer", lambda **_: made)
+
+            await driver.declare("events", ["events.*"])
+            await driver.pull("events", 1, 0)
+
+    closed.assert_awaited_once()
+
+    await driver.close()
+
+
+@pytest.mark.skipif(not os.environ.get("ENGINE_KAFKA_URL"), reason="Requires an explicitly supplied Kafka test cluster")
+async def test_kafka_real_commit_frontier_reconnect_and_malformed_record () -> None:
+
+    name = "engine.test." + uuid.uuid4().hex
+    driver = Kafka(os.environ["ENGINE_KAFKA_URL"], group=name, partitions=1, wait=5)
+
+    async def collect ( amount: int ) -> list[Message]:
+
+        result: list[Message] = []
+
+        async with asyncio.timeout(20):
+
+            while len(result) < amount: result.extend(await driver.pull(name, amount - len(result), 0.5))
+
+        return result
+
+    try:
+
+        await driver.declare(name, [name])
+
+        for number in range(3): await driver.publish(Message.make(name, { "n": number }))
+
+        first = await collect(3)
+
+        assert [message.payload["n"] for message in first] == [0, 1, 2]
+
+        await driver.ack(first[2])
+
+        assert await driver.depth(name) == 3
+
+        await driver.ack(first[0])
+
+        assert await driver.depth(name) == 2
+
+        await driver.close()
+
+        again = await collect(2)
+
+        assert [message.payload["n"] for message in again] == [1, 2]
+
+        with pytest.raises(Fault) as stale: await driver.ack(first[1])
+
+        assert stale.value.reason == "broker.stale"
+        assert await driver.depth(name) == 2
+
+        await driver.ack(*again)
+
+        assert await driver.depth(name) == 0
+
+        producer = await driver.producer()
+
+        await producer.send_and_wait(name, value=b"broken-json")
+        await driver.publish(Message.make(name, { "n": 3 }))
+
+        clean = await collect(1)
+
+        assert clean[0].payload["n"] == 3
+
+        await driver.ack(*clean)
+
+        assert await driver.depth(name) == 0
+
+    finally: await driver.close()
+
+async def test_consumer_concurrency_is_bounded_and_acknowledges_completed_work () -> None:
+
+    local = Broker()
+
+    local.setup(Memory())
+
+    await local.declare("parallel", "parallel")
+
+    for number in range(16): await local.publish("parallel", { "n": number })
+
+    active = peak = 0
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    seen: list[int] = []
+
+    async def handle ( message: Message ) -> None:
+
+        nonlocal active, peak
+
+        active += 1
+        peak = max(peak, active)
+
+        if active == 4: entered.set()
+
+        try:
+
+            await release.wait()
+
+            seen.append(int(message.payload["n"]))
+
+        finally: active -= 1
+
+    task = asyncio.create_task(local.consume("parallel", handle, limit=16, concurrency=4))
+
+    try:
+
+        await asyncio.wait_for(entered.wait(), 2)
+
+        assert peak == 4 and not seen
+
+        release.set()
+
+        assert await task == 16
+        assert sorted(seen) == list(range(16)) and peak == 4 and await local.depth("parallel") == 0
+
+    finally:
+
+        task.cancel()
+
+        await asyncio.gather(task, return_exceptions=True)
+        await local.close()
+
+
+async def test_cancelled_rabbit_wait_does_not_steal_the_next_delivery () -> None:
+
+    driver = Rabbit(os.environ.get("ENGINE_AMQP_URL", "amqp://guest:guest@127.0.0.1:5672/"), exchange="engine.cancel.wait", prefetch=2)
+    queue  = "wait." + uuid.uuid4().hex
+
+    try:
+
+        await driver.declare(queue, [queue])
+        waiting = asyncio.create_task(driver.pull(queue, 1, 5))
+
+        await asyncio.sleep(0.02)
+        waiting.cancel()
+
+        with pytest.raises(asyncio.CancelledError): await waiting
+
+        await driver.publish(Message.make(queue, { "value": 1 }))
+
+        rows = await driver.pull(queue, 1, 2)
+
+        assert len(rows) == 1 and rows[0].payload == { "value": 1 }
+
+        await driver.ack(*rows)
+
+        assert await driver.pull(queue, 1, 0.01) == []
+
+    finally:
+
+        await driver.delete(queue)
+        await driver.close()

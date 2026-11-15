@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test as it } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/app/index.tsx";
 import { Screen } from "../src/app/screen.tsx";
 import { toneOf } from "../src/features/hello/hooks/use-hello.ts";
@@ -14,9 +14,13 @@ beforeEach(() => {
 
 describe("screen", () => {
 
-    it("the app frames the nav and the hello screen from the compiled spec", () => {
+    it("the app frames the nav and the hello screen from the compiled spec", async () => {
 
-        const markup = renderToStaticMarkup(<App />);
+        const stream = await renderToReadableStream(<App />);
+
+        await stream.allReady;
+
+        const markup = await new Response(stream).text();
 
         expect(markup).toContain('role="navigation"');
         expect(markup).toContain('data-testid="link-button"');

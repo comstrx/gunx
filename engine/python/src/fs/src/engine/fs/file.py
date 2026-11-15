@@ -81,19 +81,25 @@ class File(Path):
 
             with self._need_(path).open("rb") as handle:
 
-                position = handle.seek(0, os.SEEK_END)
-                held     = b""
+                if count <= 0: return []
 
-                while position > 0 and held.count(b"\n") <= count:
+                position = handle.seek(0, os.SEEK_END)
+                chunks: list[bytes] = []
+                lines = 0
+
+                while position > 0 and lines <= count:
 
                     step      = min(CHUNK, position)
                     position -= step
 
                     handle.seek(position)
 
-                    held = handle.read(step) + held
+                    piece = handle.read(step)
+                    lines += piece.count(b"\n")
 
-                return held.decode("utf-8", "replace").splitlines()[-count:] if count > 0 else []
+                    chunks.append(piece)
+
+                return b"".join(reversed(chunks)).decode("utf-8", "replace").splitlines()[-count:]
 
         return await self._run_(path, go)
 
@@ -120,6 +126,10 @@ class File(Path):
     ) -> AsyncGenerator[bytes]:
 
         path = pathlib.Path(target)
+        if type(chunk) is not int or chunk < 1 or type(start) is not int or start < 0:
+
+            raise Fault(Code.VALIDATION, reason="fs.range")
+
         left = None if end is None else max(0, end - start + 1)
 
         def opened () -> BinaryIO:
@@ -215,7 +225,9 @@ class File(Path):
         self, target: Target, lines: Iterable[str], mode: int | None = None, durable: bool = True,
     ) -> int:
 
-        return await self.write(target, "".join(f"{line}\n" for line in lines), mode, durable)
+        return await self.fill(
+            target, lambda out: out.writelines(f"{line}\n".encode() for line in lines), mode, durable,
+        )
 
     async def write_json ( self, target: Target, value: object, pretty: bool = False, durable: bool = True ) -> int:
 

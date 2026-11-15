@@ -9,7 +9,7 @@ from hypothesis import HealthCheck, given, settings, strategies as st
 from itertools import takewhile
 from pathlib import Path
 from typing import Any, Literal, cast
-import asyncio, inspect, re
+import asyncio, inspect, re, os
 
 type Pair = tuple[str, Any]
 type Sort = tuple[Any, str, bool, tuple[Any, ...]]
@@ -370,7 +370,7 @@ def placed ( data: st.DataObject, free: list[Spec], rest: str | None ) -> tuple[
 BOOK     = commands()
 loop     = asyncio.new_event_loop()
 
-log.setup("info", "json", Path("/dev/null"))
+log.setup("info", "json", Path(os.devnull))
 
 def chosen ( default: str | None, tokens: list[str] ) -> tuple[Command, list[str]] | None:
 

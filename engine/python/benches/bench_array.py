@@ -36,3 +36,25 @@ bench.measure("array.flatten", flatten)
 bench.measure("array.chunk", chunk)
 bench.measure("array.median", median)
 bench.measure("array.paginate", paginate)
+
+
+rows = [{ "id": i } for i in range(1000)]
+sequence = tuple(range(1000))
+mapping = { f"k{i}": i for i in range(1000) }
+excluded = tuple(f"k{i}" for i in range(300))
+
+bench.measure("array.first_where.early", lambda: array.first_where(rows, "id", 1))
+bench.measure("array.after.early", lambda: array.after(sequence, 1))
+bench.measure("array.omit.many", lambda: array.omit(mapping, *excluded), rounds=500)
+
+matching_rows = [{"n": n} for n in range(1000)]
+bench.measure("array.where.all1000", lambda: array.where(matching_rows, "n", ">=", 0), rounds=1000)
+
+bench.measure("array.sole.filtered2000", lambda: array.sole(range(2000), lambda value: value == 1), rounds=500)
+
+values = list(range(10000))
+bench.measure("array.sum.streaming", lambda: array.sum(iter(values)), rounds=500)
+bench.measure("array.batches", lambda: list(array.batch(iter(values), 100)), rounds=500)
+
+bench.measure("array.median.stream", lambda: array.median(iter(range(10000))), rounds=300)
+bench.measure("array.mode.stream", lambda: array.mode(iter(range(10000))), rounds=300)

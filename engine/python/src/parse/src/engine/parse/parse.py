@@ -4,76 +4,51 @@ from typing import Any
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urljoin, urlsplit
 
 from engine.error import Code, Fault
+from engine.cast import cast
+from .codec import Codec
+from .document import Document
 from engine.string import string
 from .arch import (
-    BYTE, DURATION, EMAIL, Email, FALSE, FLOAT, HEX, HOST_MAX, INTEGER, LABEL, LAT_MAX, LNG_MAX, MAC, MAX_FLOAT,
-    MAX_INT, MAX_QUERY, MAX_TEXT, MAX_TOML, MAX_URL, Mime, NOISE, NOTHING, PAIR, PHONE, PORT_MAX, RGB, SEMVER, SHORT,
-    SIZE, SIZES, SLUG, SPELLED, TEMPLATE, TRUE, ULID, UNITS, UUID, Url,
+    BYTE, CONTROL, DELETE, DURATION, EMAIL, Email, HEX, HOST_MAX, LABEL, LAT_MAX, LNG_MAX, MAC, MAX_FLOAT, MAX_INT,
+    MAX_QUERY, MAX_TEXT, MAX_URL, Mime, NOISE, PAIR, PHONE, PORT_MAX, RGB, SEMVER, SHORT,
+    SIZE, SIZES, SLUG, SPELLED, ULID, UNITS, UUID, Url, QUOTED_PAIR, separated,
 )
-import csv, io, math, re, tomllib
+import csv, io, math
 
 class Parse:
 
     def integer ( self, text: object, low: int | None = None, high: int | None = None ) -> int:
 
-        if isinstance(text, bool) or (isinstance(text, str) and len(text) > MAX_INT):
+        if isinstance(text, str) and len(text) > MAX_INT: raise self._refuse_("integer", text)
 
-            raise self._refuse_("integer", text)
-
-        try: value = int(text) if isinstance(text, int) else int(str(text).strip().replace("_", ""), 10)
-        except (TypeError, ValueError) as error: raise self._refuse_("integer", text) from error
-
-        if (low is not None and value < low) or (high is not None and value > high):
-
-            raise self._refuse_("integer", text)
-
-        return value
+        try: return cast.integer(text, low, high)
+        except Fault as error: raise self._refuse_("integer", text) from error
 
     def number ( self, text: object, low: float | None = None, high: float | None = None ) -> float:
 
-        if isinstance(text, bool) or (isinstance(text, str) and len(text) > MAX_FLOAT):
+        if isinstance(text, str) and len(text) > MAX_FLOAT: raise self._refuse_("number", text)
 
-            raise self._refuse_("number", text)
-
-        try: value = float(text) if isinstance(text, int | float) else float(str(text).strip().replace("_", ""))
-        except (TypeError, ValueError) as error: raise self._refuse_("number", text) from error
-
-        if not math.isfinite(value): raise self._refuse_("number", text)
-        if (low is not None and value < low) or (high is not None and value > high): raise self._refuse_("number", text)
-
-        return value
+        try: return cast.number(text, low, high)
+        except Fault as error: raise self._refuse_("number", text) from error
 
     def auto ( self, text: object ) -> Any:
 
-        if not isinstance(text, str): return text
-
-        wanted = text.strip()
-        lower  = wanted.lower()
-
-        if lower in NOTHING: return None
-        if lower in ("true", "false"): return lower == "true"
-        if INTEGER.match(wanted): return int(wanted)
-        if FLOAT.match(wanted): return float(wanted)
-
-        return text
+        return cast.auto(text)
 
     def boolean ( self, text: object ) -> bool:
 
-        if isinstance(text, bool): return text
-
-        wanted = str(text).strip().lower()
-
-        if wanted in TRUE: return True
-        if wanted in FALSE: return False
-
-        raise self._refuse_("boolean", text)
+        try: return cast.boolean(text)
+        except Fault as error: raise self._refuse_("boolean", text) from error
 
     def duration ( self, text: object ) -> float:
 
-        if isinstance(text, int | float) and not isinstance(text, bool): return float(text)
+        if isinstance(text, int | float) and not isinstance(text, bool): return self.number(text, low=0)
 
-        raw   = str(text).strip().lower()
-        plain = DURATION.fullmatch(raw.replace(" ", ""))
+        raw = str(text).strip().lower()
+
+        if len(raw) > MAX_FLOAT: raise self._refuse_("duration", text)
+
+        plain = DURATION.fullmatch(raw)
 
         bad   = not raw or len(raw) > MAX_FLOAT or (plain is None and SPELLED.fullmatch(raw) is None)
 
@@ -89,9 +64,13 @@ class Parse:
 
     def size ( self, text: object ) -> int:
 
-        if isinstance(text, int) and not isinstance(text, bool): return text
+        if type(text) is int: return self.integer(text, low=0)
 
-        found = SIZE.match(str(text))
+        raw = str(text)
+
+        if len(raw) > MAX_FLOAT: raise self._refuse_("size", text)
+
+        found = SIZE.fullmatch(raw)
 
         if found is None: raise self._refuse_("size", text)
 
@@ -100,7 +79,10 @@ class Parse:
 
         if factor is None: raise self._refuse_("size", text)
 
-        return int(float(amount) * factor)
+        try: numerator, denominator = cast.decimal(amount).as_integer_ratio()
+        except Fault as error: raise self._refuse_("size", text) from error
+
+        return numerator * factor // denominator
 
     def query ( self, text: str, limit: int = MAX_QUERY ) -> dict[str, list[str]]:
 
@@ -119,6 +101,10 @@ class Parse:
 
         if type(text) is not str: raise self._refuse_("url", type(text).__name__)
         if len(text) > MAX_URL: raise self._refuse_("url", "too long")
+
+        if any(ord(char) < CONTROL or ord(char) == DELETE for char in text):
+
+            raise self._refuse_("url", text)
 
         try:
 
@@ -162,50 +148,77 @@ class Parse:
         try: return self.hostname(host)
         except Fault as error: raise self._refuse_("url", text) from error
 
+    def loads ( self, text: str | bytes, kind: str = "json" ) -> Any:
+
+        return Codec().load(text, kind)
+
+    def dumps ( self, value: Any, kind: str = "json", pretty: bool = False ) -> str:
+
+        return Codec().dump(value, kind, pretty)
+
+    def document ( self, text: str | bytes, kind: str = "json", *, separator: str = "." ) -> Document:
+
+        return Document(self.loads(text, kind), kind, separator)
+
+    def of ( self, value: Any, kind: str = "json", *, separator: str = "." ) -> Document:
+
+        return Document(value, kind, separator)
+
+    def convert ( self, text: str | bytes, source: str, target: str, pretty: bool = False ) -> str:
+
+        return self.dumps(self.loads(text, source), target, pretty)
+
     def toml ( self, text: str | bytes ) -> dict[str, Any]:
 
-        if len(text) > MAX_TOML: raise self._refuse_("toml", "too long")
+        value = self.loads(text, "toml")
 
-        try: return tomllib.loads(text if isinstance(text, str) else text.decode())
-        except (tomllib.TOMLDecodeError, UnicodeDecodeError) as error:
+        if not isinstance(value, dict): raise self._refuse_("toml", text)
 
-            raise self._refuse_("toml", str(error)) from error
+        return value
+
+    def yaml ( self, text: str | bytes ) -> Any:
+
+        return self.loads(text, "yaml")
+
+    def json ( self, text: str | bytes ) -> Any:
+
+        return self.loads(text, "json")
 
     def semver ( self, text: str ) -> tuple[int, int, int, str | None, str | None]:
 
-        found = SEMVER.match(text.strip())
+        raw = text.strip()
+
+        if len(raw) > MAX_TEXT or not raw.isascii(): raise self._refuse_("semver", text)
+
+        found = SEMVER.fullmatch(raw)
 
         if found is None: raise self._refuse_("semver", text)
 
         major, minor, patch, pre, build = found.groups()
 
-        return int(major), int(minor), int(patch), pre, build
+        for part in (pre, build):
 
-    def template ( self, text: str, values: Mapping[str, object], strict: bool = True ) -> str:
+            if part is not None and any(not segment for segment in part.split(".")):
 
-        def fill ( found: re.Match[str] ) -> str:
+                raise self._refuse_("semver", text)
 
-            name = found.group(1)
-            item: Any = values
+        if pre and any(piece.isdigit() and len(piece) > 1 and piece.startswith("0") for piece in pre.split(".")):
 
-            for part in name.split("."):
+            raise self._refuse_("semver", text)
 
-                if isinstance(item, Mapping) and part in item: item = item[part]
-                elif strict: raise self._refuse_("template", name)
-                else: return found.group(0)
+        return self.integer(major), self.integer(minor), self.integer(patch), pre, build
 
-            try: return str(item)
-            except ValueError as error:
+    def template (
+        self, text: str, values: Mapping[str, object], strict: bool = True,
+        *, delimiters: tuple[str, str] = ("{", "}"),
+    ) -> str:
 
-                if strict: raise self._refuse_("template", name) from error
+        try: return string.template(text, values, strict, delimiters=delimiters)
+        except Fault as error: raise self._refuse_("template", text) from error
 
-                return found.group(0)
+    def keys ( self, text: str, delimiters: tuple[str, str] = ("{", "}") ) -> tuple[str, ...]:
 
-        return TEMPLATE.sub(fill, text)
-
-    def keys ( self, text: str ) -> tuple[str, ...]:
-
-        return tuple(dict.fromkeys(TEMPLATE.findall(text)))
+        return tuple(string.keys(text, delimiters))
 
     def email ( self, text: str ) -> Email:
 
@@ -333,7 +346,9 @@ class Parse:
         try: lat, lng = float(parts[0]), float(parts[1])
         except ValueError as error: raise self._refuse_("coordinates", text) from error
 
-        if abs(lat) > LAT_MAX or abs(lng) > LNG_MAX: raise self._refuse_("coordinates", text)
+        valid = math.isfinite(lat) and math.isfinite(lng) and abs(lat) <= LAT_MAX and abs(lng) <= LNG_MAX
+
+        if not valid: raise self._refuse_("coordinates", text)
 
         return lat, lng
 
@@ -381,18 +396,27 @@ class Parse:
 
     def csv ( self, text: str, delimiter: str = "," ) -> list[str]:
 
-        try: rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
-        except csv.Error as error: raise self._refuse_("csv", text) from error
+        if len(text) > MAX_TEXT: raise self._refuse_("csv", text)
 
-        return rows[0] if rows else []
+        try: return next(csv.reader(io.StringIO(text), delimiter=delimiter, strict=True), [])
+        except (csv.Error, TypeError, ValueError) as error: raise self._refuse_("csv", text) from error
 
     def join ( self, base: str, relative: str ) -> str:
 
         return urljoin(base, relative)
 
+    def _header_ ( self, text: str, separator: str ) -> list[str]:
+
+        if len(text) > MAX_TEXT or any(char in text for char in ("\r", "\n", "\x00")):
+
+            raise self._refuse_("header", text)
+
+        try: return separated(text, separator)
+        except ValueError as error: raise self._refuse_("header", text) from error
+
     def mime ( self, text: str ) -> Mime:
 
-        head, *rest = text.split(";")
+        head, *rest = self._header_(text, ";")
         kind, slash, subtype = head.strip().lower().partition("/")
 
         if not slash or not kind or not subtype: raise self._refuse_("mime", text)
@@ -403,7 +427,10 @@ class Parse:
 
             key, mark, value = piece.strip().partition("=")
 
-            if mark and key: params[key.lower()] = value.strip().strip('"')
+            if mark and key:
+
+                plain = value.strip()
+                params[key.lower()] = QUOTED_PAIR.sub(r"\1", plain[1:-1]) if plain.startswith('"') else plain
 
         return Mime(kind, subtype, params)
 
@@ -411,9 +438,9 @@ class Parse:
 
         ranked: list[tuple[float, int, str]] = []
 
-        for index, piece in enumerate(text.split(",")):
+        for index, piece in enumerate(self._header_(text, ",")):
 
-            head, *rest = piece.split(";")
+            head, *rest = self._header_(piece, ";")
             name = head.strip().lower()
 
             if not name: continue
@@ -443,7 +470,7 @@ class Parse:
 
             key, mark, value = piece.strip().partition("=")
 
-            if mark and key: found[key.strip()] = value.strip().strip('"')
+            if mark and key: found[key.strip()] = value.strip().removeprefix('"').removesuffix('"')
 
         return found
 
@@ -478,10 +505,10 @@ class Parse:
 
     def list ( self, text: object, separator: str = "," ) -> list[str]:
 
-        if isinstance(text, list | tuple): return [str(item).strip() for item in text if str(item).strip()]
+        items = cast.list(text if isinstance(text, list | tuple) else str(text), separator)
 
-        return [item.strip() for item in str(text).split(separator) if item.strip()]
+        return [value for item in items if (value := str(item).strip())]
 
-    def _refuse_ ( self, kind: str, text: object ) -> Fault:
+    def _refuse_ ( self, kind: str, _text: object ) -> Fault:
 
-        return Fault(Code.BAD_REQUEST, f"Cannot parse {kind}", f"parse.{kind}", { kind: [str(text)[:64]] })
+        return Fault(Code.BAD_REQUEST, f"Cannot parse {kind}", f"parse.{kind}")

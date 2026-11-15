@@ -1,8 +1,3 @@
-module:gate:prettier () {
-
-    core:process:timeout "${CONFIG[RUN_TIMEOUT]:-300}" bunx "prettier@$(config:tools:version prettier)" "$@"
-
-}
 module:gate:tutor:deps () {
 
     @fetch typos
@@ -10,7 +5,7 @@ module:gate:tutor:deps () {
 }
 module:gate:tutor:quality () {
 
-    @tool typos . && module:gate:prettier --check '**/*.md'
+    @tool typos . && @tool prettier --check '**/*.md'
 
 }
 module:gate:root:deps () {
@@ -42,7 +37,7 @@ module:gate:root:quality () {
     @tool typos . \
         && @tool taplo fmt --check \
         && @tool taplo lint \
-        && module:gate:prettier --config .prettierrc.yml \
+        && @tool prettier --config .prettierrc.yml \
             --ignore-path .gitignore --no-error-on-unmatched-pattern --check '**/*.{md,mdx,yml,yaml,json,jsonc}'
 
 }

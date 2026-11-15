@@ -3,83 +3,10 @@ import * as date from "engine-date";
 import * as error from "engine-error";
 import * as event from "engine-event";
 import * as func from "engine-func";
-import * as json from "engine-json";
 import * as rand from "engine-rand";
+import * as string from "engine-string";
+import type { Ask, Command, Connection, Frame, Frames, Held, Note, Options, Plan, Reconnect, Room, Rows, Socket, SocketFactory, Status, Timer, Waiting } from "./arch.ts";
 
-export type Frame = { event: string; data?: unknown; channel?: string | undefined; id?: string | undefined };
-export type Status = "idle" | "connecting" | "open" | "closed" | "failed";
-export type Handler = ( data: unknown, frame: Frame ) => void;
-export type Socket = {
-    readyState: number;
-    bufferedAmount?: number | undefined;
-    send: ( text: string ) => void;
-    close: ( code?: number, reason?: string ) => void;
-    onopen: (() => void) | null;
-    onclose: (( closing: { code: number; reason: string } ) => void) | null;
-    onerror: (( failure: unknown ) => void) | null;
-    onmessage: (( message: { data: unknown } ) => void) | null;
-};
-export type SocketFactory = ( url: string, protocols?: string | string[] ) => Socket;
-export type Reconnect = {
-    min?: number | undefined;
-    max?: number | undefined;
-    factor?: number | undefined;
-    limit?: number | undefined;
-    steady?: number | undefined;
-    when?: (( code: number, reason: string ) => boolean) | undefined;
-};
-export type Ask = event.Wait & { channel?: string | undefined };
-export type Stats = { sent: number; received: number; refused: number; opens: number };
-export type Options = {
-    url: string | (() => string | Promise<string>);
-    protocols?: string | string[] | undefined;
-    auth?: string | (() => string | undefined | Promise<string | undefined>) | undefined;
-    reconnect?: Reconnect | false | undefined;
-    heartbeat?: number | undefined;
-    timeout?: number | undefined;
-    maxFrame?: number | undefined;
-    buffer?: number | undefined;
-    backlog?: number | undefined;
-    factory?: SocketFactory | undefined;
-    fail?: event.Fail | undefined;
-    onStatus?: (( status: Status, attempt: number ) => void) | undefined;
-};
-export type Connection = {
-    status: () => Status;
-    id: () => string | undefined;
-    cause: () => error.Fault | undefined;
-    attempts: () => number;
-    stats: () => Stats;
-    channels: () => string[];
-    joined: ( channel: string ) => boolean;
-    connect: () => Promise<void>;
-    close: ( code?: number, reason?: string ) => void;
-    emit: ( name: string, data?: unknown, channel?: string ) => boolean;
-    request: <T = unknown>( name: string, data?: unknown, options?: Ask ) => Promise<T>;
-    on: ( name: string, handler: Handler, channel?: string ) => () => void;
-    once: ( name: string, channel?: string, wait?: number | event.Wait ) => Promise<unknown>;
-    watch: ( listener: ( status: Status, attempt: number ) => void ) => () => void;
-    join: ( channel: string ) => Promise<void>;
-    leave: ( channel: string ) => Promise<void>;
-};
-
-type Frames = Record<string, Frame>;
-type Rows = event.Emitter<Frames>;
-type Timer = ReturnType<typeof setTimeout>;
-type Waiting = { resolve: ( frame: Frame ) => void; reject: ( cause: unknown ) => void; sent: boolean };
-type Held = { text: string; id: string | undefined };
-type Room = { joined: boolean; asking: number; gate: func.Deferred<void> | undefined };
-type Note = { status: Status; attempt: number };
-type Plan = { min: number; max: number; factor: number; limit: number; steady: number; when: ( code: number, reason: string ) => boolean };
-
-const pingEvent = "ping";
-const pongEvent = "pong";
-const joinEvent = "join";
-const leaveEvent = "leave";
-const ackEvent = "ack";
-const authEvent = "auth";
-const errorEvent = "error";
-const greetEvent = "connected";
 const longest = 65_536;
 const ceiling = 2_147_483_647;
 const crowd = 1024;
@@ -114,28 +41,9 @@ function wired ( address: string ): string {
     return (address.charCodeAt(4) | 32) === 115 ? `wss${address.slice(5)}` : `ws${address.slice(4)}`;
 
 }
-function weigh ( text: string ): number {
-
-    let total = 0;
-
-    for ( let at = 0; at < text.length; at += 1 ) {
-
-        const code = text.charCodeAt(at);
-
-        if ( code < 0x80 ) total += 1;
-        else if ( code < 0x800 ) total += 2;
-        else if ( code >= 0xd800 && code <= 0xdbff ) total += 2;
-        else if ( code >= 0xdc00 && code <= 0xdfff ) total += 2;
-        else total += 3;
-
-    }
-
-    return total;
-
-}
 function fits ( text: string, most: number ): boolean {
 
-    return text.length <= most && (text.length * 3 <= most || weigh(text) <= most);
+    return text.length <= most && (text.length * 3 <= most || string.byteLength(text) <= most);
 
 }
 function textOf ( raw: unknown, most: number ): string | undefined {
@@ -165,21 +73,16 @@ function sized ( value: number | undefined, fallback: number ): number {
     return value;
 
 }
-function retried ( code: number ): boolean {
-
-    return code !== 1008 && code !== 4001;
-
-}
-function planOf ( given: Reconnect | false | undefined ): Plan | undefined {
+function planOf ( given: Reconnect | false | undefined, retry?: ( code: number, reason: string ) => boolean ): Plan | undefined {
 
     if ( given === false ) return undefined;
 
-    const { factor = 2, limit = Number.POSITIVE_INFINITY } = given ?? {};
+    const { factor = 2, limit = 8 } = given ?? {};
 
     if ( !(factor >= 1) ) throw new RangeError("not a factor");
     if ( !(limit >= 0) ) throw new RangeError("not a count");
 
-    return { min: span(given?.min, 500), max: span(given?.max, 30_000), factor, limit, steady: span(given?.steady, 5000), when: given?.when ?? retried };
+    return { min: span(given?.min, 500), max: span(given?.max, 30_000), factor, limit, steady: span(given?.steady, 5000), when: given?.when ?? retry ?? (( code ) => code !== 1000 && code !== 1008) };
 
 }
 function pause ( plan: Plan, attempts: number ): number {
@@ -202,21 +105,6 @@ function faulted ( caught: unknown, reason: string ): error.Fault {
 function closed ( cause?: error.Fault ): error.Fault {
 
     return cause?.reason === "socket.closed" ? cause : error.fault("unavailable", "socket.closed", cause ? { cause } : {});
-
-}
-function refusal ( data: unknown ): error.Fault {
-
-    return error.fromJson(data) ?? error.fromEnvelope(data, 400);
-
-}
-function ending ( code: number, reason: string ): error.Fault {
-
-    const cause = { code, reason };
-
-    if ( code === 4001 ) return error.fault("unauthorized", "socket.refused", { cause });
-    if ( code === 1008 ) return error.fault("forbidden", "socket.refused", { cause });
-
-    return error.fault("unavailable", "socket.closed", { cause });
 
 }
 function asked<T> ( read: () => T | Promise<T>, reason: string ): Promise<T> {
@@ -287,34 +175,12 @@ function bounded<T> ( reason: string, limit: number | undefined, signal: AbortSi
 
         signal?.addEventListener("abort", abort, { once: true });
 
+        if ( signal?.aborted ) abort();
+
     });
 
 }
 
-export function encode ( frame: Frame ): string {
-
-    return json.stringify({ event: frame.event, data: frame.data, channel: frame.channel, id: frame.id });
-
-}
-export function decode ( raw: unknown, limit: number = longest ): Frame | undefined {
-
-    const text = typeof raw === "string" ? raw : textOf(raw, limit);
-
-    if ( text === undefined || text.length > limit ) return undefined;
-
-    const parsed = json.parse(text);
-
-    if ( !json.isRecord(parsed) ) return undefined;
-
-    const name = parsed.event;
-    const channel = parsed.channel;
-    const id = parsed.id;
-
-    if ( typeof name !== "string" || name === "" ) return undefined;
-
-    return { event: name, data: parsed.data, channel: typeof channel === "string" && channel !== "" ? channel : undefined, id: typeof id === "string" && id !== "" ? id : undefined };
-
-}
 export const factory: adapter.Port<SocketFactory> = adapter.port<SocketFactory>("socket.factory", {
     fallback: adapter.web("socket.unsupported", ( host ) => {
 
@@ -326,8 +192,8 @@ export const factory: adapter.Port<SocketFactory> = adapter.port<SocketFactory>(
 });
 export function open ( options: Options ): Connection {
 
-    const { url, auth, fail } = options;
-    const plan = planOf(options.reconnect);
+    const { url, prepare, protocol, fail } = options;
+    const plan = planOf(options.reconnect, protocol.retry);
     const beat = span(options.heartbeat, 25_000);
     const limit = span(options.timeout, 10_000);
     const most = sized(options.maxFrame, longest);
@@ -459,12 +325,12 @@ export function open ( options: Options ): Connection {
         everywhere.emit(frame.event, frame);
 
     };
-    const pack = ( name: string, data: unknown, channel: string | undefined, id: string | undefined ): string => {
+    const pack = ( name: string, data: unknown, channel: string | undefined, id: string | undefined, command?: Command ): string => {
 
-        if ( !named(name) ) throw error.fault("internal", "socket.event");
+        if ( !command && !named(name) ) throw error.fault("internal", "socket.event");
         if ( channel !== undefined && channel !== "" && !named(channel) ) throw error.fault("internal", "socket.channel");
 
-        const text = encode({ event: name, data, channel: channel || undefined, id });
+        const text = protocol.encode({ event: name, data, channel: channel || undefined, id }, command);
 
         if ( !fits(text, most) ) throw error.fault("too_large", "socket.frame");
 
@@ -505,7 +371,7 @@ export function open ( options: Options ): Connection {
         }
 
     };
-    const ask = ( name: string, data: unknown, channel: string | undefined, wait: event.Wait = {} ): Promise<Frame> => {
+    const ask = ( name: string, data: unknown, channel: string | undefined, wait: event.Wait = {}, command?: Command ): Promise<Frame> => {
 
         if ( !wanted ) return Promise.reject(closed(last));
 
@@ -516,7 +382,7 @@ export function open ( options: Options ): Connection {
 
         try {
 
-            text = pack(name, data, channel, id);
+            text = pack(name, data, channel, id, command);
 
         } catch ( caught ) {
 
@@ -529,7 +395,7 @@ export function open ( options: Options ): Connection {
             const entry: Waiting = { resolve, reject, sent: false };
             const direct = status === "open";
 
-            if ( direct ? crowded() : outbox.length >= crowd ) {
+            if ( waiting.size >= crowd || (direct ? crowded() : outbox.length >= crowd) ) {
 
                 reject(error.fault("unavailable", "socket.busy"));
 
@@ -574,7 +440,7 @@ export function open ( options: Options ): Connection {
         if ( reply && !error.retryable(cause) ) rooms.delete(name);
 
         if ( waiter ) waiter.reject(cause.reason === "socket.request" ? error.fault("timeout", "socket.join", { cause }) : cause);
-        else if ( reply ) deliver({ event: errorEvent, data: reply.data, channel: name });
+        else if ( reply ) deliver({ event: reply.event, data: reply.data, channel: name });
 
     };
     const enter = ( name: string, room: Room ): void => {
@@ -586,20 +452,19 @@ export function open ( options: Options ): Connection {
         const turn = asks;
 
         room.asking = turn;
-        void ask(joinEvent, undefined, name).then(
+        void ask("", undefined, name, {}, "join").then(
             ( reply ) => {
 
-                settle(name, room, turn, reply.event === errorEvent ? refusal(reply.data) : undefined, reply);
+                settle(name, room, turn, protocol.kind(reply) === "error" ? protocol.fault(reply) : undefined, reply);
                 tell();
 
             },
-            ( caught: unknown ) => {
+        ).catch(( caught: unknown ) => {
 
-                settle(name, room, turn, faulted(caught, "socket.join"));
-                tell();
+            settle(name, room, turn, faulted(caught, "socket.join"));
+            tell();
 
-            },
-        );
+        });
 
     };
     const shed = ( cause: error.Fault, all: boolean ): void => {
@@ -710,7 +575,7 @@ export function open ( options: Options ): Connection {
         const how = typeof code === "number" ? code : 1006;
         const why = typeof reason === "string" ? reason : "";
 
-        lost(ending(how, why), adapter.probe(() => plan?.when(how, why)) === false);
+        lost(adapter.probe(() => protocol.ending?.(how, why)) ?? error.fault("unavailable", "socket.closed", { cause: { code: how, reason: why } }), adapter.probe(() => plan?.when(how, why)) === false);
 
     };
     const tick = (): void => {
@@ -718,7 +583,16 @@ export function open ( options: Options ): Connection {
         if ( !quiet ) {
 
             quiet = true;
-            push(encode({ event: pingEvent }));
+
+            try {
+
+                push(pack("", undefined, undefined, undefined, "ping"));
+
+            } catch ( cause ) {
+
+                lost(faulted(cause, "socket.protocol"), true);
+
+            }
 
             return;
 
@@ -739,7 +613,7 @@ export function open ( options: Options ): Connection {
         last = undefined;
         mark("open");
 
-        if ( typeof token === "string" && token !== "" ) push(encode({ event: authEvent, data: { token } }));
+        if ( typeof token === "string" && token !== "" ) push(token);
 
         for ( const [name, room] of rooms ) enter(name, room);
 
@@ -753,9 +627,8 @@ export function open ( options: Options ): Connection {
     };
     const heard = ( raw: unknown ): void => {
 
-        const frame = decode(raw, most);
-
-        quiet = false;
+        const text = typeof raw === "string" ? raw : textOf(raw, most);
+        const frame = text !== undefined && fits(text, most) ? adapter.probe(() => protocol.decode(text)) : undefined;
 
         if ( !frame ) {
 
@@ -765,30 +638,42 @@ export function open ( options: Options ): Connection {
 
         }
 
-        received += 1;
+        try {
 
-        if ( frame.event === pingEvent ) {
+            const kind = protocol.kind(frame);
+            const identity = kind === "hello" ? protocol.identity(frame) : undefined;
 
-            push(encode({ event: pongEvent, id: frame.id }));
+            received += 1;
+            quiet = false;
 
-            return;
+            if ( kind === "ping" ) {
+
+                push(pack("", undefined, undefined, frame.id, "pong"));
+
+                return;
+
+            }
+
+            const entry = frame.id === undefined ? undefined : waiting.get(frame.id);
+
+            if ( entry ) {
+
+                entry.resolve(frame);
+
+                return;
+
+            }
+
+            if ( kind === "quiet" ) return;
+            if ( kind === "hello" ) ident = identity;
+
+            deliver(frame);
+
+        } catch {
+
+            refused += 1;
 
         }
-
-        const entry = frame.id === undefined ? undefined : waiting.get(frame.id);
-
-        if ( entry ) {
-
-            entry.resolve(frame);
-
-            return;
-
-        }
-
-        if ( frame.event === pongEvent || (frame.event === ackEvent && frame.id !== undefined) ) return;
-        if ( frame.event === greetEvent && json.isRecord(frame.data) && named(frame.data.id) ) ident = frame.data.id;
-
-        deliver(frame);
 
     };
     const dial = ( address: unknown, token: unknown ): void => {
@@ -796,6 +681,14 @@ export function open ( options: Options ): Connection {
         if ( typeof address !== "string" || !clean(address, 2048) || !reachable.test(address) ) {
 
             lost(error.fault("internal", "socket.url"), true);
+
+            return;
+
+        }
+
+        if ( typeof token === "string" && !fits(token, most) ) {
+
+            lost(error.fault("too_large", "socket.frame"), true);
 
             return;
 
@@ -861,15 +754,15 @@ export function open ( options: Options ): Connection {
 
         });
 
-        if ( typeof url !== "function" && typeof auth !== "function" ) {
+        if ( typeof url !== "function" && !prepare ) {
 
-            dial(url, auth);
+            dial(url, undefined);
 
             return;
 
         }
 
-        void Promise.all([typeof url === "function" ? asked(url, "socket.url") : url, typeof auth === "function" ? asked(auth, "socket.auth") : auth]).then(
+        void Promise.all([typeof url === "function" ? asked(url, "socket.url") : url, prepare ? asked(prepare, "socket.prepare") : undefined]).then(
             ( [address, token] ) => {
 
                 if ( turn !== epoch ) return;
@@ -882,7 +775,7 @@ export function open ( options: Options ): Connection {
 
                 if ( turn !== epoch ) return;
 
-                const cause = faulted(caught, "socket.auth");
+                const cause = faulted(caught, "socket.prepare");
 
                 lost(cause, !error.retryable(cause));
                 tell();
@@ -960,7 +853,7 @@ export function open ( options: Options ): Connection {
         request: <T = unknown>( name: string, data?: unknown, given: Ask = {} ): Promise<T> =>
             ask(name, data, given.channel, given).then(( reply ) => {
 
-                if ( reply.event === errorEvent ) throw refusal(reply.data);
+                if ( protocol.kind(reply) === "error" ) throw protocol.fault(reply);
 
                 return reply.data as T;
 
@@ -1024,7 +917,7 @@ export function open ( options: Options ): Connection {
 
             if ( status !== "open" ) return Promise.resolve();
 
-            return ask(leaveEvent, undefined, name).then(func.noop, ( caught: unknown ) => {
+            return ask("", undefined, name, {}, "leave").then(func.noop, ( caught: unknown ) => {
 
                 if ( !error.isFault(caught) || caught.reason !== "socket.closed" ) throw caught;
 

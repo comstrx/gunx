@@ -12,6 +12,8 @@ test:core:num:judges () {
     core:num:between 5 5
     @fails core:num:between 11 1 10
     @fails core:num:between x 1 10
+    @fails core:num:is 08
+    @fails core:num:is -0x1
 
 }
 test:core:num:computes () {
@@ -22,5 +24,9 @@ test:core:num:computes () {
     @eq "$(core:num:percent 1 0)" 0
     @eq "$(core:num:max 3 9 4)" 9
     @eq "$(core:num:min 3 9 4)" 3
+    @eq "$(core:num:max -3 -9)" -3
+    @errors 'Clamp takes three integers' core:num:clamp 08 1 10
+    @errors 'Not an integer: many' core:num:max 1 many
+    @errors 'A percent takes two integers' core:num:percent 'x y' 2
 
 }

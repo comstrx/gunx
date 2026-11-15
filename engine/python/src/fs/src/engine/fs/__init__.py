@@ -1,4 +1,4 @@
-from .arch import Change, Info, Picture
+lazy from .arch import Change, Info, Picture
 from .dir import Dir
 from .encrypt import Encrypt
 from .file import File

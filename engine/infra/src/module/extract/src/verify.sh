@@ -1,6 +1,6 @@
 module:extract:words () {
 
-    local word="${1}" root="" directory="" words="${1}"
+    local word="${1}" own="${2:-}" root="" directory="" words="${1}" name=""
 
     root="$(core:git:root "${TOOL_ENGINE}")" || return
 
@@ -9,9 +9,15 @@ module:extract:words () {
         [[ -d "${directory}" ]] || continue
 
         directory="${directory%/}"
-        words+="|${directory##*/}"
+        name="${directory##*/}"
+
+        [[ "${name}" != "${own}" ]] || continue
+
+        words+="${words:+|}${name}"
 
     done
+
+    [[ -n "${words}" ]] || return 0
 
     @print "\b(${words})\b"
 
@@ -29,9 +35,10 @@ module:extract:manifest () {
 }
 module:extract:verify () {
 
-    local tree="${1}" kind="${2}" file="" failed=0 manifest="" word="" words=""
+    local tree="${1}" kind="${2}" name="${3:-}" file="" failed=0 manifest="" word="" words="" cache=""
 
     word="$(module:extract:source)" || return
+    cache="$(config:paths:cache)" || return
 
     case "${kind}" in
         engine)   manifest="Cargo.toml pyproject.toml go.work package.json infra.toml" ;;
@@ -42,33 +49,22 @@ module:extract:verify () {
 
     module:extract:manifest "${tree}" "${manifest}" || failed=1
 
-    if [[ "${kind}" != product ]]; then
+    if [[ "${kind}" == product ]]; then
+
+        words="$(module:extract:words '' "${name#product/}")" || return
+        module:extract:scan "${tree}" "${words}" "another product's name" || failed=1
+
+    else
 
         words="$(module:extract:words "${word}")" || return
 
-        while IFS= read -r -d '' file; do
-
-            ! grep -IqE '(^|[^A-Za-z0-9_./-]|[$]/|[.]/|[.][.]/)(engine|product|tutor)/|main[.]sh' -- "${file}" \
-                || { @err "verify: a monorepo path in ${file#"${tree}/"}: $(grep -IoE '(^|[^A-Za-z0-9_./-]|[$]/|[.]/|[.][.]/)(engine|product|tutor)/[^ '"'"'"]*|main[.]sh' -- "${file}" | sort -u | tr '\n' ' ')" || failed=1; }
-
-        done < <(core:fs:tree:files "${tree}/.github")
-
-        while IFS= read -r -d '' file; do
-
-            [[ "${file}" != */.git/* ]] || continue
-
-            ! grep -IqiE -- "${words}" "${file}" \
-                || { @err "verify: a monorepo or product name in ${file#"${tree}/"}: $(grep -IoiE -- "${words}" "${file}" | sort -u | tr '\n' ' ')" || failed=1; }
-
-            ! grep -IqE '\.\./(\.\./)*(engine|product|tutor)/' -- "${file}" \
-                || { @err "verify: a path out of the tree in ${file#"${tree}/"}" || failed=1; }
-
-        done < <(core:fs:tree:files "${tree}")
+        module:extract:scan "${tree}/.github" '(^|[^A-Za-z0-9_./-]|[$]/|[.]/|[.][.]/)(engine|product|tutor)/|main[.]sh' 'a monorepo path' sensitive || failed=1
+        module:extract:scan "${tree}" "${words}" 'a monorepo or product name' || failed=1
+        module:extract:scan "${tree}" '\.\./(\.\./)*(engine|product|tutor)/' 'a path out of the tree' sensitive || failed=1
 
     fi
 
-    [[ ! -e "${tree}/$(config:paths:cache)" ]] \
-        || { @err "verify: the lab $(config:paths:cache) travels in the tree" || failed=1; }
+    [[ ! -e "${tree}/${cache}" ]] || { @err "verify: the lab ${cache} travels in the tree" || failed=1; }
 
     while IFS= read -r -d '' file; do
 
@@ -82,5 +78,24 @@ module:extract:verify () {
     (( failed == 0 )) || { @err "verify refused the tree"; return; }
 
     @succ "verified ${tree}"
+
+}
+module:extract:scan () {
+
+    local tree="${1}" pattern="${2}" what="${3}" sensitive="${4:-}" file="" failed=0
+    local -a flags=( -rIlE --exclude-dir=.git )
+
+    [[ -n "${pattern}" && -d "${tree}" ]] || return 0
+    [[ -n "${sensitive}" ]] || flags+=( -i )
+
+    while IFS= read -r file; do
+
+        [[ -n "${file}" ]] || continue
+
+        @err "verify: ${what} in ${file#"${tree%/.github}/"}: $(grep -IoE "${flags[@]:3}" -- "${pattern}" "${file}" | sort -u | tr '\n' ' ')" || failed=1
+
+    done < <(grep "${flags[@]}" -- "${pattern}" "${tree}" 2>/dev/null || true)
+
+    (( failed == 0 ))
 
 }

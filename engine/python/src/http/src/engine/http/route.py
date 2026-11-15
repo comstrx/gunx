@@ -15,7 +15,7 @@ class Route:
     name       : str | None = None
     guards     : tuple[Guard, ...] = ()
     layers     : tuple[Middleware, ...] = ()
-    throttle   : str | None = None
+    throttle   : str | tuple[str, ...] | None = None
     tags       : tuple[str, ...] = ()
     hidden     : bool = False
     summary    : str = ""
@@ -99,9 +99,15 @@ class Route:
 
         return replace(self, layers=(*self.layers, *layers))
 
-    def throttled ( self, policy: str ) -> Route:
+    def throttled ( self, *policies: str ) -> Route:
 
-        return replace(self, throttle=policy)
+        if not policies or any(type(policy) is not str or not policy for policy in policies):
+
+            raise Fault(Code.INTERNAL, reason="throttle.policy")
+
+        names = tuple(dict.fromkeys(policies))
+
+        return replace(self, throttle=names[0] if len(names) == 1 else names)
 
     def hide ( self ) -> Route:
 

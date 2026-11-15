@@ -4,7 +4,7 @@ from typing import Any
 from engine.date import date
 from .arch import MODE_DIR, Target
 from .path import Path
-import pathlib, shutil
+import pathlib, shutil, stat
 
 class Dir(Path):
 
@@ -143,7 +143,16 @@ class Dir(Path):
 
             found = self._held_(path).rglob("*") if recursive else self._need_(path).iterdir()
 
-            return { item: item.stat().st_mtime for item in found if item.is_file() }
+            snapshot: dict[pathlib.Path, float] = {}
+
+            for item in found:
+
+                try: details = item.stat()
+                except FileNotFoundError: continue
+
+                if stat.S_ISREG(details.st_mode): snapshot[item] = details.st_mtime
+
+            return snapshot
 
         return await self._run_(path, go)
 

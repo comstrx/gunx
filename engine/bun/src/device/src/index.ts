@@ -1,7 +1,6 @@
-export {
-    type Accuracy, type Adapter, type Battery, type Capability, create, type Device, type Follow, type Full, type Grant, type Haptic, type Hotkey, type Media, type Notice, type Options, type Permission, type Pick, type Picked, type Position, type Shared, type Source, type Stream, targetOf, type Watched,
-} from "./device.ts";
-export { type Agent, type Contrast, type Hints, type Info, type Insets, type Network, type Orientation, orientationOf, type Platform, type Pointer, parseAgent, type Scheme, unknownInfo } from "./info.ts";
-export { type Combo, combo, combos, describe, type Key, matches } from "./keys.ts";
+export type { Accuracy, Adapter, Agent, Battery, Capability, Combo, Contrast, Device, Follow, Full, Grant, Haptic, Hints, Host, Hotkey, Info, Insets, Key, Media, Network, Notice, Options, Orientation, Permission, Pick, Picked, Platform, Pointer, Position, Scheme, Shared, Source, Stream, Watched } from "./arch.ts";
+export { create, targetOf } from "./device.ts";
+export { orientationOf, parseAgent, unknownInfo } from "./info.ts";
+export { combo, combos, describe, matches } from "./keys.ts";
 export { bindWeb, port, unknown } from "./port.ts";
-export { type Host, webAdapter } from "./web.ts";
+export { webAdapter } from "./web.ts";

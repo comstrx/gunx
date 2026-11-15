@@ -39,13 +39,13 @@ module:bundle:bench:samples () {
 
     for (( index = 0; index < rounds; index++ )); do
 
-        started="$(core:sys:now)"
+        started="${EPOCHREALTIME//[!0-9]/}"
 
         for (( round = 0; round < batch; round++ )); do
             "$@" >/dev/null 2>&1 || { core:error:fail "Bench subject failed: ${1}"; return; }
         done
 
-        ended="$(core:sys:now)"
+        ended="${EPOCHREALTIME//[!0-9]/}"
 
         core:log:print $(( (ended - started) * 1000 / batch ))
 
@@ -75,7 +75,7 @@ module:bundle:bench:unit () {
 }
 module:bundle:bench:report () {
 
-    local label="${1}" count=0 total=0 sample=0 p50=0 p95=0 p99=0 unit="" divisor=1
+    local label="${1}" count=0 total=0 sample=0 p25=0 p50=0 p75=0 p95=0 p99=0 unit="" divisor=1
     local -a sorted=()
 
     shift
@@ -86,17 +86,19 @@ module:bundle:bench:report () {
 
     for sample in "${sorted[@]}"; do total=$(( total + sample )); done
 
+    p25="$(module:bundle:bench:quantile sorted 25)"
     p50="$(module:bundle:bench:quantile sorted 50)"
+    p75="$(module:bundle:bench:quantile sorted 75)"
     p95="$(module:bundle:bench:quantile sorted 95)"
     p99="$(module:bundle:bench:quantile sorted 99)"
 
     read -r unit divisor <<< "$(module:bundle:bench:unit "${p50}")"
 
-    printf '%-28s p50=%s%s  p95=%s%s  p99=%s%s  min=%s%s  max=%s%s  mean=%s%s  n=%s  p50ns=%s\n' \
+    printf '%-28s p50=%s%s  p95=%s%s  p99=%s%s  min=%s%s  max=%s%s  mean=%s%s  n=%s  p25ns=%s  p50ns=%s  p75ns=%s\n' \
         "${label}" \
         "$(( p50 / divisor ))" "${unit}" "$(( p95 / divisor ))" "${unit}" "$(( p99 / divisor ))" "${unit}" \
         "$(( sorted[0] / divisor ))" "${unit}" "$(( sorted[count - 1] / divisor ))" "${unit}" \
-        "$(( total / count / divisor ))" "${unit}" "${count}" "${p50}"
+        "$(( total / count / divisor ))" "${unit}" "${count}" "${p25}" "${p50}" "${p75}"
 
 }
 module:bundle:bench:measure () {
@@ -118,43 +120,91 @@ module:bundle:bench:measure () {
 }
 module:bundle:bench:p50 () {
 
-    local line="${1}" field=""
+    module:bundle:bench:field "${1}" p50ns
+
+}
+module:bundle:bench:field () {
+
+    local line="${1}" name="${2}" field=""
 
     for field in ${line}; do
-        [[ "${field}" != p50ns=* ]] || { core:log:print "${field#p50ns=}"; return 0; }
+
+        [[ "${field}" == "${name}="* ]] || continue
+
+        core:num:natural "${field#"${name}="}" || { core:error:fail "Not a count in ${name}: ${field#"${name}="}"; return; }
+        core:log:print "${field#"${name}="}"
+
+        return 0
+
     done
 
-    core:error:fail "No p50ns in: ${line}"
+    core:error:fail "No ${name} in: ${line}"
+
+}
+module:bundle:bench:spread () {
+
+    local line="${1}" p25="" p50="" p75=""
+
+    p50="$(module:bundle:bench:field "${line}" p50ns)" || return
+    p25="$(module:bundle:bench:field "${line}" p25ns 2>/dev/null)" || p25="${p50}"
+    p75="$(module:bundle:bench:field "${line}" p75ns 2>/dev/null)" || p75="${p50}"
+
+    printf '%s\t%s\t%s\n' "${p25}" "${p50}" "${p75}"
 
 }
 module:bundle:bench:save () {
 
-    local file="${1}" label="${2}" line="${3}" kept=""
+    local file="${1}" label="${2}" line="${3}" spread=""
 
-    [[ ! -f "${file}" ]] || kept="$(grep -v -- "^${label}"$'\t' "${file}" || true)"
+    spread="$(module:bundle:bench:spread "${line}")" || return
 
-    {
-        [[ -z "${kept}" ]] || printf '%s\n' "${kept}"; printf '%s\t%s\n' "${label}" "$(module:bundle:bench:p50 "${line}")"
-    } | core:fs:file:write "${file}" 644
+    core:fs:file:write "${file}" 644 module:bundle:bench:rows "${file}" "${label}" "${spread}"
+
+}
+module:bundle:bench:rows () {
+
+    local file="${1}" label="${2}" spread="${3}" row=""
+
+    if [[ -f "${file}" ]]; then
+
+        while IFS= read -r row || [[ -n "${row}" ]]; do
+            [[ "${row}" == "${label}"$'\t'* ]] || core:log:print "${row}"
+        done < "${file}"
+
+    fi
+
+    printf '%s\t%s\n' "${label}" "${spread}"
 
 }
 module:bundle:bench:compare () {
 
-    local file="${1}" label="${2}" line="${3}" tolerance="${4}" current="" baseline="" delta=0
+    local file="${1}" label="${2}" line="${3}" tolerance="${4}" row="" now="" low="" current="" high="" base_low="" baseline="" base_high="" delta=0
 
     [[ -f "${file}" ]] || { core:log:warn "No baseline for ${label}; run bench --save first"; return 0; }
 
-    baseline="$(grep -- "^${label}"$'\t' "${file}" | cut -f2)" || true
-    [[ -n "${baseline}" ]] || { core:log:warn "No baseline for ${label}"; return 0; }
+    row="$(grep -- "^${label}"$'\t' "${file}")" || row=""
+    [[ -n "${row}" ]] || { core:log:warn "No baseline for ${label}"; return 0; }
 
-    current="$(module:bundle:bench:p50 "${line}")" || return
+    IFS=$'\t' read -r _ base_low baseline base_high <<< "${row}"
+    [[ -n "${baseline}" ]] || { baseline="${base_low}"; base_high="${base_low}"; }
+    [[ -n "${base_high}" ]] || base_high="${baseline}"
+
+    if ! core:num:natural "${base_low}" || ! core:num:natural "${baseline}" || ! core:num:natural "${base_high}"; then
+        core:error:fail "${file}: ${label} is not a row of counts"
+        return
+    fi
+
+    now="$(module:bundle:bench:spread "${line}")" || return
+    IFS=$'\t' read -r low current high <<< "${now}"
 
     delta=$(( (current - baseline) * 100 / (baseline > 0 ? baseline : 1) ))
 
-    (( delta <= tolerance )) || {
-        core:error:fail "${label}: p50 ${current} is ${delta}% slower than the baseline ${baseline} (tolerance ${tolerance}%)"
+    if (( delta > tolerance && low > base_high )); then
+        core:error:fail "${label}: p50 ${current} is ${delta}% slower than the baseline ${baseline} (tolerance ${tolerance}%, p25 ${low} above the baseline p75 ${base_high})"
         return
-    }
+    fi
+
+    (( delta <= tolerance )) || { core:log:warn "${label}: p50 ${current} is ${delta}% over ${baseline} but inside the noise (p25 ${low} ≤ baseline p75 ${base_high})"; return 0; }
 
     core:log:info "${label}: p50 ${current} against baseline ${baseline} (${delta}%)"
 

@@ -1,55 +1,69 @@
-from typing import Any
-
-from cryptography.exceptions import InvalidSignature, InvalidTag
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from engine.error import Code, Fault
 from engine.parse import parse
 from engine.string import string
 from engine.rand import rand
 from .arch import (
-    COUNTER, FRAME_BYTES, HKDF_BYTES, KEY_BYTES, Key, MAGIC, NONCE_BYTES, OFFSET_MASK, Pair, SAFE, Sealed, TAG_BYTES,
-    TOTP_BYTES, TOTP_CEILING, TOTP_DIGITS, TOTP_FLOOR, TOTP_HASH, TOTP_LEAST, TOTP_MOST, TOTP_PACE, TOTP_STEP,
-    TOTP_TEXT, TOTP_WINDOW, TRUNCATE, Wire,
+    COUNTER, FRAME_BYTES, HASHED, HKDF_BYTES, KEY_BYTES, KEY_ENCODED, KEY_TEXT, LIMIT, MAX_BYTES,
+    OFFSET_MASK, Pair, SAFE,
+    SIGNATURE_TEXT, TOTP_BYTES, TOTP_CEILING, TOTP_DIGITS, TOTP_FLOOR, TOTP_HASH, TOTP_LEAST, TOTP_MOST, TOTP_PACE,
+    TOTP_STEP, TOTP_TEXT, TOTP_WINDOW, TRUNCATE, Key,
 )
+from .cipher import Cipher
+from .hasher import Hasher
+from .kdf import Kdf
+from .wire import Wire
 import base64, blake3, hashlib, hmac, math, time, zlib
 
 class Crypto:
 
+    __slots__ = ("_cipher", "_kdf", "_limit")
+
     def __init__ ( self ) -> None:
 
-        self._keys: dict[str, Key]       = {}
-        self._ciphers: dict[str, AESGCM] = {}
-        self._current: str | None        = None
+        self._cipher = Cipher()
+        self._kdf    = Kdf()
+        self._limit  = LIMIT
+
+    def options (
+        self, *, cipher: str | None = None, limit: int | None = None, time_cost: int | None = None,
+        memory_cost: int | None = None, parallelism: int | None = None,
+    ) -> Crypto:
+
+        made         = object.__new__(Crypto)
+        made._cipher = self._cipher.scope(cipher, limit)
+        made._limit  = self._limit if limit is None else limit
+        made._kdf    = self._kdf if time_cost is memory_cost is parallelism is None else Kdf(
+            self._kdf.time if time_cost is None else time_cost,
+            self._kdf.memory if memory_cost is None else memory_cost,
+            self._kdf.lanes if parallelism is None else parallelism,
+        )
+
+        return made
 
     def setup ( self, keys: list[Key], current: str | None = None ) -> None:
 
-        held   = { key.id: key for key in keys }
-        chosen = current or (keys[0].id if keys else None)
-
-        if not keys or len(held) != len(keys): raise Fault(Code.INTERNAL, reason="crypto.keys")
-        if chosen not in held: raise Fault(Code.INTERNAL, reason="crypto.current")
-
-        self._keys    = held
-        self._ciphers = { key.id: AESGCM(key.secret) for key in keys }
-        self._current = chosen
+        self._cipher.setup(keys, current)
 
     def ready ( self ) -> bool:
 
-        return self._current is not None
+        return self._cipher.ready()
 
     def key ( self, id_: str | None = None ) -> Key:
 
-        return Key(id_ or rand.hex(4), rand.bytes(KEY_BYTES))
+        return Key(rand.hex(4) if id_ is None else id_, rand.bytes(KEY_BYTES))
 
     def parse_key ( self, text: str ) -> Key:
+
+        if type(text) is not str or not 1 <= len(text) <= KEY_TEXT: raise Fault(Code.INTERNAL, reason="crypto.key")
 
         id_, _, secret = text.rpartition(":")
         bare           = secret.rstrip("=")
         padded         = len(secret) - len(bare)
-        raw            = Wire.unpack(bare.translate(SAFE)) if padded in (0, -len(bare) % 4) else None
+        raw            = Wire.unpack(bare.translate(SAFE)) if len(bare) == KEY_ENCODED and padded in (0, 1) else None
 
         if raw is None: raise Fault(Code.INTERNAL, reason="crypto.key")
 
@@ -61,27 +75,19 @@ class Crypto:
 
     def current ( self ) -> Key:
 
-        if self._current is None: raise Fault(Code.INTERNAL, reason="crypto.setup")
-
-        return self._keys[self._current]
+        return self._cipher.current()
 
     def names ( self ) -> tuple[str, ...]:
 
-        return tuple(sorted(self._keys))
+        return self._cipher.names()
 
     def seal ( self, plain: bytes | str, aad: bytes = b"" ) -> str:
 
-        name  = self.current().id
-        nonce = rand.bytes(NONCE_BYTES)
-        data  = plain if type(plain) is bytes else self._raw_(plain)
-
-        return Sealed(name, nonce, self._ciphers[name].encrypt(nonce, data, aad)).encode()
+        return self._cipher.seal(plain, aad)
 
     def open ( self, text: str, aad: bytes = b"" ) -> bytes:
 
-        sealed = Sealed.decode(text)
-
-        return self._decrypt_(sealed.key, sealed.nonce, sealed.body, aad)
+        return self._cipher.open(text, aad)
 
     def open_text ( self, text: str, aad: bytes = b"" ) -> str:
 
@@ -90,43 +96,30 @@ class Crypto:
 
     def stale ( self, text: str ) -> bool:
 
-        return Sealed.decode(text).key != self._current
+        return self._cipher.stale(text)
 
     def rotate ( self, text: str, aad: bytes = b"" ) -> str:
 
-        return self.seal(self.open(text, aad), aad)
+        return self._cipher.rotate(text, aad)
 
-    def seal_bytes ( self, plain: bytes, aad: bytes = b"" ) -> bytes:
+    def seal_bytes ( self, plain: bytes | str, aad: bytes = b"" ) -> bytes:
 
-        name  = self.current().id
-        nonce = rand.bytes(NONCE_BYTES)
-        label = name.encode()
-
-        return MAGIC + bytes([len(label)]) + label + nonce + self._ciphers[name].encrypt(nonce, plain, aad)
+        return self._cipher.seal_bytes(plain, aad)
 
     def open_bytes ( self, blob: bytes, aad: bytes = b"" ) -> bytes:
 
-        if not blob.startswith(MAGIC) or len(blob) <= len(MAGIC): raise Fault(Code.BAD_REQUEST, reason="crypto.sealed")
-
-        width = blob[len(MAGIC)]
-        start = len(MAGIC) + 1
-        name  = blob[start:start + width].decode("utf-8", "replace")
-        rest  = blob[start + width:]
-
-        if len(rest) < NONCE_BYTES + TAG_BYTES: raise Fault(Code.BAD_REQUEST, reason="crypto.sealed")
-
-        return self._decrypt_(name, rest[:NONCE_BYTES], rest[NONCE_BYTES:], aad)
+        return self._cipher.open_bytes(blob, aad)
 
     def hkdf (
         self, secret: bytes | str, info: bytes | str, length: int = KEY_BYTES, salt: bytes | None = None,
     ) -> bytes:
 
-        raw = self._raw_(secret)
+        raw = Wire.raw(secret, self._limit)
 
         if type(length) is not int or not 1 <= length <= HKDF_BYTES: raise Fault(Code.INTERNAL, reason="crypto.length")
         if not raw: raise Fault(Code.INTERNAL, reason="crypto.secret")
 
-        return HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=self._raw_(info)).derive(raw)
+        return HKDF(algorithm=hashes.SHA256(), length=length, salt=salt, info=Wire.raw(info, self._limit)).derive(raw)
 
     def derive ( self, info: str, id_: str | None = None ) -> Key:
 
@@ -143,14 +136,19 @@ class Crypto:
 
     def attest ( self, data: bytes | str, private: bytes ) -> str:
 
-        raw = self._raw_(data)
+        raw = Wire.raw(data, self._limit)
+
+        if type(private) is not bytes or len(private) != KEY_BYTES: raise Fault(Code.INTERNAL, reason="crypto.private")
 
         try: return Wire.pack(Ed25519PrivateKey.from_private_bytes(private).sign(raw))
         except ValueError as error: raise Fault(Code.INTERNAL, reason="crypto.private") from error
 
     def attested ( self, data: bytes | str, signature: str, public: bytes ) -> bool:
 
-        raw     = self._raw_(data)
+        if type(signature) is not str or len(signature) != SIGNATURE_TEXT: return False
+        if type(public) is not bytes or len(public) != KEY_BYTES: return False
+
+        raw     = Wire.raw(data, self._limit)
         decoded = Wire.unpack(signature)
 
         if decoded is None: return False
@@ -162,7 +160,7 @@ class Crypto:
 
     def crc32 ( self, data: bytes | str ) -> int:
 
-        return zlib.crc32(self._raw_(data))
+        return zlib.crc32(Wire.raw(data, self._limit))
 
     def totp_secret ( self ) -> str:
 
@@ -188,7 +186,7 @@ class Crypto:
 
         key    = self._totp_key_(secret)
         base   = self._counter_(at, digits, step)
-        wanted = self._digits_("".join(code.split())) if len(code) <= TOTP_TEXT else ""
+        wanted = self._digits_("".join(code.split())) if type(code) is str and len(code) <= TOTP_TEXT else ""
         found  = None
 
         for counter in range(max(base - window, 0), min(base + window, COUNTER) + 1):
@@ -214,86 +212,98 @@ class Crypto:
 
         if not account or not issuer or ":" in issuer: raise Fault(Code.INTERNAL, reason="crypto.totp")
 
-        label = parse.quote(self._raw_(f"{issuer}:{account}").decode())
+        label = parse.quote(Wire.raw(f"{issuer}:{account}", self._limit).decode())
         query = f"secret={named}&issuer={parse.quote(issuer)}&digits={digits}&period={step}&algorithm=SHA1"
 
         return f"otpauth://totp/{label}?{query}"
 
     def hash ( self, data: bytes | str, algorithm: str = "sha256" ) -> str:
 
-        raw = data if type(data) is bytes else self._raw_(data)
+        raw = Wire.raw(data, self._limit)
 
+        if algorithm == "argon2id": return self._kdf.hash(raw)
         if algorithm == "blake3": return blake3.blake3(raw).hexdigest()
         if algorithm == "sha256": return hashlib.sha256(raw).hexdigest()
 
-        made = self.hasher(algorithm)
+        try: hashed = hashlib.new(algorithm, raw)
+        except (ValueError, TypeError) as error: raise Fault(Code.INTERNAL, reason="crypto.algorithm") from error
 
-        made.update(raw)
+        if not hashed.digest_size: raise Fault(Code.INTERNAL, reason="crypto.algorithm")
 
-        return str(made.hexdigest())
+        return hashed.hexdigest()
+
+    def check ( self, data: bytes | str, hashed: str, algorithm: str | None = None ) -> bool:
+
+        if type(hashed) is not str or len(hashed) > HASHED: return False
+
+        chosen = ("argon2id" if hashed.startswith("$argon2") else "sha256") if algorithm is None else algorithm
+        if chosen == "argon2id": return self._kdf.check(Wire.raw(data, self._limit), hashed)
+
+        return rand.constant_equal(self.hash(data, chosen), hashed)
+
+    def rehash ( self, hashed: str ) -> bool:
+
+        return self._kdf.stale(hashed)
 
     def digest ( self, data: bytes | str ) -> str:
 
         return self.hash(data, "blake3")
 
-    def hasher ( self, algorithm: str = "blake3" ) -> Any:
+    def hasher ( self, algorithm: str = "blake3" ) -> Hasher:
 
-        if algorithm == "blake3": return blake3.blake3()
+        return Hasher(algorithm, self._limit)
 
-        try: made = hashlib.new(algorithm)
-        except (ValueError, TypeError) as error: raise Fault(Code.INTERNAL, reason="crypto.algorithm") from error
+    def signer ( self, secret: bytes | str | None = None, algorithm: str = "sha256" ) -> Hasher:
 
-        if not made.digest_size: raise Fault(Code.INTERNAL, reason="crypto.algorithm")
+        key = self.current().secret if secret is None else Wire.raw(secret, self._limit)
 
-        return made
+        return Hasher.keyed(key, algorithm, self._limit)
 
     def mac ( self, data: bytes | str, secret: bytes | str | None = None, algorithm: str = "sha256" ) -> bytes:
 
-        raw = data if type(data) is bytes else self._raw_(data)
-        key = self.current().secret if secret is None else secret if type(secret) is bytes else self._raw_(secret)
+        raw = Wire.raw(data, self._limit)
+        key = self.current().secret if secret is None else Wire.raw(secret, self._limit)
 
         if not key: raise Fault(Code.INTERNAL, reason="crypto.secret")
 
         try: return hmac.digest(key, raw, algorithm)
-        except ValueError as error: raise Fault(Code.INTERNAL, reason="crypto.algorithm") from error
+        except (ValueError, TypeError) as error: raise Fault(Code.INTERNAL, reason="crypto.algorithm") from error
 
-    def sign ( self, data: bytes | str, secret: bytes | str | None = None ) -> str:
+    def sign ( self, data: bytes | str, secret: bytes | str | None = None, algorithm: str = "sha256" ) -> str:
 
-        return self.mac(data, secret).hex()
+        return self.mac(data, secret, algorithm).hex()
 
-    def verify ( self, data: bytes | str, signature: str, secret: bytes | str | None = None ) -> bool:
+    def verify (
+        self, data: bytes | str, signature: bytes | str, secret: bytes | str | None = None, algorithm: str = "sha256",
+    ) -> bool:
 
-        return rand.constant_equal(self.sign(data, secret), signature)
+        if type(signature) is str and len(signature) <= HASHED:
+            return rand.constant_equal(self.sign(data, secret, algorithm), signature)
+        if type(signature) is bytes and len(signature) <= HASHED:
+            return rand.constant_equal(self.mac(data, secret, algorithm), signature)
+
+        return False
 
     def fingerprint ( self, *parts: str ) -> str:
 
-        raws = [self._raw_(part) for part in parts]
+        hashed = blake3.blake3()
 
-        return blake3.blake3(b"".join(len(raw).to_bytes(FRAME_BYTES) + raw for raw in raws)).hexdigest()[:32]
+        for part in parts:
+
+            raw = Wire.raw(part, self._limit)
+
+            hashed.update(len(raw).to_bytes(FRAME_BYTES))
+            hashed.update(raw)
+
+        return hashed.hexdigest(length=16)
 
     def describe ( self ) -> dict[str, object]:
 
-        return { "keys": self.names(), "current": self._current }
-
-    def _raw_ ( self, data: bytes | str ) -> bytes:
-
-        if not isinstance(data, str): return data
-
-        try: return data.encode()
-        except UnicodeEncodeError as error: raise Fault(Code.BAD_REQUEST, reason="crypto.encoding") from error
-
-    def _decrypt_ ( self, name: str, nonce: bytes, body: bytes, aad: bytes ) -> bytes:
-
-        cipher = self._ciphers.get(name)
-
-        if cipher is None: raise Fault(Code.BAD_REQUEST, reason="crypto.unknown_key")
-
-        try: return cipher.decrypt(nonce, body, aad)
-        except InvalidTag as error: raise Fault(Code.BAD_REQUEST, reason="crypto.tampered") from error
+        return self._cipher.describe()
 
     def _totp_key_ ( self, secret: str ) -> bytes:
 
-        if len(secret) > TOTP_TEXT: raise Fault(Code.BAD_REQUEST, reason="crypto.secret")
+        if type(secret) is not str or len(secret) > TOTP_TEXT: raise Fault(Code.BAD_REQUEST, reason="crypto.secret")
 
         padded = "".join(secret.split()).rstrip("=")
 
@@ -314,7 +324,10 @@ class Crypto:
         paced  = type(step) is int and 1 <= step <= TOTP_PACE
         sized  = type(digits) is int and TOTP_LEAST <= digits <= TOTP_MOST
 
-        if not paced or not sized or not math.isfinite(moment): raise Fault(Code.INTERNAL, reason="crypto.totp")
+        bounded = type(moment) in (int, float) and -MAX_BYTES * COUNTER <= moment <= MAX_BYTES * COUNTER
+
+        if not paced or not sized or not bounded or not math.isfinite(moment):
+            raise Fault(Code.INTERNAL, reason="crypto.totp")
 
         return int(moment // step)
 

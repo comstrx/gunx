@@ -1,6 +1,7 @@
 "use client";
 
 import type * as spec from "engine/spec";
+import * as React from "react";
 import { useEffect, useMemo } from "react";
 import { Confirm } from "@/components/confirm.tsx";
 import { Denied } from "@/components/denied.tsx";
@@ -26,7 +27,7 @@ function Placed ({ name }: { name: string } ) {
     const Feature = registry[name];
     const shown = useVisible(name);
 
-    return Feature && shown ? <Feature /> : null;
+    return Feature && shown ? <React.Suspense fallback={null}><Feature /></React.Suspense> : null;
 
 }
 function Piece ({ block, at }: { block: spec.Block; at: string } ) {

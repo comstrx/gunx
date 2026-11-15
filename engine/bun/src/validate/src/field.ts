@@ -1,10 +1,8 @@
 import * as date from "engine-date";
 import * as value from "engine-value";
+import type { FileLike, FileLimits } from "./arch.ts";
 import { format } from "./check.ts";
 import * as zod from "./zod.ts";
-
-export type FileLike = { size: number; type: string; name?: string | undefined };
-export type FileLimits = { maxBytes?: number | undefined; types?: readonly string[] | undefined; extensions?: readonly string[] | undefined };
 
 const hexShape = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const fourth = zod.ipv4();

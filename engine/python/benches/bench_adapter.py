@@ -1,4 +1,7 @@
+import os
+from contextlib import suppress
 from engine.adapter import Adapter, Manager, Receipt
+from engine.error import Code, Fault
 from engine.log import log
 from engine.test import Bench
 from pathlib import Path
@@ -25,7 +28,7 @@ owl     = Owl()
 mail: Manager[Adapter] = Manager("mail")
 receipt = Receipt("m-1", "Delivered", { "provider": "owl" })
 
-log.setup("info", "json", Path("/dev/null"))
+log.setup("info", "json", Path(os.devnull))
 
 for held in (Pigeon(), owl, Hawk()): mail.use(held, default=held is owl)
 
@@ -53,7 +56,37 @@ def use () -> None: mail.use(owl)
 
 def accepted () -> None: receipt.accepted()
 
-async def close () -> None: await mail.close()
+def pending () -> None: mail.pending()
+
+async def close () -> None:
+
+    held: Manager[Adapter] = Manager("mail")
+
+    for adapter in (Pigeon(), Owl(), Hawk()): held.use(adapter)
+
+    await held.close()
+
+async def drain () -> None:
+
+    held: Manager[Adapter] = Manager("mail")
+    held.use(Owl())
+    held.use(Owl())
+
+    if await held.drain() != 1 or not held.ready(): raise RuntimeError("retirement failed")
+
+    await held.close()
+
+def parsed () -> None: owl.receipt({ "id": "m-1", "status": "sent", "data": { "rows": [1, 2] } })
+
+async def answered () -> int: return 1
+
+async def upstream () -> None: await owl.upstream(answered())
+
+async def refused () -> None: raise Fault(Code.TOO_MANY_REQUESTS, retry_after=1, unknown=True)
+
+async def failure () -> None:
+
+    with suppress(Fault): await owl.upstream(refused())
 
 bench.measure("adapter.can", can)
 bench.measure("adapter.can.missing", cannot)
@@ -67,6 +100,11 @@ bench.measure("adapter.manager.matrix", matrix)
 bench.measure("adapter.manager.describe", describe)
 bench.measure("adapter.manager.use", use)
 bench.measure("adapter.receipt.accepted", accepted)
-Bench.run(bench.measure_async("adapter.manager.close", close, rounds=5000))
+bench.measure("adapter.manager.pending", pending)
+bench.measure("adapter.receipt.snapshot", parsed)
+Bench.run(bench.measure_async("adapter.manager.lifecycle", close, rounds=5000))
+Bench.run(bench.measure_async("adapter.manager.drain", drain, rounds=5000))
+Bench.run(bench.measure_async("adapter.upstream", upstream, rounds=5000))
+Bench.run(bench.measure_async("adapter.upstream.failure", failure, rounds=5000))
 
 log.close()

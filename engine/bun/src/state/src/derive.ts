@@ -1,9 +1,4 @@
-export type Readable<T> = { getState: () => T; subscribe: ( listener: ( state: T, previous: T ) => void ) => () => void };
-export type Watched<T> = { get: () => T; watch: ( listener: ( value: T, previous: T ) => void ) => () => void };
-export type Source<T> = Readable<T> | Watched<T>;
-export type Equal<R> = ( a: R, b: R ) => boolean;
-export type Readables = Record<string, Source<unknown>>;
-export type Combined<R extends Readables> = { [K in keyof R]: R[K] extends Readable<infer T> ? T : R[K] extends Watched<infer T> ? T : never };
+import type { Combined, Equal, Readable, Readables, Source } from "./arch.ts";
 
 function plain ( value: object ): boolean {
 
@@ -101,24 +96,61 @@ export function combine<R extends Readables> ( sources: R ): Readable<Combined<R
         subscribe: ( listener ) => {
 
             let previous = read();
-            const stops = origins.map(( origin ) => origin.subscribe(() => {
+            const stops: (() => void)[] = [];
+            const release = (): void => {
 
-                const next = read();
+                let failed: { cause: unknown } | undefined;
 
-                if ( next === previous ) return;
+                for ( const stop of stops.splice(0) ) {
 
-                const before = previous;
+                    try {
 
-                previous = next;
-                listener(next, before);
+                        stop();
 
-            }));
+                    } catch ( cause ) {
 
-            return () => {
+                        failed ??= { cause };
 
-                for ( const stop of stops ) stop();
+                    }
+
+                }
+
+                if ( failed ) throw failed.cause;
 
             };
+
+            try {
+
+                for ( const origin of origins ) stops.push(origin.subscribe(() => {
+
+                    const next = read();
+
+                    if ( next === previous ) return;
+
+                    const before = previous;
+
+                    previous = next;
+                    listener(next, before);
+
+                }));
+
+            } catch ( cause ) {
+
+                try {
+
+                    release();
+
+                } catch ( cleanup ) {
+
+                    throw new AggregateError([cause, cleanup], "state.subscribe");
+
+                }
+
+                throw cause;
+
+            }
+
+            return release;
 
         },
     };

@@ -130,7 +130,7 @@ describe("net", () => {
         expect(secure["strict-transport-security"]).toContain("max-age");
         expect(net.securityHeaders({ hsts: false })["strict-transport-security"]).toBeUndefined();
 
-        const facts = net.facts({ "user-agent": "Mozilla/5.0 (iPhone) Mobile Safari", "accept-language": "ar-EG,ar;q=0.9", "x-forwarded-for": "1.2.3.4", "x-forwarded-proto": "https" });
+        const facts = net.facts({ "user-agent": "Mozilla/5.0 (iPhone) Mobile Safari", "accept-language": "ar-EG,ar;q=0.9", "x-forwarded-for": "1.2.3.4", "x-forwarded-proto": "https" }, undefined, 1);
 
         expect(facts).toEqual({ ip: "1.2.3.4", agent: "Mozilla/5.0 (iPhone) Mobile Safari", language: "ar-EG", referer: undefined, requestId: undefined, secure: true, mobile: true, bot: false });
         expect(net.facts(new Headers({ "user-agent": "Googlebot/2.1" }), "9.9.9.9").bot).toBe(true);
@@ -138,7 +138,7 @@ describe("net", () => {
 
         const parsed = net.parseEvents("id: 1\nevent: tick\ndata: {\"n\":1}\n\n: comment\ndata: a\ndata: b\n\n");
 
-        expect(parsed).toEqual([{ id: "1", event: "tick", data: '{"n":1}', json: { n: 1 } }, { id: undefined, event: "message", data: "a\nb", json: undefined }]);
+        expect(parsed).toEqual([{ id: "1", event: "tick", data: '{"n":1}', json: { n: 1 } }, { id: "1", event: "message", data: "a\nb", json: undefined }]);
 
         const stream = new ReadableStream<Uint8Array>({
             start ( controller ) {
@@ -343,9 +343,9 @@ describe("net", () => {
         expect(net.securityHeaders()["strict-transport-security"]).toBe("max-age=63072000; includeSubDomains");
         expect(net.securityHeaders({ hsts: true })["strict-transport-security"]).toBe("max-age=63072000; includeSubDomains");
         expect(Object.keys(net.securityHeaders({ csp: { "default-src": "'self'" }, reportOnly: true })).sort()).toEqual(["content-security-policy-report-only", "cross-origin-opener-policy", "permissions-policy", "referrer-policy", "strict-transport-security", "x-content-type-options", "x-frame-options"]);
-        expect(net.facts({ "user-agent": "bad\u0001agent", "accept-language": "x", referer: "javascript:1", "x-request-id": "a b", "x-forwarded-proto": "HTTPS, http" })).toEqual({ ip: undefined, agent: "", language: undefined, referer: undefined, requestId: undefined, secure: true, mobile: false, bot: false });
+        expect(net.facts({ "user-agent": "bad\u0001agent", "accept-language": "x", referer: "javascript:1", "x-request-id": "a b", "x-forwarded-proto": "HTTPS, http" }, undefined, 1)).toEqual({ ip: undefined, agent: "", language: undefined, referer: undefined, requestId: undefined, secure: true, mobile: false, bot: false });
         expect(net.facts({ "user-agent": "x".repeat(300), "accept-language": "en-US,en;q=0.9", referer: "https://ok.example/path?q", "x-request-id": "req_1.2:3-4", "x-forwarded-proto": "http" })).toMatchObject({ agent: "x".repeat(256), language: "en-US", referer: "https://ok.example/path?q", requestId: "req_1.2:3-4", secure: false });
-        expect([net.facts({ "x-forwarded-for": "10.0.0.1", "x-real-ip": "203.0.113.5" }, "9.9.9.9").ip, net.facts({ "x-forwarded-for": "junk", "x-real-ip": "203.0.113.5" }, "9.9.9.9").ip, net.facts({ "x-forwarded-for": "203.0.113.9" }, "9.9.9.9", 0).ip, net.facts({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" }, "9.9.9.9", 2).ip, net.facts({}, "9.9.9.9").ip, net.facts({}).ip, net.facts({ referer: "ftp://x.example/", "x-request-id": "x".repeat(200) }).requestId]).toEqual(["10.0.0.1", "203.0.113.5", "9.9.9.9", "203.0.113.9", "9.9.9.9", undefined, undefined]);
+        expect([net.facts({ "x-forwarded-for": "10.0.0.1", "x-real-ip": "203.0.113.5" }, "9.9.9.9", 1).ip, net.facts({ "x-forwarded-for": "junk", "x-real-ip": "203.0.113.5" }, "9.9.9.9", 1).ip, net.facts({ "x-forwarded-for": "203.0.113.9" }, "9.9.9.9", 0).ip, net.facts({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" }, "9.9.9.9", 2).ip, net.facts({}, "9.9.9.9").ip, net.facts({}).ip, net.facts({ referer: "ftp://x.example/", "x-request-id": "x".repeat(200) }).requestId]).toEqual(["10.0.0.1", "203.0.113.5", "9.9.9.9", "203.0.113.9", "9.9.9.9", undefined, undefined]);
         expect(net.facts(new Headers({ "User-Agent": "Mozilla/5.0 HeadlessChrome", "Accept-Language": "ar" })).bot).toBe(true);
         expect(net.facts({ "user-agent": undefined, "accept-language": "pt-BR" }).language).toBe("pt-BR");
 
@@ -391,7 +391,7 @@ describe("net", () => {
 
         };
 
-        expect(await collect({ fetcher, reconnect: 5, lastId: "0" })).toEqual(["7|message|one", "8|tick|{\"n\":1}\nmore", "-|message|back"]);
+        expect(await collect({ fetcher, reconnect: 5, lastId: "0" })).toEqual(["7|message|one", "8|tick|{\"n\":1}\nmore", "8|message|back"]);
         expect([calls, asked]).toEqual([3, ["0", "8", "8"]]);
         expect(await collect({ fetcher: async () => sse("data: once\n\n") })).toEqual(["-|message|once"]);
         expect(await collect({ fetcher: async () => new Response("x", { status: 200, headers: { "content-type": "text/html" } }) })).toBe(" internal/net.stream");
@@ -410,7 +410,7 @@ describe("net", () => {
         expect(await aborted).toBe(" timeout/net.aborted");
         expect(await collect({ fetcher: async () => sse(""), signal: AbortSignal.abort() })).toBe(" timeout/net.aborted");
         expect(await Promise.all([net.events("https://a.example/sse", { idle: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { retry: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { maxBytes: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { reconnect: Number.NaN }).next().then(() => "ok", told), net.events("javascript:x").next().then(() => "ok", told)])).toEqual(["RangeError: not a duration", "RangeError: not a duration", "RangeError: not a size", "RangeError: not a count", "forbidden/net.scheme"]);
-        expect(net.parseEvents("data: a\r\ndata: b\r\n\r\nid: 9\n\ndata:x\n\n")).toEqual([{ id: undefined, event: "message", data: "a\nb", json: undefined }, { id: undefined, event: "message", data: "x", json: undefined }]);
+        expect(net.parseEvents("data: a\r\ndata: b\r\n\r\nid: 9\n\ndata:x\n\n")).toEqual([{ id: undefined, event: "message", data: "a\nb", json: undefined }, { id: "9", event: "message", data: "x", json: undefined }]);
         expect([net.parseEvents("﻿data: bom\n\n")[0]?.data, net.parseEvents("data: tail"), net.parseEvents("data: tail\n"), net.parseEvents("event: ping\n\n"), net.parseEvents("id: a\u0000b\ndata: z\n\n")[0]?.id, net.parseEvents(": only a comment\n\n"), net.parseEvents("data\n\n")[0]?.data, net.parseEvents("data:  two spaces\n\n")[0]?.data, net.parseEvents("")]).toEqual(["bom", [], [], [], undefined, [], "", " two spaces", []]);
         expect(net.parseEvents("data: 1\rdata: 2\r\r")).toEqual([{ id: undefined, event: "message", data: "1\n2", json: undefined }]);
 
@@ -495,7 +495,7 @@ describe("net", () => {
         expect([net.forwardedFor("203.0.113.9, 10.0.0.1", 0), net.forwardedFor("203.0.113.9, 10.0.0.1", -1), net.forwardedFor("203.0.113.9, 10.0.0.1", 1.5), net.forwardedFor("203.0.113.9, 10.0.0.1", 3)]).toEqual([undefined, undefined, undefined, undefined]);
         expect([net.retryAfter("99999999999"), net.retryAfter("2147483648"), net.retryAfter("2147483647")]).toEqual([2_147_483_647, 2_147_483_647, 2_147_483_647]);
         expect(net.facts({ "x-forwarded-for": "203.0.113.9", "x-real-ip": "203.0.113.5" }, "9.9.9.9", 0).ip).toBe("9.9.9.9");
-        expect(net.facts({ "x-forwarded-for": "203.0.113.9", "x-real-ip": "203.0.113.5" }, "9.9.9.9").ip).toBe("203.0.113.9");
+        expect(net.facts({ "x-forwarded-for": "203.0.113.9", "x-real-ip": "203.0.113.5" }, "9.9.9.9", 1).ip).toBe("203.0.113.9");
 
         const streamed = ( text: string ): Response => new Response(new ReadableStream<Uint8Array>({ start ( controller ) {
 
@@ -525,4 +525,16 @@ describe("net", () => {
         expect([heard, calls, Date.now() - started < 1000]).toEqual([["first"], 2, true]);
 
     });
+});
+
+it("request facts ignore forwarded identity and scheme unless the caller opts into a trusted hop count", () => {
+
+    const headers = { "x-forwarded-for": "203.0.113.9", "x-real-ip": "203.0.113.5", "x-forwarded-proto": "https" };
+
+    expect(net.facts(headers, "198.51.100.4")).toMatchObject({ ip: "198.51.100.4", secure: false });
+    expect(net.facts(headers)).toMatchObject({ ip: undefined, secure: false });
+    expect(net.facts(headers, "198.51.100.4", 1)).toMatchObject({ ip: "203.0.113.9", secure: true });
+
+    for ( const hops of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY] ) expect(() => net.facts(headers, undefined, hops)).toThrow("not a hop count");
+
 });

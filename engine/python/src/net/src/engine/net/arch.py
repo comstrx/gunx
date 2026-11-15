@@ -4,6 +4,11 @@ from typing import Any
 from engine.json import json
 import ipaddress
 
+POOL      = 64
+HOST_POOL = 16
+DNS_TTL   = 60
+CHUNK     = 65536
+HEADER    = 16384
 MAX_BODY  = 8 * 1024 * 1024
 LINE      = 1024 * 1024
 EVENT     = 4 * 1024 * 1024

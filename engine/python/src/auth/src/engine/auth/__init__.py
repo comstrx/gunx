@@ -1,8 +1,9 @@
-from .actor import Actor
-from .arch import Otp
+lazy from .actor import Actor
+lazy from .arch import Otp
 from .auth import Auth
-from .relay import Relay
+lazy from .relay import Relay
+lazy from .sessions import Sessions
 
 auth = Auth()
 
-__all__ = ["Actor", "Auth", "Otp", "Relay", "auth"]
+__all__ = ["Actor", "Auth", "Otp", "Relay", "Sessions", "auth"]

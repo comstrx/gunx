@@ -607,3 +607,17 @@ describe("fuzz history", () => {
     });
 
 });
+
+it("URL preprocessing preserves separate surrogate replacements across discarded controls", () => {
+
+    fc.assert(fc.property(fc.integer({ min: 0xd800, max: 0xdbff }), fc.integer({ min: 0xdc00, max: 0xdfff }), fc.constantFrom("\t", "\r", "\n", "\r\n"), ( high, low, control ) => {
+
+        const text = `/${String.fromCharCode(high)}${control}${String.fromCharCode(low)}`;
+        const wanted = new URL(text, base).pathname;
+
+        expect(history.parse(text).path).toBe(wanted);
+        expect(history.local(text)?.path).toBe(wanted);
+
+    }), { numRuns: 2000 });
+
+});

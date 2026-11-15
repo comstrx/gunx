@@ -1,3 +1,5 @@
+declare -g ERROR_TRAPS=""
+
 core:error:fail () {
 
     core:error:raise 1 "$*"
@@ -28,6 +30,8 @@ core:error:usage () {
 }
 core:error:cleanup () {
 
+    core:fs:release
+
     [[ "${TOOL_KEEP:-false}" != true ]] || return 0
     [[ -z "${TOOL_TEMP:-}" || ! -d "${TOOL_TEMP}" ]] || rm -rf -- "${TOOL_TEMP}"
 
@@ -35,7 +39,20 @@ core:error:cleanup () {
 core:error:traps () {
 
     trap core:error:cleanup EXIT
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
+    core:error:guard
+
+    ERROR_TRAPS="${BASHPID}"
+
+}
+core:error:guard () {
+
+    trap 'core:error:halt 130' INT
+    trap 'core:error:halt 143' TERM
+
+}
+core:error:halt () {
+
+    core:process:halt
+    exit "${1:-1}"
 
 }

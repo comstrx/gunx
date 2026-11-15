@@ -1,0 +1,54 @@
+export type Wait = { timeout?: number | undefined; signal?: AbortSignal | undefined };
+export type Abortable = { readonly signal: AbortSignal; abort: ( reason?: unknown ) => void; release: () => void };
+export type Events = Record<string, unknown>;
+export type Handler<T> = ( payload: T ) => void;
+export type Fail = ( cause: unknown ) => void;
+export type Listen = { once?: boolean | undefined; signal?: AbortSignal | undefined };
+export type EmitterOptions = { fail?: Fail | undefined };
+export type Emitter<E extends Events> = {
+    on: <K extends keyof E & string>( name: K, handler: Handler<E[K]>, options?: Listen ) => () => void;
+    once: <K extends keyof E & string>( name: K, handler: Handler<E[K]> ) => () => void;
+    off: <K extends keyof E & string>( name: K, handler?: Handler<E[K]> ) => void;
+    emit: <K extends keyof E & string>( name: K, payload: E[K] ) => number;
+    wait: <K extends keyof E & string>( name: K, options?: number | Wait ) => Promise<E[K]>;
+    any: ( handler: ( payload: E[keyof E & string], name: keyof E & string ) => void ) => () => void;
+    has: ( name: keyof E & string ) => boolean;
+    count: ( name?: keyof E & string ) => number;
+    names: () => string[];
+    clear: () => void;
+};
+export type Held = { handler: ( payload: unknown, name: string ) => void; once: boolean; live: boolean };
+export type Message<T = unknown> = { topic: string; payload: T; at: number; id: number };
+export type Subscriber<T = unknown> = ( payload: T, message: Message<T> ) => void;
+export type Pattern = string;
+export type Subscribe = { replay?: boolean | number | undefined; signal?: AbortSignal | undefined };
+export type BusOptions = { replay?: number | undefined; topics?: number | undefined; now?: (() => number) | undefined; fail?: Fail | undefined };
+export type Bus = {
+    publish: <T>( topic: string, payload: T ) => number;
+    subscribe: <T = unknown>( pattern: Pattern, subscriber: Subscriber<T>, options?: Subscribe ) => () => void;
+    once: <T = unknown>( pattern: Pattern, options?: number | Wait ) => Promise<Message<T>>;
+    last: <T = unknown>( topic: string ) => Message<T> | undefined;
+    history: ( pattern?: Pattern ) => Message[];
+    topics: () => string[];
+    count: ( pattern?: Pattern ) => number;
+    forget: ( pattern?: Pattern ) => number;
+    clear: () => void;
+};
+export type BusRow = { id: number; pattern: Pattern; subscriber: Subscriber; live: boolean };
+export type Wild = { parts: readonly string[]; rows: readonly BusRow[] };
+export type Scoped = Omit<Bus, "clear"> & { readonly prefix: string };
+export type Listener<T> = ( value: T, previous: T ) => void;
+export type Watch = { replay?: boolean | undefined; signal?: AbortSignal | undefined };
+export type Readable<T> = {
+    get: () => T;
+    watch: ( listener: Listener<T>, options?: Watch ) => () => void;
+    until: ( test: ( value: T ) => boolean, options?: number | Wait ) => Promise<T>;
+};
+export type Signal<T> = Readable<T> & {
+    set: ( value: T | (( current: T ) => T) ) => void;
+    reset: () => void;
+    count: () => number;
+    readonly read: Readable<T>;
+};
+export type SignalOptions<T> = { equal?: (( a: T, b: T ) => boolean) | undefined; fail?: Fail | undefined };
+export type SignalRow<T> = { listener: Listener<T>; live: boolean };

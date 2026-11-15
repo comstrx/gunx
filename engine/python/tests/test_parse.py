@@ -1,8 +1,8 @@
 from engine.error import Code, Fault
 from engine.parse import Email, Mime, parse
 from engine.string import string
-import pytest
-from typing import Any, cast
+import pytest, yaml
+from typing import Any, cast, override
 
 def test_numbers_are_bounded () -> None:
 
@@ -137,3 +137,180 @@ def test_auto_guesses_scalars () -> None:
     assert parse.auto("42") == 42 and parse.auto("-1.5") == -1.5 and parse.auto("1e3") == 1000.0
     assert parse.auto("true") is True and parse.auto("False") is False and parse.auto("null") is None and parse.auto("") is None
     assert parse.auto("hello") == "hello" and parse.auto(7) == 7 and parse.auto(" 12 ") == 12
+
+def test_list_conversion_preserves_nonempty_values_and_stringifies_once () -> None:
+
+    class Named:
+
+        def __init__ ( self ) -> None: self.calls = 0
+
+        @override
+        def __str__ ( self ) -> str:
+
+            self.calls += 1
+
+            return " item "
+
+    named = Named()
+
+    assert parse.list([" a ", "", "  ", 0, False, None, named]) == ["a", "0", "False", "None", "item"]
+    assert named.calls == 1
+    assert parse.list(" a | | b | ", "|") == ["a", "b"]
+    assert parse.list((" a ", "", " b ")) == ["a", "b"]
+
+def test_documents_round_trip_and_convert_without_file_io () -> None:
+
+    value = {"name": "مرحبا", "enabled": True, "nested": {"items": [1, 2, 3]}}
+    for kind in ("json", "toml", "yaml"):
+        text = parse.dumps(value, kind)
+        assert parse.loads(text, kind) == value
+        assert parse.document(text, kind).dict() == value
+    assert parse.loads(parse.convert("a = 1", "toml", "json")) == {"a": 1}
+    assert parse.yaml("- 1\n- 2") == [1, 2]
+    assert parse.json("[1,2]") == [1, 2]
+
+def test_document_edits_are_owned_and_templates_are_single_pass () -> None:
+
+    value: dict[str, Any] = {"service": {"name": "{name}", "port": 80}, "remove": True}
+    doc = parse.of(value).set("service.port", 8080).update({"new": "x"}).remove("remove")
+    assert doc.render({"name": "api"}).get("service.name") == "api"
+    assert value["service"]["name"] == "{name}" and value["service"]["port"] == 80
+    assert doc.match("service.*") == {"service.name": "api", "service.port": 8080}
+    assert parse.of({"name": "__name__"}).render({"name": "{other}"}, delimiters=("__", "__")).dict() == {
+        "name": "{other}",
+    }
+    result = doc.dict()
+    result["service"]["port"] = 7
+    assert doc.get("service.port") == 8080
+    assert parse.of([1, 2]).list() == [1, 2]
+
+def test_yaml_rejects_code_duplicate_keys_cycles_and_excess_depth () -> None:
+
+    for text in (
+        "!!python/object/apply:os.system ['echo forbidden']",
+        "a: 1\na: 2",
+        "a: &a [*a]",
+        "[" * 150 + "0" + "]" * 150,
+        "1: x",
+    ):
+        with pytest.raises(Fault): parse.yaml(text)
+
+def test_document_failures_are_atomic_and_do_not_leak_content () -> None:
+
+    doc = parse.of({"a": "{missing}", "b": "{found}"})
+    with pytest.raises(Fault): doc.render({"found": "new"})
+    assert doc.dict() == {"a": "{missing}", "b": "{found}"}
+    for text in ("Bearer secret token", "Basic secret"):
+        with pytest.raises(Fault) as caught: parse.basic(text)
+        assert caught.value.errors is None
+    with pytest.raises(Fault): parse.dumps([1], "toml")
+    with pytest.raises(Fault): parse.loads("x", "unknown")
+    cycle: dict[str, Any] = {}
+    cycle["self"] = cycle
+    with pytest.raises(Fault): parse.of(cycle)
+
+def test_precise_sizes_ipv6_and_nonfinite_coordinates () -> None:
+
+    assert parse.size("9007199254740993B") == 9007199254740993
+    assert parse.size("0.1KiB") == 102
+    assert parse.url("http://[::1]:8080/a").origin() == "http://[::1]:8080"
+    for text in ("nan,0", "0,nan", "inf,0"):
+        with pytest.raises(Fault): parse.coordinates(text)
+    assert parse.csv("a,b\nc,d") == ["a", "b"]
+
+def test_paths_are_explicit_and_document_callbacks_cannot_leak_ownership () -> None:
+
+    doc = parse.of({"a.b": {"value": 1}, "rows": [{"id": 3}]}, separator="/")
+    assert doc.keys() == ["a.b/value", "rows/0/id"]
+    assert doc.get("a.b/value") == 1
+    assert doc.match("rows/*") == {"rows/0/id": 3}
+    doc.set("a.b/value", 2)
+    assert doc.get("a.b/value") == 2
+    original = doc.value()
+    with pytest.raises(Fault): doc.update({"a.b/value": 8, "rows/99": 4})
+    assert doc.value() == original
+    with pytest.raises(Fault): parse.of({"a.b": 1}).keys()
+    with pytest.raises(Fault): parse.of({"": 1}).keys()
+    shared = [1]
+    made = parse.of({"x": 2}).map(lambda _: shared)
+    shared.append(3)
+    assert made.get("x") == [1]
+    collision = parse.of({"{x}": 1, "same": 2})
+    with pytest.raises(Fault): collision.render({"x": "same"}, keys=True)
+    assert collision.dict() == {"{x}": 1, "same": 2}
+
+def test_headers_semver_and_duration_preserve_syntax_boundaries () -> None:
+
+    assert parse.mime('text/plain; title="a;b,c"; note="a\\"b"').params == {"title": "a;b,c", "note": 'a"b'}
+    assert parse.accept('text/plain; note="a,b"; q=0.5, application/json') == ["application/json", "text/plain"]
+    for text in ('text/plain; title="open', "text/plain\r\nX: bad"):
+        with pytest.raises(Fault): parse.mime(text)
+    for text in ("1.2.3-a..b", "1.2.3-01", "1.2.3+x..y", "\u0661.2.3"):
+        with pytest.raises(Fault): parse.semver(text)
+    assert parse.semver("1.2.3-0+01") == (1, 2, 3, "0", "01")
+    assert parse.duration("1 h 30 m") == 5400
+    for value in ("1 2", -1, float("nan"), float("inf")):
+        with pytest.raises(Fault): parse.duration(value)
+    with pytest.raises(Fault): parse.url("http://exa\nmple.com")
+
+def test_yaml_loader_customizations_do_not_change_global_safe_loader ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    constructors = dict(yaml.SafeLoader.yaml_constructors)
+    native = getattr(yaml, "CSafeLoader", None)
+    assert parse.yaml("a: &item [1, 2]\nb: *item") == {"a": [1, 2], "b": [1, 2]}
+    for key in ("CSafeLoader", "CSafeDumper"):
+        monkeypatch.delattr(yaml, key, raising=False)
+    assert parse.yaml("name: value") == {"name": "value"}
+    assert parse.yaml(parse.dumps({"name": "yes"}, "yaml")) == {"name": "yes"}
+    with pytest.raises(Fault): parse.yaml("a: 1\na: 2")
+    assert yaml.SafeLoader.yaml_constructors == constructors
+    if native is not None:
+        assert native.yaml_constructors == constructors
+
+def test_yaml_merges_allow_explicit_overrides_but_bound_alias_expansion () -> None:
+
+    text = "base: &base {port: 80, host: localhost}\nservice: {<<: *base, port: 8080}"
+    assert parse.yaml(text)["service"] == {"port": 8080, "host": "localhost"}
+    bomb = "a0: &a0 {x: 1}\n"
+    for index in range(1, 20):
+        bomb += f"a{index}: &a{index} {{<<: [*a{index - 1}, *a{index - 1}]}}\n"
+    with pytest.raises(Fault) as caught: parse.yaml(bomb)
+    assert caught.value.code is Code.TOO_LARGE
+
+def test_render_limits_total_substitution_before_publishing () -> None:
+
+    doc = parse.of({"a": "{text}", "b": "{text}", "c": "{text}"})
+    with pytest.raises(Fault) as caught: doc.render({"text": "x" * 3_000_000})
+    assert caught.value.code is Code.TOO_LARGE
+    assert doc.get("a") == "{text}"
+
+@pytest.mark.parametrize("value", [None, 1, [], {}])
+def test_document_boundary_errors_are_typed ( value: Any ) -> None:
+
+    with pytest.raises(Fault): parse.loads("{}", value)
+    with pytest.raises(Fault): parse.loads(value)
+    with pytest.raises(Fault): parse.of({}, separator=value)
+
+def test_render_walks_tuple_values_and_keys_atomically () -> None:
+
+    source = {"{ key }": ("__ name __",)}
+    doc = parse.of(source)
+    doc.render({"key": "title"}, keys=True, strict=False)
+    doc.render({"name": "value"}, delimiters=("__", "__"))
+    assert doc.value() == {"title": ("value",)}
+    assert source == {"{ key }": ("__ name __",)}
+    failed = parse.of({"{ key }": "{value}", "title": "old"})
+    with pytest.raises(Fault): failed.render({"key": "title", "value": "new"}, keys=True)
+    assert failed.value() == {"{ key }": "{value}", "title": "old"}
+
+def test_failed_document_mapping_preserves_mutable_leaf_ownership () -> None:
+
+    doc = parse.of({"a": bytearray(b"old"), "b": 2})
+    def fail ( value: Any ) -> Any:
+
+        if value == 2: raise ValueError("stop")
+        value.extend(b"-changed")
+        return value
+
+    with pytest.raises(ValueError, match="stop"): doc.map(fail)
+    assert doc.value() == {"a": bytearray(b"old"), "b": 2}

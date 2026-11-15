@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from engine.error import Code, Fault
-from .arch import EMPTY, KINDS, NOW, UUID
+from .arch import ACTIONS, EMPTY, KINDS, NOW, UUID
 from .dialect import Dialect
 from .postgres import POSTGRES
 from .sql import Sql
@@ -22,10 +22,23 @@ class Column:
     length   : int | None = None
     renamed  : str | None = None
     generated: str | None = None
+    choices  : tuple[str, ...] | None = None
 
     def __post_init__ ( self ) -> None:
 
         Sql.quote(self.name)
+
+        if self.on_delete not in ACTIONS: raise Fault(Code.INTERNAL, reason="table.action")
+
+        if self.choices is not None:
+
+            if not self.choices or any("\x00" in value for value in self.choices):
+
+                raise Fault(Code.INTERNAL, reason="table.enum")
+
+            if self.default is not None and self.default not in self.choices:
+
+                raise Fault(Code.INTERNAL, reason="table.enum.default")
 
         if self.kind not in KINDS: raise Fault(Code.INTERNAL, reason="table.kind", errors={ self.name: [self.kind] })
 
@@ -35,7 +48,7 @@ class Column:
 
     def volatile ( self ) -> bool:
 
-        return self.default is not None and self.default.endswith("()") and self.default != NOW
+        return self.choices is None and self.default is not None and self.default.endswith("()") and self.default != NOW
 
     @classmethod
     def id ( cls ) -> Column:
@@ -95,9 +108,7 @@ class Column:
     @classmethod
     def enum ( cls, name: str, values: Sequence[str], default: str | None = None ) -> Column:
 
-        listed = ", ".join(f"'{value}'" for value in values)
-
-        return cls(name, "text", default=f"'{default}'" if default else None, check=f"{name} IN ({listed})")
+        return cls(name, "text", default=default, choices=tuple(values))
 
     @classmethod
     def reference ( cls, name: str, table: str, nullable: bool = False, on_delete: str = "RESTRICT" ) -> Column:

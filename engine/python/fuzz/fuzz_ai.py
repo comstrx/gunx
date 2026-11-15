@@ -11,7 +11,7 @@ from functools import partial
 from hypothesis import HealthCheck, given, settings, strategies as st
 from pathlib import Path
 from typing import Any, cast, override
-import asyncio, math
+import asyncio, math, os
 
 type Made[T] = T | Fault
 type Op      = tuple[str, str, int]
@@ -108,7 +108,7 @@ class Fake:
 loop = asyncio.new_event_loop()
 fake = Fake()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 loop.run_until_complete(fake.start())
 
 def run [T] ( work: Awaitable[T] ) -> T:

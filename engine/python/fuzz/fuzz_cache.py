@@ -1,4 +1,4 @@
-from engine.cache import Cache, Memory
+from engine.cache import Cache, Memory, Redis
 from engine.cache.arch import KEY, LONGEST
 from engine.cache.replies import Replies
 from engine.cache.wire import Wire
@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Coroutine
 from hypothesis import HealthCheck, given, settings, strategies as st
 from pathlib import Path
 from typing import Any, cast
-import asyncio, hiredis, math
+import asyncio, hiredis, math, os
 
 type Step = tuple[str, Any, Any, Any]
 
@@ -26,7 +26,7 @@ RESP     = st.lists(st.one_of(st.binary(max_size=12), st.integers(-(1 << 62), 1 
 
 loop = asyncio.new_event_loop()
 
-log.setup("error", "json", Path("/dev/null"))
+log.setup("error", "json", Path(os.devnull))
 
 def run [T] ( work: Awaitable[T] ) -> T:
 
@@ -271,6 +271,59 @@ def encoded ( value: Any ) -> bytes:
 
     return b"*" + str(len(value)).encode() + b"\r\n" + b"".join(encoded(item) for item in value)
 
+
+@settings(max_examples=100, deadline=None, database=None)
+@given(st.lists(st.integers(0, 40), max_size=80), st.lists(st.integers(0, 60), max_size=100))
+def bulk_deletion_matches_a_set_model ( present: list[int], removed: list[int] ) -> None:
+
+    async def check () -> None:
+
+        stores: list[Memory | Redis] = [Memory()]
+
+        if url := os.environ.get("ENGINE_REDIS_URL"): stores.append(Redis(url, prefix="fuzz-bulk:*:"))
+
+        for store in stores:
+
+            cache = Cache(store)
+
+            try:
+
+                await store.clear()
+                await cache.set_many({f"k{key}": key for key in present})
+                await cache.set("guard", 1)
+
+                assert await cache.forget(*(f"k{key}" for key in removed)) == len(set(present) & set(removed))
+                assert await cache.many(f"k{key}" for key in present) == {f"k{key}": key for key in set(present) - set(removed)}
+                assert await cache.get("guard") == 1
+
+            finally:
+
+                await store.clear()
+                await cache.close()
+
+    run(check())
+
+@settings(max_examples=150, deadline=None, database=None)
+@given(st.lists(st.integers(0, 200), max_size=250), st.integers(-2, 210))
+def bounded_keys_match_sort ( values: list[int], limit: int ) -> None:
+
+    async def check () -> None:
+
+        store = Memory()
+        data = { f"k{value:04d}": value for value in values }
+
+        await store.set_many(data)
+
+        assert await store.keys("k", limit) == (sorted(data)[:limit] if limit > 0 else [])
+
+        await store.close()
+
+    run(check())
+
+bounded_keys_match_sort()
+
+bulk_deletion_matches_a_set_model()
+
 modeled()
 limited()
 locked()
@@ -279,4 +332,4 @@ replied()
 loop.close()
 log.close()
 
-print(f"fuzz cache  examples={EXAMPLES * 4}  ok")
+print(f"fuzz cache  examples={EXAMPLES * 4 + 100}  ok")

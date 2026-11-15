@@ -1,7 +1,6 @@
 import * as json from "engine-json";
 import * as parse from "engine-parse";
-
-export type Parts = { protocol: string; host: string; hostname: string; port: string; path: string; query: parse.Query; hash: string; origin: string };
+import type { Parts } from "./arch.ts";
 
 function cut ( text: string, mark: string ): [string, string] {
 

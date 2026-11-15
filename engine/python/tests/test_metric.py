@@ -2,16 +2,17 @@ from collections.abc import Callable
 from decimal import Decimal
 from enum import Enum, StrEnum
 from functools import partial
-from typing import Any, cast
+from typing import Any, cast, override
 
 from engine.error import Code, Fault
 from engine.metric import MEDIA, Counter, Gauge, Histogram, Meter, Metrics, metrics as shared
-import pytest, re, sys, threading, time
+import asyncio, pytest, re, sys, threading, time
+from concurrent.futures import ThreadPoolExecutor
 
 MOST    = sys.float_info.max
 WORD    = r"[a-zA-Z_][a-zA-Z0-9_]*"
 SAMPLE  = re.compile(rf'({WORD})(?:\{{({WORD}="(?:[^"\\\n]|\\\\|\\"|\\n)*"(?:,{WORD}="(?:[^"\\\n]|\\\\|\\"|\\n)*")*)\}})? (\S+)')
-COMMENT = re.compile(rf"# (?:HELP {WORD} .+|TYPE {WORD} (?:counter|gauge|histogram))")
+COMMENT = re.compile(rf"# (?:HELP {WORD} .+|TYPE {WORD} (?:counter|gauge|histogram|untyped))")
 DEFAULT = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0)
 FIGURES = (
     (0, "0"), (-0.0, "0"), (1, "1"), (-3, "-3"), (1.5, "1.5"), (0.1 + 0.2, "0.30000000000000004"), (1e-7, "1e-07"),
@@ -19,6 +20,18 @@ FIGURES = (
     (1e22, "1e+22"), (MOST, "1.7976931348623157e+308"), (-MOST, "-1.7976931348623157e+308"),
     (123456789.125, "123456789.125"), (10 ** 30, "1e+30"), (-2.5e-300, "-2.5e-300"),
 )
+
+class WatchedGauge(Gauge):
+
+    def hold ( self ) -> threading.Lock:
+
+        return self._lock
+
+class SampleCounter(Counter):
+
+    def cached ( self ) -> int:
+
+        return len(self._cells)
 
 class Word(str):
 
@@ -378,7 +391,7 @@ def test_series_are_capped ( monkeypatch: pytest.MonkeyPatch ) -> None:
     with heat.track(zone="b"): assert heat.value(zone="b") == 0
     with took.time(zone="b"): pass
 
-    assert (heat.series(), heat.dropped(), took.series(), took.dropped()) == (1, 4, 1, 2)
+    assert (heat.series(), heat.dropped(), took.series(), took.dropped()) == (1, 3, 1, 2)
     assert [event for event, _ in spy.calls] == ["metric.series"] * 4
 
     metrics = Metrics("app", 2)
@@ -558,7 +571,8 @@ def test_registry_guards_names_and_claims () -> None:
         assert refused("help", partial(metrics.gauge, "fresh", cast("str", bad))).errors == { "help": ["fresh"] }
 
     assert not metrics.has("fresh") and metrics.gauge("fresh", "h" * 512).help == "h" * 512
-    assert Meter("plain").kind == "meter" and Meter("plain").lines() == ["# TYPE plain meter"]
+    assert Meter("plain").kind == "untyped" and Meter("plain").lines() == ["# TYPE plain untyped"]
+    assert parsed("\n".join(Meter("plain").lines()) + "\n") == {}
 
 def test_prefix_is_applied_at_exposition () -> None:
 
@@ -635,3 +649,235 @@ def test_meters_hold_under_threads () -> None:
 
     assert final["t_heat"] == 16000 and final['t_took_bucket{lane="3",le="0.5"}'] == 1000 and final['t_took_count{lane="7"}'] == 2000
     assert sum(value for series, value in final.items() if series.startswith("t_late_total")) == 16000
+
+def test_rejected_track_never_decrements_an_unowned_series () -> None:
+
+    heat = Gauge("active", series=1)
+
+    heat.set(4, lane="old")
+
+    with heat.track(lane="new"):
+
+        assert heat.dropped() == 1
+        assert heat.forget(lane="old")
+
+    assert heat.series() == 0 and heat.value(lane="new") == 0 and heat.dropped() == 1
+
+@pytest.mark.parametrize("remove", ["clear", "forget"])
+def test_track_closes_its_original_cell_without_touching_a_replacement ( remove: str ) -> None:
+
+    heat = Gauge("active")
+
+    with heat.track(lane="one"):
+
+        assert heat.value(lane="one") == 1
+
+        if remove == "clear": heat.clear()
+        else: assert heat.forget(lane="one")
+
+        heat.set(12, lane="one")
+
+    assert heat.value(lane="one") == 12
+
+async def test_track_and_timer_release_on_cancellation () -> None:
+
+    heat = Gauge("active")
+    took = Histogram("seconds")
+    entered = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def work () -> None:
+
+        with heat.track(), took.time():
+
+            entered.set()
+
+            await stopped.wait()
+
+    task = asyncio.create_task(work())
+
+    await entered.wait()
+
+    assert heat.value() == 1
+
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError): await task
+
+    assert heat.value() == 0 and took.count() == 1 and took.sum() >= 0
+
+def test_set_obeys_the_same_write_lock_as_add () -> None:
+
+    heat = WatchedGauge("active")
+    entered = threading.Event()
+    finished = threading.Event()
+
+    heat.set(1)
+
+    def set_value () -> None:
+
+        entered.set()
+        heat.set(9)
+        finished.set()
+
+    with ThreadPoolExecutor(max_workers=1) as workers:
+
+        with heat.hold():
+
+            pending = workers.submit(set_value)
+
+            assert entered.wait(2)
+            assert not finished.wait(0.05)
+
+        pending.result(timeout=2)
+
+    assert finished.is_set() and heat.value() == 9
+
+def test_contexts_overlap_across_threads_and_snapshot_histograms_consistently () -> None:
+
+    heat = Gauge("active")
+    took = Histogram("seconds", buckets=(1, 2))
+    barrier = threading.Barrier(5)
+    release = threading.Event()
+
+    def work () -> None:
+
+        with heat.track():
+
+            took.observe(0.5)
+            barrier.wait(timeout=5)
+
+            assert release.wait(5)
+
+    with ThreadPoolExecutor(max_workers=4) as workers:
+
+        tasks = [workers.submit(work) for _ in range(4)]
+
+        try:
+
+            barrier.wait(timeout=5)
+
+            assert heat.value() == 4
+
+            text = "\n".join(took.lines()) + "\n"
+            rows = parsed(text)
+
+            assert rows["seconds_count"] == 4 and rows["seconds_sum"] == 2
+            assert rows['seconds_bucket{le="1"}'] == rows['seconds_bucket{le="+Inf"}'] == 4
+
+        finally: release.set()
+
+        for task in tasks: task.result(timeout=5)
+
+    assert heat.value() == 0
+
+def test_label_count_is_refused_before_values_are_hashed_or_sorted () -> None:
+
+    class Unsafe(str):
+
+        __slots__ = ()
+
+        @override
+        def __hash__ ( self ) -> int: raise AssertionError("over-budget labels must not be hashed")
+
+    calls = Counter("calls")
+    labels: dict[str, Any] = {f"l{index}": Unsafe("v") for index in range(100)}
+
+    for work in (calls.inc, calls.value, calls.forget):
+
+        assert refused("label", partial(work, **labels)).errors == {"label": ["count"]}
+
+    assert calls.series() == 0 and calls.dropped() == 0
+
+def test_empty_label_aliases_cannot_grow_the_cache_past_its_budget () -> None:
+
+    calls = SampleCounter("calls", series=2)
+
+    for index in range(500):
+
+        alias: dict[str, Any] = {f"label{index}": ""}
+
+        calls.inc(**alias)
+
+    assert calls.value() == 500 and calls.series() == 1 and calls.dropped() == 0
+    assert calls.cached() <= 2
+    assert calls.forget() and calls.series() == 0 and calls.cached() == 0
+
+def test_string_subclass_aliases_do_not_accumulate_cache_keys () -> None:
+
+    class Alias(str):
+
+        __slots__ = ()
+
+        @override
+        def __hash__ ( self ) -> int: return id(self)
+
+    calls = SampleCounter("calls", series=2)
+
+    for _ in range(500): calls.inc(route=Alias("same"))
+
+    assert calls.value(route="same") == 500 and calls.series() == 1
+    assert calls.cached() <= 2
+
+@pytest.mark.parametrize("prefix", ["x\n# TYPE injected gauge", "bad name", "__hidden", None, False, 5])
+def test_direct_meter_export_validates_its_prefix ( prefix: Any ) -> None:
+
+    calls = Counter("calls")
+
+    with pytest.raises(Fault): calls.lines(prefix)
+
+def test_exported_lines_are_detached_from_later_changes () -> None:
+
+    metrics = Metrics("app")
+    calls = metrics.counter("calls")
+    took = metrics.histogram("time", buckets=(1,))
+
+    calls.inc()
+    took.observe(0.5)
+
+    held = took.lines()
+
+    took.observe(2)
+    calls.inc()
+
+    assert held[-1] == "time_count 1" and took.lines()[-1] == "time_count 2"
+    assert parsed(metrics.render())["app_calls_total"] == 2
+
+def test_label_order_aliases_share_one_bounded_series_and_forget_together () -> None:
+
+    calls = SampleCounter("calls", series=2)
+    first: dict[str, Any] = { "a": "1", "b": "2", "c": "" }
+    second: dict[str, Any] = { "c": "", "b": "2", "a": "1" }
+    third: dict[str, Any] = { "b": "2", "a": "1" }
+
+    for labels in (first, second, third) * 10: calls.inc(**labels)
+
+    assert calls.value(**third) == 30 and calls.series() == 1 and calls.cached() <= 2
+    assert calls.lines() == ["# TYPE calls_total counter", 'calls_total{a="1",b="2"} 30']
+    assert calls.forget(**second) and calls.cached() == 0 and calls.value(**first) == 0
+
+def test_histogram_timer_keeps_ownership_after_forget_and_replacement () -> None:
+
+    meter = Histogram("latency")
+
+    with meter.time(route="a"):
+
+        assert meter.forget(route="a")
+
+        meter.observe(7, route="a")
+
+    assert meter.count(route="a") == 1 and meter.sum(route="a") == 7
+
+    with meter.time(route="b"): meter.clear()
+
+    assert meter.series() == 0
+
+
+def test_rejected_histogram_timer_does_not_create_a_series_later () -> None:
+
+    meter = Histogram("latency", series=1)
+    meter.observe(1, route="first")
+
+    with meter.time(route="second"): meter.forget(route="first")
+
+    assert meter.series() == 0 and meter.dropped() == 1

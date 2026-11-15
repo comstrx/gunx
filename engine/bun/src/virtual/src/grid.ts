@@ -1,8 +1,5 @@
-import { type Item, length, whole } from "./layout.ts";
-
-export type Cell = { index: number; row: number; column: number; offset: number; size: number };
-export type Fit = { columns: number; width: number };
-export type Grid = { columns: number; rows: number; row: ( index: number ) => number; cells: ( rows: readonly Item[] ) => Cell[] };
+import type { Cell, Fit, Grid } from "./arch.ts";
+import { length, whole } from "./layout.ts";
 
 export function fit ( width: number, least: number, gap = 0 ): Fit {
 

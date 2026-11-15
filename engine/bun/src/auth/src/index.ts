@@ -1,2 +1,3 @@
-export { authorize, can, expand, granted, type Holder, hasRole, type Mode, missing } from "./ability.ts";
-export { expiryOf, type Renew, type Session, type SessionMoves, type SessionOptions, type Signed, session, type Tokens, withExpiry } from "./session.ts";
+export { authorize, can, expand, granted, hasRole, missing } from "./ability.ts";
+export type { Holder, Mode, Renew, Session, SessionMoves, SessionOptions, Signed, Tokens } from "./arch.ts";
+export { expiryOf, session, withExpiry } from "./session.ts";

@@ -1,9 +1,5 @@
 import * as number from "engine-number";
-
-export type Input = Date | number | string | null | undefined;
-export type Unit = "year" | "quarter" | "month" | "week" | "day" | "hour" | "minute" | "second";
-export type Shift = Partial<Record<`${Unit}s` | "milliseconds", number>>;
-export type Time = { hour?: number | undefined; minute?: number | undefined; second?: number | undefined; millisecond?: number | undefined };
+import type { Input, Shift, Time, Unit } from "./arch.ts";
 
 const limit = 8.64e15;
 const lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];

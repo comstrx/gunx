@@ -1,9 +1,5 @@
 import * as json from "engine-json";
-
-export type Arrays = "brackets" | "repeat";
-export type QueryValue = string | string[];
-export type Query = Record<string, QueryValue>;
-export type QueryInput = Record<string, string | number | boolean | null | undefined | readonly (string | number | boolean)[]>;
+import type { Arrays, Query, QueryInput } from "./arch.ts";
 
 const limit = 256;
 const lost = "%EF%BF%BD";

@@ -1,5 +1,5 @@
 declare -ga UI_COMMANDS=()
-declare -gA UI_FLAGS=() UI_GLOBALS=() UI_INDEX=()
+declare -gA UI_FLAGS=() UI_GLOBALS=() UI_INDEX=() UI_ARITY=()
 
 module:bundle:usage:add () {
 
@@ -37,7 +37,19 @@ module:bundle:usage:flag () {
     [[ -n "${summary}" && ${#summary} -le 80 && "${summary}" != *'|'* ]] \
         || { core:error:fail "Flag ${flag} of ${name} needs a summary of at most 80 characters"; return; }
 
+    module:bundle:usage:arity "${flag}" "${value:+valued}" || return
+
     UI_FLAGS["${name}"]+="${flag}|${value}|${summary}"$'\n'
+
+}
+module:bundle:usage:arity () {
+
+    local flag="${1}" arity="${2:-plain}"
+
+    [[ -z "${UI_ARITY[${flag}]:-}" || "${UI_ARITY[${flag}]}" == "${arity}" ]] \
+        || { core:error:fail "Flag ${flag} takes a value in one command and none in another"; return; }
+
+    UI_ARITY["${flag}"]="${arity}"
 
 }
 module:bundle:usage:global () {
@@ -48,6 +60,8 @@ module:bundle:usage:global () {
 
     [[ -n "${summary}" && "${summary}" != *'|'* && "${value}" != *'|'* ]] \
         || { core:error:fail "Global flag ${flag} needs a summary"; return; }
+
+    module:bundle:usage:arity "${flag}" "${value:+valued}" || return
 
     UI_GLOBALS["${flag}"]="${value}|${summary}"
 
@@ -66,9 +80,10 @@ module:bundle:usage:command () {
 }
 module:bundle:usage:handler () {
 
-    local row=""
+    local row="${UI_INDEX[${1:-}]:-}"
 
-    row="$(module:bundle:usage:command "${1:-}")" || return
+    [[ -n "${row}" ]] || return 1
+
     row="${row#*|}"
 
     core:log:print "${row%%|*}"

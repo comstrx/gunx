@@ -1,2 +1,3 @@
-export { type Counts, create, type Job, type Options, type Outbox, type Outcome, type Perform, type Push, type Status } from "./outbox.ts";
-export { type Backoff, backoff, type Schedule, schedule } from "./policy.ts";
+export type { Backoff, Counts, Job, Options, Outbox, Outcome, Perform, Push, Schedule, Status } from "./arch.ts";
+export { create } from "./outbox.ts";
+export { backoff, schedule } from "./policy.ts";

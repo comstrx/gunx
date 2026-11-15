@@ -26,15 +26,17 @@ class Run:
 
     def raise_first ( self ) -> Run:
 
-        errors = self.errors()
+        for outcome in self.outcomes:
 
-        if errors: raise errors[0]
+            if outcome.error is not None: raise outcome.error
 
         return self
 
     def dump ( self ) -> dict[str, Any]:
 
+        failed = sum(outcome.error is not None for outcome in self.outcomes)
+
         return {
-            "mode": self.mode, "workers": self.workers, "ms": self.ms, "done": len(self.results()),
-            "failed": len(self.errors()),
+            "mode": self.mode, "workers": self.workers, "ms": self.ms,
+            "done": len(self.outcomes) - failed, "failed": failed,
         }

@@ -75,3 +75,43 @@ describe("fuzz string", () => {
     });
 
 });
+
+it("Unicode 17 conformance: every official grapheme boundary survives the DSL", async () => {
+
+    const corpus = await Bun.file(new URL("./data/GraphemeBreakTest-17.0.0.txt", import.meta.url)).text();
+    let cases = 0;
+
+    for ( const line of corpus.split("\n") ) {
+
+        const body = line.split("#")[0]?.trim();
+
+        if ( !body ) continue;
+
+        const expected = body.split("÷").map(( part ) => part.replaceAll("×", "").trim()).filter(Boolean).map(( part ) => String.fromCodePoint(...part.split(/\s+/).map(( value ) => Number.parseInt(value, 16))));
+        const text = expected.join("");
+
+        expect(string.graphemes(text)).toEqual(expected);
+        expect(string.length(text)).toBe(expected.length);
+
+        for ( let count = 0; count <= expected.length; count += 1 ) expect(string.take(text, count)).toBe(expected.slice(0, count).join(""));
+
+        cases += 1;
+
+    }
+
+    expect(cases).toBeGreaterThan(700);
+
+});
+it("UTF-8 sizes and bounded Unicode budgets agree with independent platform oracles", () => {
+
+    const text = fc.array(fc.integer({ min: 0, max: 0x10ffff }), { maxLength: 80 }).map(( points ) => String.fromCodePoint(...points));
+
+    fc.assert(fc.property(text, fc.integer({ min: 0, max: 40 }), ( value, count ) => {
+
+        expect(string.byteLength(value)).toBe(new TextEncoder().encode(value).length);
+        expect(string.length(string.truncate(value, count))).toBeLessThanOrEqual(count);
+        expect(string.length(string.take(value, count))).toBeLessThanOrEqual(count);
+
+    }), { numRuns: 10000 });
+
+});

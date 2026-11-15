@@ -5,12 +5,11 @@ from typing import Any
 from engine.error import Code, Fault
 from engine.log import log
 from engine.string import string
+from .arch import Routed
 from .arch import Action, Argument, BYTE, COMMANDS, FAILED, HELP, INTERRUPTED, LINE, nearest, PIPE, RESERVED, USAGE
 from .arch import VERSION, WORD, Writer
 from .command import Command
 import asyncio, contextlib, inspect, os, sys
-
-type Routed = int | tuple[Command, dict[str, Any]]
 
 class Cli:
 
