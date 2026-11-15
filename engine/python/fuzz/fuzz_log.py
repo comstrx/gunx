@@ -174,6 +174,16 @@ def bearer_case_never_exposes_credentials ( upper: list[bool], secret: str ) -> 
 
     assert Render.scrub(f"{scheme} {secret}") == f"{scheme} ***"
 
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.integers(min_value=1, max_value=4), st.sampled_from(["local", "public"]), SOLID, SOLID)
+def paseto_payloads_are_redacted ( version: int, purpose: str, payload: str, footer: str ) -> None:
+
+    text = f"v{version}.{purpose}.{payload}.{footer}"
+    assert Render.scrub(f"received {text} next") == "received *** next"
+    assert Render.clean({ "detail": [text] }) == { "detail": ["***"] }
+
+paseto_payloads_are_redacted()
+
 bearer_case_never_exposes_credentials()
 
 long_keys_never_hide_the_secret_name()
@@ -188,4 +198,4 @@ plain_trees_pass_and_wild_trees_never_crash()
 soup_stays_linear()
 log.close()
 
-print("fuzz log  properties=11  max_examples=per-property settings  ok")
+print("fuzz log  properties=12  max_examples=per-property settings  ok")

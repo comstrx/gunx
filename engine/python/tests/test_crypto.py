@@ -1,3 +1,4 @@
+from engine.rand import rand
 from argon2 import PasswordHasher, Type
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM, AESGCMSIV, ChaCha20Poly1305
 from concurrent.futures import ThreadPoolExecutor
@@ -772,3 +773,27 @@ def test_text_decoding_keeps_public_values_and_legacy_bytes ( size: int ) -> Non
             with pytest.raises(Fault) as limit: vault.options(limit=size - 1).open(text, b"aad")
 
             assert limit.value.reason == "crypto.sealed"
+
+def test_seeded_randomness_cannot_repeat_keys_nonces_or_totp_secrets () -> None:
+
+    unit = Crypto()
+    unit.setup([unit.key("fixed")])
+
+    try:
+
+        rand.seed(123)
+        first = unit.seal("hello")
+        rand.seed(123)
+        second = unit.seal("hello")
+
+        assert Sealed.decode(first).nonce != Sealed.decode(second).nonce
+        assert unit.open(first) == unit.open(second) == b"hello"
+
+        rand.seed(123)
+        first_key, first_totp = unit.key().secret, unit.totp_secret()
+        rand.seed(123)
+        second_key, second_totp = unit.key().secret, unit.totp_secret()
+
+        assert first_key != second_key and first_totp != second_totp
+
+    finally: rand.seed(None)

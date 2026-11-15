@@ -9,6 +9,8 @@ idle   = Health()
 single = Health()
 wide   = Health()
 sick   = Health()
+scalar = Health()
+scalar.fact(version="1", region="local")
 
 log.setup("info", "json", Path(os.devnull))
 
@@ -46,6 +48,7 @@ async def degraded () -> None: await sick.ready()
 async def crowd () -> None: await asyncio.gather(*(single.ready() for _ in range(64)))
 
 bench.measure("health.live", live)
+bench.measure("health.live.scalar", scalar.live)
 bench.measure("health.describe", describe)
 bench.measure("health.fact", fact)
 bench.measure("health.register.forget", register)

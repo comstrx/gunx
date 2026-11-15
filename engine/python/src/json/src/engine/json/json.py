@@ -1,5 +1,4 @@
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Iterator, Mapping, Sequence
-from copy import deepcopy
 from io import BytesIO
 from typing import Any, cast
 from types import MappingProxyType
@@ -8,6 +7,7 @@ from engine.error import Code, Fault
 from .arch import (
     INDEX_DIGITS, KINDS, MISSING, OBJECTS, OPERATIONS, SETS, UNSAFE, MAX_DEPTH, MAX_NODES, SCALARS, Visitor,
 )
+from .copy import Copy
 import orjson
 
 class Json:
@@ -143,6 +143,11 @@ class Json:
 
         return Fault(Code.BAD_REQUEST, "Malformed JSON", "json.decode")
 
+    def copy ( self, value: Any ) -> Any:
+
+        try: return Copy.read(value)
+        except RecursionError as error: raise Fault(Code.BAD_REQUEST, reason="json.depth") from error
+
     def get ( self, value: Any, path: str, default: Any = None, separator: str = "." ) -> Any:
 
         found = self._walk_(value, path, separator)
@@ -157,8 +162,8 @@ class Json:
 
         if not path: return item
 
-        copied = deepcopy(value)
-        self._put_(copied, self._segments_(path, separator), deepcopy(item))
+        copied = Copy.read(value)
+        self._put_(copied, self._segments_(path, separator), Copy.read(item))
 
         return copied
 
@@ -168,12 +173,12 @@ class Json:
 
         try:
 
-            copied = deepcopy(value)
+            copied = Copy.read(value)
 
             for path, item in updates.items():
 
-                if not path: copied = deepcopy(item)
-                else: self._put_(copied, self._segments_(path, separator), deepcopy(item), strict=True)
+                if not path: copied = Copy.read(item)
+                else: self._put_(copied, self._segments_(path, separator), Copy.read(item), strict=True)
 
             for path in remove: self._forget_(copied, path, separator)
 
@@ -205,7 +210,7 @@ class Json:
 
     def forget ( self, value: Any, path: str, separator: str = "." ) -> Any:
 
-        copied = deepcopy(value)
+        copied = Copy.read(value)
         self._forget_(copied, path, separator)
 
         return copied
@@ -231,14 +236,14 @@ class Json:
             found = self._walk_(value, path, separator)
 
             if found is MISSING: continue
-            if not path: kept = deepcopy(dict(value))
-            else: self._put_(kept, self._segments_(path, separator), deepcopy(found))
+            if not path: kept = Copy.read(dict(value))
+            else: self._put_(kept, self._segments_(path, separator), Copy.read(found))
 
         return kept
 
     def omit ( self, value: Mapping[str, Any], *paths: str, separator: str = "." ) -> dict[str, Any]:
 
-        kept = deepcopy(dict(value))
+        kept: dict[str, Any] = Copy.read(dict(value))
 
         for path in paths: self._forget_(kept, path, separator)
 
@@ -478,7 +483,7 @@ class Json:
 
         try:
 
-            current = deepcopy(value)
+            current = Copy.read(value)
 
             for op in ops: current = self._apply_(current, op)
 
@@ -520,11 +525,11 @@ class Json:
 
                 current = self._assign_(current, origin, "remove", None)
 
-            else: item = deepcopy(item)
+            else: item = Copy.read(item)
 
             return self._assign_(current, parts, "add", item)
 
-        item = deepcopy(op["value"]) if action in ("add", "replace") else None
+        item = Copy.read(op["value"]) if action in ("add", "replace") else None
 
         return self._assign_(current, parts, action, item)
 

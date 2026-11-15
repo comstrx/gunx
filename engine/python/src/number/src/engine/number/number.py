@@ -1,3 +1,4 @@
+from .base import Base
 from collections.abc import Iterable
 from decimal import Decimal, DecimalException, ROUND_HALF_EVEN, ROUND_HALF_UP
 from typing import cast
@@ -6,27 +7,31 @@ from engine.error import Code, Fault
 from engine.string import string
 from .arch import (
     AMOUNT, AR_HUNDREDS, AR_ONES, AR_SCALES, AR_TENS, ARABIC, CODES, CURRENCY, DIGITS, FEW, FLOOR, HUNDRED, KIBI,
-    Locale, ONES, ORDINALS, PAIR, REACH, ROMAN, ROMAN_MAX, SCALES, SPELLED, SYMBOLS, TEEN, TEENS, TENS,
-    THOUSAND, BPS, CONTEXT, INPUT, MAXIMUM, OUTPUT, PLACES, fraction, integer, read, refuse, rounded,
+    Locale, ONES, ORDINALS, PAIR, REACH, ROMAN, ROMAN_MAX, SCALES, SPELLED, SYMBOLS, TEEN, TEENS, TENS, THOUSAND, BPS,
+    CONTEXT, INPUT, MAXIMUM, OUTPUT, PLACES,
 )
 from .money import Money
 import math
 
 class Number:
 
+    def exact ( self, value: object ) -> Decimal:
+
+        return Base.read(value)
+
     def decimal ( self, text: object, places: int | None = None ) -> Decimal:
 
-        value = read(text)
+        value = Base.read(text)
 
-        if value and not FLOOR <= value.adjusted() <= REACH: raise refuse("range", text)
+        if value and not FLOOR <= value.adjusted() <= REACH: raise Base.refuse("range", text)
 
         return self.quantize(value, places) if places is not None else value
 
     def quantize ( self, value: Decimal, places: int, banker: bool = False ) -> Decimal:
 
-        if not value.is_finite(): raise refuse("decimal", value)
+        if not value.is_finite(): raise Base.refuse("decimal", value)
 
-        integer(places, "places", -PLACES, PLACES)
+        Base.integer(places, "places", -PLACES, PLACES)
 
         try:
 
@@ -35,7 +40,7 @@ class Number:
                 rounding=ROUND_HALF_EVEN if banker else ROUND_HALF_UP, context=CONTEXT.copy(),
             )
 
-        except DecimalException as error: raise refuse("range", value) from error
+        except DecimalException as error: raise Base.refuse("range", value) from error
 
     def round_minor ( self, value: Decimal ) -> int:
 
@@ -45,24 +50,24 @@ class Number:
 
         unit = self.decimal(step)
 
-        if unit <= 0: raise refuse("step", step)
+        if unit <= 0: raise Base.refuse("step", step)
 
         left, bottom = self.decimal(value).as_integer_ratio()
         right, base = unit.as_integer_ratio()
-        count = rounded(left * base, bottom * right)
+        count = Base.rounded(left * base, bottom * right)
 
         context = CONTEXT.copy()
         context.prec = INPUT * 2 + PLACES
 
         try: return context.multiply(Decimal(count), unit)
-        except DecimalException as error: raise refuse("range", value) from error
+        except DecimalException as error: raise Base.refuse("range", value) from error
 
     def money ( self, amount: object, currency: str ) -> Money:
 
         code = self._code_(currency)
         numerator, denominator = self.decimal(amount).as_integer_ratio()
 
-        return Money(rounded(numerator * 10 ** DIGITS.get(code, 2), denominator), code)
+        return Money(Base.rounded(numerator * 10 ** DIGITS.get(code, 2), denominator), code)
 
     def minor ( self, minor: int, currency: str ) -> Money:
 
@@ -70,21 +75,21 @@ class Number:
 
     def exchange ( self, money: Money, currency: str, rate: Decimal | int | str ) -> Money:
 
-        if not isinstance(money, Money): raise refuse("money", money)
-        if isinstance(rate, (bool, float)): raise refuse("rate", rate)
+        if not isinstance(money, Money): raise Base.refuse("money", money)
+        if isinstance(rate, (bool, float)): raise Base.refuse("rate", rate)
 
         code = self._code_(currency)
         value = self.decimal(rate)
 
-        if value <= 0: raise refuse("rate", rate)
+        if value <= 0: raise Base.refuse("rate", rate)
 
         numerator, denominator = value.as_integer_ratio()
-        minor = rounded(
+        minor = Base.rounded(
             money.minor * numerator * 10 ** DIGITS.get(code, 2),
             denominator * 10 ** money.digits(), banker=True,
         )
 
-        if abs(minor) >= MAXIMUM: raise refuse("range", minor)
+        if abs(minor) >= MAXIMUM: raise Base.refuse("range", minor)
 
         return Money(minor, code)
 
@@ -92,17 +97,17 @@ class Number:
 
         raw = str(text)
 
-        if len(raw) > INPUT: raise refuse("money", text)
+        if len(raw) > INPUT: raise Base.refuse("money", text)
 
         raw   = string.digits(raw).strip()
         found = AMOUNT.search(raw)
 
-        if found is None: raise refuse("money", text)
+        if found is None: raise Base.refuse("money", text)
 
         unit = f"{raw[:found.start()]} {raw[found.end():]}".strip()
         code = CODES.get(unit) or (unit.upper() if len(unit) == CURRENCY and unit.isalpha() else None) or default
 
-        if code is None or (unit and unit.upper() != code and unit not in CODES): raise refuse("money", text)
+        if code is None or (unit and unit.upper() != code and unit not in CODES): raise Base.refuse("money", text)
 
         return self.money(found.group(0), code)
 
@@ -123,11 +128,11 @@ class Number:
 
     def tax ( self, money: Money, bps: int ) -> Money:
 
-        if type(bps) is not int or bps < 0: raise refuse("bps", bps)
+        if type(bps) is not int or bps < 0: raise Base.refuse("bps", bps)
 
-        minor = rounded(money.minor * bps, BPS, banker=True)
+        minor = Base.rounded(money.minor * bps, BPS, banker=True)
 
-        if abs(minor) >= MAXIMUM: raise refuse("range", minor)
+        if abs(minor) >= MAXIMUM: raise Base.refuse("range", minor)
 
         return Money(minor, money.currency)
 
@@ -155,7 +160,7 @@ class Number:
 
         if isinstance(value, Decimal):
 
-            if not value.is_finite(): raise refuse("range", value)
+            if not value.is_finite(): raise Base.refuse("range", value)
 
         else: self._real_(value)
 
@@ -165,30 +170,30 @@ class Number:
 
         left = self.decimal(part)
         right = self.decimal(whole)
-        integer(places, "places", -PLACES, PLACES)
+        Base.integer(places, "places", -PLACES, PLACES)
 
         if not right: return Decimal(0)
 
         numerator, bottom = left.as_integer_ratio()
         denominator, base = right.as_integer_ratio()
 
-        return fraction(numerator * base * HUNDRED, bottom * denominator, places)
+        return Base.fraction(numerator * base * HUNDRED, bottom * denominator, places)
 
     def change ( self, old: object, new: object, places: int = 2 ) -> Decimal | None:
 
         before, after = self.decimal(old), self.decimal(new)
-        integer(places, "places", -PLACES, PLACES)
+        Base.integer(places, "places", -PLACES, PLACES)
 
         if not before: return None
 
         first, base = before.as_integer_ratio()
         last, bottom = after.as_integer_ratio()
 
-        return fraction((last * base - first * bottom) * HUNDRED, bottom * abs(first), places)
+        return Base.fraction((last * base - first * bottom) * HUNDRED, bottom * abs(first), places)
 
     def format ( self, value: object, places: int = 2, group: str = ",", point: str = "." ) -> str:
 
-        integer(places, "places", 0, PLACES)
+        Base.integer(places, "places", 0, PLACES)
         text = f"{self.decimal(value, places):,.{places}f}"
 
         if group == "," and point == ".": return text
@@ -199,16 +204,16 @@ class Number:
 
     def pad ( self, value: int, width: int ) -> str:
 
-        integer(width, "width", 0, OUTPUT)
+        Base.integer(width, "width", 0, OUTPUT)
 
-        if type(value) is not int: raise refuse("integer", value)
+        if type(value) is not int: raise Base.refuse("integer", value)
 
         try: return str(value).zfill(width)
-        except ValueError as error: raise refuse("range", value) from error
+        except ValueError as error: raise Base.refuse("range", value) from error
 
     def compact ( self, value: float, places: int = 1 ) -> str:
 
-        integer(places, "places", 0, PLACES)
+        Base.integer(places, "places", 0, PLACES)
         size = self._real_(value)
 
         for unit in ("", "K", "M", "B", "T"):
@@ -239,16 +244,16 @@ class Number:
 
     def pairs ( self, total: int, size: int, offset: int = 1 ) -> list[tuple[int, int]]:
 
-        if type(total) is not int or total < 0: raise refuse("pairs", total)
-        if type(size) is not int or size < 1: raise refuse("pairs", size)
-        if type(offset) is not int: raise refuse("pairs", offset)
-        if (total + size - 1) // size > OUTPUT: raise refuse("pairs", total)
+        if type(total) is not int or total < 0: raise Base.refuse("pairs", total)
+        if type(size) is not int or size < 1: raise Base.refuse("pairs", size)
+        if type(offset) is not int: raise Base.refuse("pairs", offset)
+        if (total + size - 1) // size > OUTPUT: raise Base.refuse("pairs", total)
 
         return [(lower + offset, min(lower + size, total)) for lower in range(0, total, size)]
 
     def spell_ordinal ( self, value: int ) -> str:
 
-        if type(value) is not int: raise refuse("ordinal", value)
+        if type(value) is not int: raise Base.refuse("ordinal", value)
 
         spelled = self.spell(value)
         head, _, last = spelled.rpartition(" ") if " " in spelled else ("", "", spelled)
@@ -275,18 +280,18 @@ class Number:
 
         value, base = self.decimal(dividend), self.decimal(divisor)
 
-        if places is not None: integer(places, "places", -PLACES, PLACES)
-        if not base: return Decimal(0) if default is None else read(default)
+        if places is not None: Base.integer(places, "places", -PLACES, PLACES)
+        if not base: return Decimal(0) if default is None else Base.read(default)
         if places is None: return CONTEXT.copy().divide(value, base)
 
         numerator, bottom = value.as_integer_ratio()
         denominator, scale = base.as_integer_ratio()
 
-        return fraction(numerator * scale, bottom * denominator, places)
+        return Base.fraction(numerator * scale, bottom * denominator, places)
 
     def ordinal ( self, value: int ) -> str:
 
-        if type(value) is not int: raise refuse("ordinal", value)
+        if type(value) is not int: raise Base.refuse("ordinal", value)
 
         magnitude = abs(value)
         suffix = (
@@ -295,11 +300,11 @@ class Number:
         )
 
         try: return f"{value}{suffix}"
-        except ValueError as error: raise refuse("range", value) from error
+        except ValueError as error: raise Base.refuse("range", value) from error
 
     def roman ( self, value: int ) -> str:
 
-        if type(value) is not int or not 1 <= value <= ROMAN_MAX: raise refuse("roman", value)
+        if type(value) is not int or not 1 <= value <= ROMAN_MAX: raise Base.refuse("roman", value)
 
         text = ""
         rest = value
@@ -313,7 +318,7 @@ class Number:
 
     def from_roman ( self, text: str ) -> int:
 
-        if len(text) > INPUT: raise refuse("roman", text)
+        if len(text) > INPUT: raise Base.refuse("roman", text)
 
         normalized = text.strip().upper()
         total, at = 0, 0
@@ -327,7 +332,7 @@ class Number:
 
         if at != len(normalized) or not total or self.roman(total) != normalized:
 
-            raise refuse("roman", text)
+            raise Base.refuse("roman", text)
 
         return total
 
@@ -336,15 +341,15 @@ class Number:
         rows = iter(items)
         first = next(rows, None)
 
-        if first is None: raise refuse("empty", items)
-        if not isinstance(first, Money): raise refuse("money", first)
+        if first is None: raise Base.refuse("empty", items)
+        if not isinstance(first, Money): raise Base.refuse("money", first)
 
         amount = first.minor
         currency = first.currency
 
         for item in rows:
 
-            if not isinstance(item, Money): raise refuse("money", item)
+            if not isinstance(item, Money): raise Base.refuse("money", item)
             if item.currency != currency: raise Fault(Code.CONFLICT, "Currencies differ", "number.currency")
 
             amount += item.minor
@@ -358,7 +363,7 @@ class Number:
             and currency.isascii() and currency.isalpha()
         )
 
-        if not plain: raise refuse("currency", currency)
+        if not plain: raise Base.refuse("currency", currency)
 
         return currency.upper()
 
@@ -368,16 +373,16 @@ class Number:
         self._real_(low)
         self._real_(high)
 
-        if low > high: raise refuse("bounds", (low, high))
+        if low > high: raise Base.refuse("bounds", (low, high))
 
     def _real_ ( self, value: float ) -> float:
 
-        if isinstance(value, bool): raise refuse("range", value)
+        if isinstance(value, bool): raise Base.refuse("range", value)
 
         try: size = float(value)
-        except (OverflowError, TypeError, ValueError) as error: raise refuse("range", value) from error
+        except (OverflowError, TypeError, ValueError) as error: raise Base.refuse("range", value) from error
 
-        if not math.isfinite(size): raise refuse("range", value)
+        if not math.isfinite(size): raise Base.refuse("range", value)
 
         return size
 
@@ -465,7 +470,7 @@ class Number:
         negative = amount < 0
         whole    = int(amount.copy_abs())
 
-        if whole >= SPELLED: raise refuse("range", value)
+        if whole >= SPELLED: raise Base.refuse("range", value)
 
         fraction = f"{amount.copy_abs():f}".partition(".")[2].rstrip("0")
         words    = self._arabic_(whole) if locale == "ar" else self._english_(whole)

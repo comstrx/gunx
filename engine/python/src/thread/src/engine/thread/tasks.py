@@ -1,9 +1,10 @@
+from .base import Base
 from collections.abc import Coroutine
 from typing import Any, cast
 
 from engine.error import Code, Fault
 from engine.log import log
-from .arch import DRAIN, GRACE, WORD, seconds
+from .arch import DRAIN, GRACE, WORD
 import asyncio, inspect, math
 
 class Tasks:
@@ -49,7 +50,7 @@ class Tasks:
 
     async def close ( self, grace: float = GRACE ) -> int:
 
-        wait    = seconds(grace)
+        wait    = Base.seconds(grace)
         loop    = asyncio.get_running_loop()
         current = asyncio.current_task()
         own     = { task for task in self._tasks if task.get_loop() is loop and task is not current }
@@ -69,7 +70,7 @@ class Tasks:
 
     async def drain ( self, grace: float = DRAIN ) -> int:
 
-        wait    = seconds(grace)
+        wait    = Base.seconds(grace)
         loop    = asyncio.get_running_loop()
         current = asyncio.current_task()
         until   = loop.time() + wait

@@ -82,3 +82,6 @@ bench.measure("json.edit.batch", lambda: json.edit(document, updates), rounds=50
 
 walk_tree = {f"k{index}": {"value": index} for index in range(200)}
 bench.measure("json.walk.keys", lambda: json.walk(walk_tree, lambda item: item, keys=str.upper), rounds=500)
+
+copy_rows = {"rows": [{"id": index, "tags": ["a", "b"]} for index in range(100)]}
+bench.measure("json.copy100", lambda: json.copy(copy_rows), rounds=1000)

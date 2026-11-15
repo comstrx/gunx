@@ -1,7 +1,8 @@
+from .base import Base
 
 from engine.error import Code, Fault
 from engine.log import log
-from .arch import CLOSED, HALF, OPEN, Work, count, span
+from .arch import CLOSED, HALF, OPEN, Work
 import time
 
 class Breaker:
@@ -11,8 +12,8 @@ class Breaker:
     def __init__ ( self, name: str, threshold: int = 5, cooldown: float = 30.0 ) -> None:
 
         self.name       = name
-        self._threshold = count(threshold, "func.breaker")
-        self._cooldown  = span(cooldown, "func.breaker")
+        self._threshold = Base.count(threshold, "func.breaker")
+        self._cooldown  = Base.span(cooldown, "func.breaker")
         self._epoch     = 0
         self._failures  = 0
         self._opened    = 0.0

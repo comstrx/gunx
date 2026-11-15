@@ -1,8 +1,9 @@
 from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
 from typing import Any, ClassVar, Self, cast
 
 from engine.error import Bag, Code, Fault
-from .arch import Member, REFUSED, UNKNOWN
+from .arch import Member, REFUSED, SCALARS, UNKNOWN
 import msgspec
 
 class Shape(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
@@ -10,6 +11,7 @@ class Shape(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
     _decoder : ClassVar[msgspec.json.Decoder[Any] | None] = None
     _fields  : ClassVar[tuple[str, ...] | None] = None
     _members : ClassVar[tuple[Member, ...] | None] = None
+    strict   : ClassVar[bool] = False
     fillable : ClassVar[tuple[str, ...]] = ()
     hidden   : ClassVar[tuple[str, ...]] = ()
 
@@ -20,7 +22,7 @@ class Shape(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
 
         if found is None:
 
-            found = msgspec.json.Decoder(cls, strict=False)
+            found = msgspec.json.Decoder(cls, strict=cls.strict)
 
             cls._decoder = found
 
@@ -39,7 +41,7 @@ class Shape(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
     @classmethod
     def from_mapping ( cls, payload: Mapping[str, Any] ) -> Self:
 
-        try: return msgspec.convert(payload, cls, strict=False)
+        try: return msgspec.convert(payload, cls, strict=cls.strict)
         except msgspec.ValidationError as error: raise cls._fault_(error) from error
         except UnicodeError as error: raise Fault(Code.BAD_REQUEST, "Malformed text", "validate.encoding") from error
 
@@ -47,7 +49,52 @@ class Shape(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
 
         found = cast("dict[str, Any]", msgspec.to_builtins(self))
 
-        return { name: value for name, value in found.items() if name not in self.hidden } if self.hidden else found
+        if self.hidden or any(type(value) not in SCALARS for value in found.values()): self._hide_(self, found)
+
+        return found
+
+    @staticmethod
+    def _hide_ ( source: Any, target: Any ) -> None:
+
+        if type(source) in SCALARS: return
+        if isinstance(source, Shape): source._mask_(target)
+        elif isinstance(source, msgspec.Struct) and isinstance(target, dict): Shape._struct_(source, target)
+        elif is_dataclass(source) and isinstance(target, dict): Shape._record_(source, target)
+
+        elif isinstance(source, Mapping) and isinstance(target, dict):
+
+            for name, item in source.items():
+
+                if name in target: Shape._hide_(item, target[name])
+
+        elif isinstance(source, list | tuple | set | frozenset) and isinstance(target, list):
+
+            for item, plain in zip(source, target, strict=True): Shape._hide_(item, plain)
+
+    @staticmethod
+    def _record_ ( source: Any, target: dict[str, Any] ) -> None:
+
+        for item in fields(source):
+
+            if item.name in target: Shape._hide_(getattr(source, item.name), target[item.name])
+
+    @staticmethod
+    def _struct_ ( source: msgspec.Struct, target: dict[str, Any] ) -> None:
+
+        cls = type(source)
+
+        for name, encoded in zip(cls.__struct_fields__, cls.__struct_encode_fields__, strict=True):
+
+            if encoded in target: Shape._hide_(getattr(source, name), target[encoded])
+
+    def _mask_ ( self, target: dict[str, Any] ) -> None:
+
+        cls = type(self)
+
+        for name, encoded in zip(cls.__struct_fields__, cls.__struct_encode_fields__, strict=True):
+
+            if name in self.hidden or encoded in self.hidden: target.pop(encoded, None)
+            elif encoded in target: Shape._hide_(getattr(self, name), target[encoded])
 
     def fill ( self, **changes: Any ) -> Self:
 
@@ -61,7 +108,30 @@ class Shape(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
 
     def copy ( self, **changes: Any ) -> Self:
 
-        return msgspec.structs.replace(self, **changes)
+        cls = type(self)
+        given = msgspec.structs.asdict(self)
+        unknown = changes.keys() - given.keys()
+
+        if unknown:
+
+            raise Fault(
+                Code.VALIDATION, reason="validate.shape", errors={ name: [REFUSED] for name in sorted(unknown) },
+            )
+
+        given.update(changes)
+        if cls.__struct_fields__ != cls.__struct_encode_fields__:
+
+            given = {
+                encoded: given[name]
+                for name, encoded in zip(cls.__struct_fields__, cls.__struct_encode_fields__, strict=True)
+            }
+
+        try: plain = msgspec.to_builtins(given)
+        except (TypeError, ValueError, RecursionError) as error:
+
+            raise Fault(Code.VALIDATION, reason="validate.shape", errors={"body": ["unsupported value"]}) from error
+
+        return cls.from_mapping(plain)
 
     @classmethod
     def schema ( cls ) -> dict[str, Any]:

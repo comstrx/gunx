@@ -1,9 +1,6 @@
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol, Self
 
-from engine.error import Code, Fault
-lazy from .wire import Wire
 import re
 
 KEY_BYTES    = 32
@@ -65,18 +62,7 @@ class Aead(Protocol):
     def encrypt ( self, nonce: bytes, data: bytes, associated_data: bytes | None ) -> bytes: ...
     def decrypt ( self, nonce: bytes, data: bytes | memoryview, associated_data: bytes | None ) -> bytes: ...
 
-@dataclass(frozen=True, slots=True)
-class Key:
 
-    id     : str
-    secret : bytes = field(repr=False)
-
-    def __post_init__ ( self ) -> None:
-
-        named = type(self.id) is str and NAME.fullmatch(self.id) is not None
-        sized = type(self.secret) is bytes and len(self.secret) == KEY_BYTES
-
-        if not named or not sized: raise Fault(Code.INTERNAL, reason="crypto.key")
 
 @dataclass(frozen=True, slots=True)
 class Binding:
@@ -84,38 +70,3 @@ class Binding:
     cipher : Aead = field(repr=False)
     header : bytes
     prefix : str
-
-@dataclass(frozen=True, slots=True)
-class Ring:
-
-    current : str
-    keys    : Mapping[str, Key]
-    ciphers : Mapping[tuple[str, str], Binding] = field(repr=False)
-
-@dataclass(frozen=True, slots=True)
-class Sealed:
-
-    key       : str
-    nonce     : bytes
-    body      : bytes
-    algorithm : str = "aes-gcm"
-    version   : int = VERSION
-
-    def encode ( self ) -> str:
-
-        return Wire.encode(self)
-
-    @classmethod
-    def decode ( cls, text: str, limit: int = LIMIT ) -> Sealed:
-
-        return Wire.decode(text, limit)
-
-@dataclass(frozen=True, slots=True)
-class Pair:
-
-    public  : bytes
-    private : bytes = field(repr=False)
-
-    def dump ( self ) -> dict[str, str]:
-
-        return { "public": Wire.pack(self.public) }

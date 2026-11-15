@@ -33,15 +33,17 @@ class Rand:
 
         self._seeded = random.Random(seed) if seed is not None else None
 
-    def bytes ( self, size: int = 32 ) -> builtins.bytes:
+    def bytes ( self, size: int = 32, *, secure: bool = False ) -> builtins.bytes:
 
         if type(size) is not int or not 0 < size <= MAX_BYTES: raise Fault(Code.INTERNAL, reason="rand.size")
 
-        return self._seeded.randbytes(size) if self._seeded else os.urandom(size)
+        if type(secure) is not bool: raise Fault(Code.INTERNAL, reason="rand.secure")
 
-    def hex ( self, size: int = 32 ) -> str:
+        return self._seeded.randbytes(size) if self._seeded and not secure else os.urandom(size)
 
-        return self.bytes(size).hex()
+    def hex ( self, size: int = 32, *, secure: bool = False ) -> str:
+
+        return self.bytes(size, secure=secure).hex()
 
     def quick ( self, size: int = 8 ) -> str:
 
@@ -51,9 +53,9 @@ class Rand:
 
         return bits.to_bytes(size).hex()
 
-    def token ( self, size: int = 32 ) -> str:
+    def token ( self, size: int = 32, *, secure: bool = False ) -> str:
 
-        return base64.urlsafe_b64encode(self.bytes(size)).rstrip(b"=").decode()
+        return base64.urlsafe_b64encode(self.bytes(size, secure=secure)).rstrip(b"=").decode()
 
     def string ( self, length: int = 16, alphabet: str = ALPHABET ) -> str:
 

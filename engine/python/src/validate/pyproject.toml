@@ -2,7 +2,7 @@
 name = "engine-validate"
 description = "Typed shapes on msgspec and the rulebook: decode once at the boundary"
 dynamic = ["version", "requires-python", "license"]
-dependencies = ["engine-date", "engine-error", "engine-json", "engine-parse", "msgspec"]
+dependencies = ["engine-date", "engine-error", "engine-json", "engine-number", "engine-parse", "msgspec"]
 
 [build-system]
 requires = ["hatchling", "tomli-w"]

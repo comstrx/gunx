@@ -1,3 +1,4 @@
+from .base import Base
 from collections.abc import Mapping
 from typing import Any
 
@@ -6,10 +7,10 @@ from engine.date import date
 from engine.error import Code, Fault
 from engine.json import json
 from engine.rand import rand
-from .arch import (
-    Claims, IDENTITY, LIFETIME, LONGEST, Pair, REQUIRED, RESERVED, Settings, Store,
-    instant, label, payload, refused, setting,
-)
+from .arch import IDENTITY, LIFETIME, LONGEST, REQUIRED, RESERVED, Store
+from .claims import Claims
+from .pair import Pair
+from .settings import Settings
 from .codec import Codec
 from .reference import Reference
 
@@ -22,14 +23,14 @@ class Issuer:
         given: object = codec
         policy: object = settings
 
-        if not isinstance(given, Codec) or not isinstance(policy, Settings): raise setting("issuer")
+        if not isinstance(given, Codec) or not isinstance(policy, Settings): raise Base.setting("issuer")
         if codec.can("stored"):
 
             if store is None or not callable(getattr(store, "add", None)) or not callable(getattr(store, "get", None)):
 
-                raise setting("store")
+                raise Base.setting("store")
 
-        elif store is not None: raise setting("store")
+        elif store is not None: raise Base.setting("store")
 
         self._codec    = codec
         self._settings = settings
@@ -66,12 +67,12 @@ class Issuer:
 
         raw = json.encode(body)
 
-        if len(raw) > LONGEST: raise setting("size")
+        if len(raw) > LONGEST: raise Base.setting("size")
 
         raw = memoryview(raw).tobytes()
         lifetime = body["exp"] - date.stamp() + self._settings.leeway
 
-        if lifetime <= 0: raise setting("ttl")
+        if lifetime <= 0: raise Base.setting("ttl")
 
         for _ in range(3):
 
@@ -91,9 +92,9 @@ class Issuer:
         try: raw = await self._store.get(self.key(text))
         except OSError as error: raise Fault(Code.UNAVAILABLE, reason="token.store") from error
 
-        if type(raw) is not bytes: raise refused()
+        if type(raw) is not bytes: raise Base.refused()
 
-        return self._checked_(payload(raw), self.purpose, fingerprint)
+        return self._checked_(Base.payload(raw), self.purpose, fingerprint)
 
     def key ( self, text: str ) -> str:
 
@@ -140,7 +141,7 @@ class Issuer:
 
     def _verify_ ( self, text: str, purpose: str, fingerprint: str | None ) -> Claims:
 
-        if not label(purpose): raise setting("purpose")
+        if not Base.label(purpose): raise Base.setting("purpose")
 
         return self._checked_(self._codec.decode(text), purpose, fingerprint)
 
@@ -148,7 +149,7 @@ class Issuer:
 
         text = self._codec.encode(body)
 
-        if len(text) > LONGEST: raise setting("size")
+        if len(text) > LONGEST: raise Base.setting("size")
 
         return text
 
@@ -156,18 +157,18 @@ class Issuer:
         self, subject: str, purpose: str, ttl: int, fingerprint: str | None, facts: dict[str, Any],
     ) -> dict[str, Any]:
 
-        if type(subject) is not str or len(subject) > LONGEST: raise setting("subject")
-        if not label(purpose): raise setting("purpose")
-        if type(ttl) is not int or not -LIFETIME <= ttl <= LIFETIME: raise setting("ttl")
+        if type(subject) is not str or len(subject) > LONGEST: raise Base.setting("subject")
+        if not Base.label(purpose): raise Base.setting("purpose")
+        if type(ttl) is not int or not -LIFETIME <= ttl <= LIFETIME: raise Base.setting("ttl")
         if fingerprint is not None and (type(fingerprint) is not str or len(fingerprint) > LONGEST):
 
-            raise setting("fingerprint")
+            raise Base.setting("fingerprint")
 
         free = self._free_(facts)
         now  = int(date.stamp())
         body = {
             "sub": subject, "iss": self._settings.issuer, "iat": now, "exp": now + ttl,
-            "jti": rand.hex(IDENTITY), "kind": purpose, **free,
+            "jti": rand.hex(IDENTITY, secure=True), "kind": purpose, **free,
         }
 
         if fingerprint: body["fp"] = crypto.fingerprint(fingerprint)
@@ -177,19 +178,19 @@ class Issuer:
 
     def _checked_ ( self, body: dict[str, Any], purpose: str, fingerprint: str | None ) -> Claims:
 
-        if any(name not in body for name in REQUIRED): raise refused()
+        if any(name not in body for name in REQUIRED): raise Base.refused()
 
         now     = date.stamp()
-        issued  = instant(body["iat"])
-        expires = instant(body["exp"])
-        starts  = instant(body["nbf"]) if "nbf" in body else 0
+        issued  = Base.instant(body["iat"])
+        expires = Base.instant(body["exp"])
+        starts  = Base.instant(body["nbf"]) if "nbf" in body else 0
         leeway  = self._settings.leeway
 
-        if issued is None or expires is None or starts is None: raise refused()
-        if issued > now + leeway or starts > now + leeway: raise refused()
+        if issued is None or expires is None or starts is None: raise Base.refused()
+        if issued > now + leeway or starts > now + leeway: raise Base.refused()
         if expires <= now - leeway: raise Fault(Code.UNAUTHORIZED, reason="token.expired")
-        if body["iss"] != self._settings.issuer or not self._intended_(body.get("aud")): raise refused()
-        if type(body["sub"]) is not str or type(body["jti"]) is not str: raise refused()
+        if body["iss"] != self._settings.issuer or not self._intended_(body.get("aud")): raise Base.refused()
+        if type(body["sub"]) is not str or type(body["jti"]) is not str: raise Base.refused()
         if body["kind"] != purpose: raise Fault(Code.UNAUTHORIZED, reason="token.kind")
 
         bound = body.get("fp")

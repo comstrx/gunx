@@ -1,8 +1,9 @@
+from .base import Base
 from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-from .arch import DRAIN, bounds, seconds
+from .arch import DRAIN
 from .capacity import Capacity
 from .pool import Pool
 import asyncio, threading
@@ -13,7 +14,7 @@ class Lane:
 
     def __init__ ( self, mode: str, workers: int ) -> None:
 
-        bounds(mode, workers)
+        Base.bounds(mode, workers)
 
         self.mode    = mode
         self.workers = workers
@@ -59,7 +60,7 @@ class Lane:
     async def join ( self, grace: float = DRAIN ) -> None:
 
         loop = asyncio.get_running_loop()
-        until = loop.time() + seconds(grace)
+        until = loop.time() + Base.seconds(grace)
 
         with self._lock: pools = tuple(self._pools)
 
@@ -99,4 +100,3 @@ class Lane:
         self._pools.append(made)
 
         return made
-

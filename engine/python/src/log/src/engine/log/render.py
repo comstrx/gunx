@@ -8,7 +8,8 @@ from structlog.processors import JSONRenderer
 from structlog.typing import EventDict, Processor, WrappedLogger
 from engine.context import context
 from .arch import (
-    BARE, BEARER, DEPTH, HOST, JWT, KNOWN, LONG, MASK, MASKED, NESTED, OPAQUE, PAIR, PEM, PLAIN, PREFIX, QUERY, QUOTE,
+    BARE, BEARER, DEPTH, HOST, JWT, KNOWN, LONG, MASK, MASKED, NESTED, OPAQUE, PAIR, PASETO, PEM, PLAIN, PREFIX,
+    QUERY, QUOTE,
     QUOTED, REST, SCHEME, SECRETS, SHORT, STEMS, URL_AUTH, WHOLE,
 )
 import re
@@ -107,6 +108,7 @@ class Render:
 
         if "://" in text: text = URL_AUTH.sub(Render._userinfo_, text)
         if "eyJ" in text: text = JWT.sub(MASK, text)
+        if "v" in text and (".local." in text or ".public." in text): text = PASETO.sub(MASK, text)
         if "PRIVATE KEY-----" in text: text = PEM.sub(MASK, text)
         if ("=" in text or ":" in text) and STEMS.search(text.lower()): text = Render._pairs_(text)
         if ("b" in text or "B" in text) and "bearer" in text.lower():

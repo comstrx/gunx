@@ -1,3 +1,4 @@
+from .base import Base
 from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator, Mapping
 from functools import partial
 from operator import attrgetter, itemgetter
@@ -5,9 +6,9 @@ from typing import Any, cast, overload
 
 from engine.error import Code, Fault
 from engine.log import log
-from .arch import CEILING, CORES, DRAIN, Flight, GRACE, Hook, ISOLATED, Job, LIMIT, Mode, MODES, Outcome, RETRIES
-from .arch import Submit, direct
-from .arch import WORD, WORKERS
+from .arch import CEILING, CORES, DRAIN, GRACE, Hook, ISOLATED, Job, LIMIT, Mode, MODES, RETRIES, Submit, WORD, WORKERS
+from .flight import Flight
+from .outcome import Outcome
 from .cluster import Cluster
 from .lane import Lane
 from .pool import Pool
@@ -443,7 +444,7 @@ class Thread:
     async def _lane_ ( self, mode: str, address: str | None ) -> Submit:
 
         if self._scope is not None: return self._scope.call
-        if mode == "async": return direct
+        if mode == "async": return Base.direct
         if mode in {"ray", "remote"}: return (await Cluster.connect(address)).call
         if mode == "thread": return self._threads.submit
 

@@ -687,3 +687,29 @@ def test_constant_equal_keeps_ascii_unicode_and_mixed_semantics ( left: str | by
 
     assert rand.constant_equal(left, right) == (a == b)
     assert rand.constant_equal(right, left) == (a == b)
+
+def test_secure_draws_bypass_seed_without_advancing_seeded_sequence ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    calls: list[int] = []
+
+    def entropy ( size: int ) -> bytes:
+
+        calls.append(size)
+        return b"z" * size
+
+    monkeypatch.setattr(os, "urandom", entropy)
+    source, reference = Rand(7), Rand(7)
+
+    assert source.bytes(32, secure=True) == b"z" * 32
+    assert source.hex(16, secure=True) == (b"z" * 16).hex()
+    assert source.token(32, secure=True) == base64.urlsafe_b64encode(b"z" * 32).rstrip(b"=").decode()
+    assert calls == [32, 16, 32]
+    assert source.bytes(32) == reference.bytes(32)
+
+    invalid: tuple[object, ...] = (None, 0, 1, "yes", [])
+
+    for bad in invalid:
+
+        with pytest.raises(Fault) as stopped: source.bytes(8, secure=cast("Any", bad))
+
+        assert stopped.value.reason == "rand.secure"

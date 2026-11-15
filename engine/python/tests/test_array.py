@@ -1,4 +1,6 @@
-from typing import Any
+from collections import UserDict
+from types import MappingProxyType, SimpleNamespace
+from typing import Any, override
 from decimal import Decimal
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -258,3 +260,18 @@ def test_order_statistics_consume_one_pass_and_skip_none () -> None:
     assert array.mode(iter([None, 3, 2, 3, 2])) == 3
     assert array.median(iter(())) is None
     assert array.mode(iter(())) is None
+
+def test_getter_preserves_mapping_overrides_objects_and_nested_paths () -> None:
+
+    class Row(dict[str, Any]):
+
+        @override
+        def get ( self, key: str, default: Any = None ) -> Any:
+
+            return 9 if key == "id" else default
+
+    rows = [{"id": 7}, UserDict(id=7), MappingProxyType({"id": 7}), SimpleNamespace(id=7), Row(id=7), {}]
+
+    assert array.pluck(rows, "id") == [7, 7, 7, 7, 9, None]
+    assert array.where(rows, "id", "=", 7) == rows[:4]
+    assert array.pluck([{"user": {"id": 7}}, {"user": {}}], "user.id") == [7, None]

@@ -1,9 +1,10 @@
+from .base import Base
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime as DateTime, timedelta as TimeDelta
 
 from engine.error import Code, Fault
-from .arch import ZERO, utc
+from .arch import ZERO
 
 @dataclass(frozen=True, slots=True)
 class Span:
@@ -13,7 +14,7 @@ class Span:
 
     def __post_init__ ( self ) -> None:
 
-        start, end = utc(self.start), utc(self.end)
+        start, end = Base.utc(self.start), Base.utc(self.end)
 
         if end < start: raise Fault(Code.BAD_REQUEST, "The span ends before it starts", "date.span")
 
@@ -38,7 +39,7 @@ class Span:
 
     def contains ( self, moment: DateTime ) -> bool:
 
-        return self.start <= utc(moment) < self.end
+        return self.start <= Base.utc(moment) < self.end
 
     def overlaps ( self, other: Span ) -> bool:
 

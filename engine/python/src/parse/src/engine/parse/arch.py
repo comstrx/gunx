@@ -1,4 +1,3 @@
-from dataclasses import dataclass, field
 
 import re
 
@@ -37,49 +36,11 @@ MAX_INT   = 32
 MAX_FLOAT = 64
 MAX_URL   = 2048
 
-@dataclass(frozen=True, slots=True)
-class Mime:
 
-    type    : str
-    subtype : str
-    params  : dict[str, str] = field(default_factory=dict)
 
-    def text ( self ) -> str:
 
-        return f"{self.type}/{self.subtype}"
 
-    def matches ( self, pattern: str ) -> bool:
 
-        kind, _, sub = pattern.partition("/")
-
-        return kind in ("*", self.type) and sub in ("*", "", self.subtype)
-
-@dataclass(frozen=True, slots=True)
-class Email:
-
-    local  : str
-    domain : str
-
-    def text ( self ) -> str:
-
-        return f"{self.local}@{self.domain}"
-
-@dataclass(frozen=True, slots=True)
-class Url:
-
-    scheme : str
-    host   : str
-    port   : int | None
-    path   : str
-    query  : str
-    user   : str | None
-    password : str | None = field(default=None, repr=False)
-
-    def origin ( self ) -> str:
-
-        host = f"[{self.host}]" if ":" in self.host else self.host
-
-        return f"{self.scheme}://{host}{f':{self.port}' if self.port else ''}"
 
 
 DOCUMENT_LIMIT = 8 * 1024 * 1024
@@ -90,27 +51,6 @@ FORMATS = frozenset({"json", "toml", "yaml"})
 SCALARS = frozenset({str, int, float, bool, type(None), bytes})
 
 
-def separated ( text: str, separator: str ) -> list[str]:
-
-    parts: list[str] = []
-    begin = 0
-    quoted = escaped = False
-
-    for index, char in enumerate(text):
-
-        if escaped: escaped = False
-        elif char == "\\" and quoted: escaped = True
-        elif char == '"': quoted = not quoted
-        elif char == separator and not quoted:
-
-            parts.append(text[begin:index])
-            begin = index + 1
-
-    if quoted or escaped: raise ValueError("Unclosed header quote")
-
-    parts.append(text[begin:])
-
-    return parts
 
 QUOTED_PAIR = re.compile(r"\\(.)")
 CONTROL = 32

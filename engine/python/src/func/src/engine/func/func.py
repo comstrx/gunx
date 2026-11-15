@@ -1,3 +1,4 @@
+from .base import Base
 from collections.abc import Awaitable, Callable, Hashable, Sequence
 from functools import partial, wraps
 from importlib import import_module
@@ -10,9 +11,10 @@ from engine.log import log
 from engine.rand import rand
 from engine.thread import thread
 from .arch import (
-    BACKOFF, CEILING, Core, DEPTH, DOUBLES, Flush, Handler, Info, Keyed, LONG, LOOSE, MISSING, MODES, ORDERED, PART,
-    PATH, PLAIN, SWITCH, TAGGED, Target, TRIES, Work, count, span,
+    BACKOFF, CEILING, DEPTH, DOUBLES, Flush, Handler, Info, Keyed, LONG, LOOSE, MISSING, MODES, ORDERED, PART, PATH,
+    PLAIN, SWITCH, TAGGED, Target, TRIES, Work,
 )
+from .core import Core
 from .batch import Batch
 from .breaker import Breaker
 from .limiter import Limiter
@@ -379,9 +381,9 @@ class Func:
         jitter: bool = True, idempotent: bool = False,
     ) -> T:
 
-        count(tries, "func.retry")
-        backoff = span(backoff, "func.retry")
-        ceiling = span(ceiling, "func.retry")
+        Base.count(tries, "func.retry")
+        backoff = Base.span(backoff, "func.retry")
+        ceiling = Base.span(ceiling, "func.retry")
 
         if (type(jitter), type(idempotent)) != (bool, bool):
 
@@ -430,8 +432,8 @@ class Func:
 
     async def hedge [T] ( self, work: Work[T], delay: float, copies: int = 2 ) -> T:
 
-        count(copies, "func.hedge")
-        delay = span(delay, "func.hedge")
+        Base.count(copies, "func.hedge")
+        delay = Base.span(delay, "func.hedge")
 
         flying  : set[asyncio.Future[T]] = set()
         started = 0
@@ -583,8 +585,8 @@ class Func:
         reason: str = "poll",
     ) -> None:
 
-        every   = span(every, "func.poll")
-        timeout = span(timeout, "func.poll")
+        every   = Base.span(every, "func.poll")
+        timeout = Base.span(timeout, "func.poll")
         deadline = time.monotonic() + timeout
 
         while True:
@@ -614,7 +616,7 @@ class Func:
 
     def debounce ( self, seconds: float ) -> Callable[[Handler], Callable[..., Awaitable[None]]]:
 
-        seconds = span(seconds, "func.debounce")
+        seconds = Base.span(seconds, "func.debounce")
 
         def decorator ( handler: Handler ) -> Callable[..., Awaitable[None]]:
 

@@ -1,9 +1,10 @@
+from .base import Base
 from collections.abc import Callable, Mapping
 from typing import Any, ClassVar
 
 from engine.error import Code, Fault
 from engine.log import log
-from .arch import Link, REMOTES, environment, space
+from .arch import Link, REMOTES
 import asyncio, contextlib, inspect, sys, threading
 
 class Cluster:
@@ -27,8 +28,8 @@ class Cluster:
 
             raise Fault(Code.INTERNAL, reason="thread.address")
 
-        name = space(namespace)
-        env  = environment(runtime_env)
+        name = Base.space(namespace)
+        env  = Base.environment(runtime_env)
 
         return cls(await asyncio.to_thread(cls._linked_, address, name, env))
 
@@ -142,7 +143,7 @@ class Cluster:
                 options: dict[str, Any] = {}
 
                 if namespace is not None: options["namespace"] = namespace
-                if runtime_env is not None: options["runtime_env"] = environment(runtime_env)
+                if runtime_env is not None: options["runtime_env"] = Base.environment(runtime_env)
 
                 ray.init(address=address, ignore_reinit_error=True, log_to_driver=False, **options)
 

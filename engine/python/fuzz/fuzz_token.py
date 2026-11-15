@@ -6,7 +6,8 @@ from collections.abc import Coroutine
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
 import asyncio
-from engine.token.arch import Claims, LEEWAY, REQUIRED, RESERVED
+from engine.token.arch import LEEWAY, REQUIRED, RESERVED
+from engine.token.claims import Claims
 from contextlib import suppress
 from hypothesis import HealthCheck, given, settings, strategies as st
 from typing import Any
@@ -28,6 +29,7 @@ passed  = st.tuples(st.sampled_from([-10 ** 9, -86400, -3600, 0]), st.sampled_fr
 coming  = st.tuples(st.sampled_from([3600, 86400, 10 ** 9]), st.sampled_from([0, 0.25]))
 kinds   = st.sampled_from(["access", "refresh", "magic"])
 names   = st.text(min_size=1, max_size=8).filter(lambda name: name not in RESERVED and name not in ("nbf", "aud"))
+extras  = names.filter(lambda name: name not in ("self", "subject", "kind", "ttl", "fingerprint"))
 wild    = st.fixed_dictionaries({}, optional={
     "sub": st.text(max_size=12) | value, "iss": st.just("fuzz") | value, "iat": moment | value, "exp": moment | value,
     "jti": st.text(max_size=12) | value, "kind": kinds | value, "nbf": moment | value, "aud": value, "fp": value,
@@ -114,7 +116,7 @@ def a_tampered_token_is_refused ( index: int, letter: str ) -> None:
     assert verdict(forged, "access") is None, forged
 
 @settings(max_examples=EXAMPLES // 10, deadline=None, database=None, suppress_health_check=list(HealthCheck))
-@given(st.text(min_size=1, max_size=40), st.sampled_from(["access", "refresh"]), st.text(max_size=20), st.dictionaries(names, value, max_size=3))
+@given(st.text(min_size=1, max_size=40), st.sampled_from(["access", "refresh"]), st.text(max_size=20), st.dictionaries(extras, value, max_size=3))
 def an_issued_token_verifies ( subject: str, kind: str, device: str, facts: dict[str, Any] ) -> None:
 
     counts["an_issued_token_verifies"] = counts.get("an_issued_token_verifies", 0) + 1
@@ -200,7 +202,7 @@ async def remove ( issuer: Issuer, text: str ) -> None:
     if issuer.format == "opaque": await store.forget(issuer.key(text))
 
 @settings(max_examples=1000, deadline=None, database=None)
-@given(st.sampled_from(tuple(issuers)), st.text(max_size=48), st.dictionaries(names, value, max_size=3))
+@given(st.sampled_from(tuple(issuers)), st.text(max_size=48), st.dictionaries(extras, value, max_size=3))
 def scoped_roundtrips ( name: str, subject: str, facts: dict[str, Any] ) -> None:
 
     counts["scoped_roundtrips"] = counts.get("scoped_roundtrips", 0) + 1

@@ -501,3 +501,16 @@ def test_money_text_keeps_large_integer_fallback () -> None:
 
     money = Money(10 ** 5000 + 3, "KWD")
     assert money.text() == f"{money.major():.3f} KWD"
+
+def test_exact_decimal_preserves_wide_values_without_widening_fixed_decimal () -> None:
+
+    value = 10 ** 80 + 1
+
+    assert number.exact(value) == Decimal(value)
+    assert number.exact(Decimal("1e-800")) == Decimal("1e-800")
+
+    with pytest.raises(Fault): number.decimal(value)
+    with pytest.raises(Fault): number.exact("1e999999999")
+    for invalid in (True, "nan"):
+
+        with pytest.raises(Fault): number.exact(invalid)

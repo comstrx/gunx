@@ -1,4 +1,6 @@
-lazy from .arch import Key, Pair, Sealed
+lazy from .key import Key
+lazy from .pair import Pair
+lazy from .sealed import Sealed
 from .crypto import Crypto
 from .hasher import Hasher
 

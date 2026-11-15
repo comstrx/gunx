@@ -5,17 +5,19 @@ from engine.error import Code, Fault
 from engine.json import json
 from engine.log import log
 from engine.thread import thread
-from .arch import Swept
-from .arch import Check, FACTS, LIMIT, NAME, PROBES, Probe, RESERVED, UNREADY, WEIGHT, WORD
+from .arch import Swept, Check, FACTS, LIMIT, NAME, PROBES, Probe, RESERVED, UNREADY, WEIGHT, WORD
 import asyncio, inspect, time
 
 class Health:
+
+    __slots__ = ("_facts", "_failed", "_flight", "_nested", "_probes", "_started")
 
     def __init__ ( self ) -> None:
 
         self._probes: dict[str, Probe] = {}
         self._facts: dict[str, Any] = {}
         self._failed: dict[str, str] = {}
+        self._nested = False
         self._flight: asyncio.Task[Swept] | None = None
         self._started = time.monotonic()
 
@@ -47,6 +49,7 @@ class Health:
         if len(held) > FACTS: raise Fault(Code.INTERNAL, reason="health.facts")
 
         self._facts = held
+        self._nested = any(isinstance(value, (dict, list)) for value in held.values())
 
     def names ( self ) -> tuple[str, ...]:
 
@@ -66,7 +69,7 @@ class Health:
 
     def live ( self ) -> dict[str, Any]:
 
-        return { "status": "ok", "uptime": round(time.monotonic() - self._started, 1), **self._facts }
+        return { "status": "ok", "uptime": round(time.monotonic() - self._started, 1), **self._values_() }
 
     async def ready ( self ) -> tuple[bool, dict[str, Any]]:
 
@@ -74,13 +77,15 @@ class Health:
 
         if self._probes: healthy, checks = await self._swept_()
 
-        return healthy, { "status": "ok" if healthy else "degraded", "checks": dict(checks), **self._facts }
+        return healthy, { "status": "ok" if healthy else "degraded", "checks": dict(checks), **self._values_() }
 
     def clear ( self ) -> None:
 
         self._probes = {}
         self._facts  = {}
         self._failed = {}
+        self._nested = False
+        self._flight = None
 
     def describe ( self ) -> dict[str, Any]:
 
@@ -161,6 +166,10 @@ class Health:
         del self._failed[name]
 
         log.info("health.recovered", probe=name)
+
+    def _values_ ( self ) -> dict[str, Any]:
+
+        return json.plain(self._facts) if self._nested else self._facts
 
     def _plain_ ( self, name: str, value: object ) -> Any:
 

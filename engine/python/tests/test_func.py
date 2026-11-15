@@ -747,6 +747,8 @@ async def test_a_half_open_breaker_admits_one_probe () -> None:
 
 async def test_drain_waits_for_started_work_and_a_lost_failure_is_logged () -> None:
 
+    log.setup("info", "json")
+
     seen: list[int] = []
 
     @func.debounce(0.0)

@@ -1,8 +1,7 @@
 from engine.error import Code, Fault
 from engine.string import string
-from .arch import (
-    ALGORITHMS, LIMIT, MAX_BYTES, NAME, NONCE_BYTES, Sealed, TAG_BYTES, TEXT_START, VERSION,
-)
+from .arch import ALGORITHMS, LIMIT, MAX_BYTES, NAME, NONCE_BYTES, TAG_BYTES, TEXT_START, VERSION
+from .sealed import Sealed
 
 class Wire:
 

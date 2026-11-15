@@ -1,4 +1,3 @@
-from engine.error import Code, Fault
 
 from datetime import UTC, datetime as DateTime, timedelta as TimeDelta
 import re
@@ -95,15 +94,3 @@ STEPS    = {
     "minute": { "minutes": 1 }, "hour": { "hours": 1 }, "day": { "days": 1 }, "week": { "weeks": 1 },
     "month": { "months": 1 }, "quarter": { "months": QUARTER }, "year": { "years": 1 },
 }
-
-def utc ( value: DateTime ) -> DateTime:
-
-    if value.tzinfo is UTC: return value
-    if value.tzinfo is None: return value.replace(tzinfo=UTC)
-
-    try: return value.replace(tzinfo=UTC) if value.utcoffset() is None else value.astimezone(UTC)
-    except OverflowError as error:
-
-        details = { "value": [str(value)[:LIMIT]] }
-
-        raise Fault(Code.BAD_REQUEST, "The date is out of range", "date.range", details) from error

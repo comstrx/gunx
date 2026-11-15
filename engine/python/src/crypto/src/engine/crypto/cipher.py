@@ -6,9 +6,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM, AESGCMSIV, ChaCh
 from engine.error import Code, Fault
 from engine.rand import rand
 from .arch import (
-    Aead, ALGORITHMS, BINARY_EXTRA, Binding, KEY_COUNT, LEGACY_HEADER, LIMIT, MAX_BYTES, NAME, NAME_BYTES,
-    NONCE_BYTES, Key, Ring, TAG_BYTES, VERSION,
+    Aead, ALGORITHMS, BINARY_EXTRA, Binding, KEY_COUNT, LEGACY_HEADER, LIMIT, MAX_BYTES, NAME, NAME_BYTES, NONCE_BYTES,
+    TAG_BYTES, VERSION,
 )
+from .key import Key
+from .ring import Ring
 from .wire import Wire
 
 class Cipher:
@@ -166,7 +168,7 @@ class Cipher:
 
         raw   = Wire.raw(data, self.limit)
         bound = Wire.raw(aad, self.limit)
-        nonce = rand.bytes(NONCE_BYTES)
+        nonce = rand.bytes(NONCE_BYTES, secure=True)
         body  = binding.cipher.encrypt(nonce, raw, binding.header + bound)
 
         return binding, nonce, body

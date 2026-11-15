@@ -3,6 +3,8 @@ from engine.error import Fault
 from hypothesis import HealthCheck, given, settings, strategies as st
 from contextlib import suppress
 from typing import cast
+from collections import UserDict
+from types import MappingProxyType, SimpleNamespace
 import pytest
 
 EXAMPLES = 3400
@@ -88,4 +90,17 @@ def order_statistics_match_materialized_reference ( values: list[int | None] ) -
 
 order_statistics_match_materialized_reference()
 
-print("fuzz array  properties=6  ok")
+
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(ROWS, st.sampled_from(["id", "name", "missing"]))
+def getters_agree_for_mapping_and_object_rows ( rows: list[dict[str, object]], name: str ) -> None:
+
+    expected = [row.get(name) for row in rows]
+    assert array.pluck(rows, name) == expected
+    assert array.pluck([UserDict(row) for row in rows], name) == expected
+    assert array.pluck([MappingProxyType(row) for row in rows], name) == expected
+    assert array.pluck([SimpleNamespace(**row) for row in rows], name) == expected
+
+getters_agree_for_mapping_and_object_rows()
+
+print("fuzz array  properties=7  ok")

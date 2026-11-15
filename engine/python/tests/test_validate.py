@@ -1,7 +1,11 @@
 from engine.error import Code, Fault
-from engine.validate import Resource, Shape, field, rules, validator
-from typing import Any, override
+from engine.validate import Resource, Rules, Shape, field, rules, validator
+from typing import Any, cast, override
 from typing import ClassVar
+from concurrent.futures import ThreadPoolExecutor
+from decimal import localcontext
+from dataclasses import dataclass
+from types import MappingProxyType
 import gc, pytest, weakref
 
 class Signup(Shape):
@@ -349,3 +353,473 @@ def test_rule_sequences_preserve_regex_alternation () -> None:
     assert rules.check({ "value": "right" }, spec) == { "value": "right" }
 
     with pytest.raises(Fault): rules.check({ "value": "other" }, spec)
+
+@pytest.mark.parametrize("rule", ["boolean", "accepted", "declined"])
+@pytest.mark.parametrize("value", [[], {}, ["yes"], {"yes": True}])
+def test_unhashable_values_are_validation_failures ( rule: str, value: object ) -> None:
+
+    with pytest.raises(Fault) as caught: Rules().check({"value": value}, {"value": rule})
+
+    assert caught.value.code is Code.VALIDATION
+
+def test_confirmation_is_bound_to_its_own_field () -> None:
+
+    with pytest.raises(Fault) as caught:
+
+        Rules().check(
+            {"a": "one", "a_confirmation": "two", "b": "two", "b_confirmation": "one"},
+            {"a": "required|confirmed", "b": "required|confirmed"},
+        )
+
+    assert caught.value.errors is not None and set(caught.value.errors) == {"a", "b"}
+
+def test_confirmation_accepts_an_explicit_field () -> None:
+
+    assert Rules().check({"value": "one", "repeat": "one"}, {"value": "confirmed:repeat"}) == {"value": "one"}
+
+def test_conditions_accept_structured_other_values () -> None:
+
+    with pytest.raises(Fault) as caught: Rules().check({"other": {"a": 1}}, {"other": "map", "value": "required_with:other"})
+
+    assert caught.value.errors == {"value": ["is required"]}
+
+@pytest.mark.parametrize("value", [None, "", [], {}])
+def test_required_wins_over_nullable ( value: object ) -> None:
+
+    with pytest.raises(Fault) as caught: Rules().check({"value": value}, {"value": "required|nullable"})
+
+    assert caught.value.errors == {"value": ["is required"]}
+
+def test_excluded_fields_are_not_validated_or_retained () -> None:
+
+    assert Rules().check({"value": "invalid"}, {"value": "exclude|integer"}) == {}
+    assert Rules().check({"value": None}, {"value": "nullable|exclude"}) == {}
+    assert Rules().check({"mode": "skip", "value": []}, {"mode": "string", "value": "exclude_if:mode,skip|integer"}) == {"mode": "skip"}
+
+def test_nested_wildcards_validate_the_actual_leaf () -> None:
+
+    spec = {"groups.*.items.*.id": "required|integer"}
+    valid = {"groups": [{"items": [{"id": 1}, {"id": 2}]}, {"items": [{"id": 3}]}]}
+
+    assert Rules().check(valid, spec) == valid
+
+    with pytest.raises(Fault) as caught:
+
+        Rules().check({"groups": [{"items": [{"id": 1}, {"id": "bad"}]}]}, spec)
+
+    assert caught.value.errors == {"groups.0.items.1.id": ["must be an integer"]}
+
+def test_nested_output_rejects_undeclared_keys_and_is_detached () -> None:
+
+    rulebook = Rules()
+    payload = {"author": {"name": "Ann"}}
+    kept = rulebook.check(payload, {"author.name": "required|string"})
+
+    kept["author"]["name"] = "Changed"
+
+    assert payload["author"]["name"] == "Ann"
+
+    with pytest.raises(Fault) as caught:
+
+        rulebook.check({"author": {"name": "Ann", "admin": True}}, {"author.name": "required|string"})
+
+    assert caught.value.errors == {"author.admin": ["is not allowed"]}
+
+def test_shape_copy_and_fill_validate_types_and_do_not_mutate () -> None:
+
+    item = Signup(email="a", tags=["x"])
+
+    with pytest.raises(Fault): item.copy(age="bad")
+    with pytest.raises(Fault): Account(name="Ann").fill(name=[])
+
+    assert item.age == 18 and item.tags == ["x"]
+    assert item.copy(age="21").age == 21
+
+class HiddenChild(Shape, rename="camel"):
+
+    hidden: ClassVar[tuple[str, ...]] = ("secret_key",)
+    secret_key: str
+    name: str
+
+class HiddenParent(Shape):
+
+    user: HiddenChild
+
+def test_hidden_fields_apply_to_nested_shapes_and_renamed_fields () -> None:
+
+    assert HiddenParent(user=HiddenChild(secret_key="hidden", name="Ann")).dump() == {"user": {"name": "Ann"}}
+
+@pytest.mark.parametrize("rule", ["number", "numeric"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_numeric_rules_refuse_non_finite_values ( rule: str, value: float ) -> None:
+
+    with pytest.raises(Fault): Rules().check({"value": value}, {"value": rule})
+
+def test_prepared_rules_are_reusable_snapshots_and_cache_is_bounded () -> None:
+
+    book = Rules(cache=2)
+    spec = {"v": "required|integer"}
+    plan = book.prepare(spec)
+
+    assert book.prepare(spec) is plan and book.compile(spec) is plan.fields
+    assert plan.check({"v": 1}) == book.check({"v": 1}, plan) == {"v": 1}
+
+    spec["v"] = "string"
+
+    assert book.prepare(spec) is not plan and plan.check({"v": 2}) == {"v": 2}
+
+    with pytest.raises(Fault): book.check({"v": 2}, spec)
+
+    book.prepare({"x": "string"})
+
+    assert book.prepare({"v": "required|integer"}) is not plan
+    assert Rules(cache=0).prepare({}) is not Rules(cache=0).prepare({})
+
+def test_registration_invalidates_cache_but_preserves_prepared_contract () -> None:
+
+    book = Rules()
+    book.register("custom", lambda v, _: None if v == 1 else "needs one")
+    old = book.prepare({"v": "custom"})
+    book.register("custom", lambda v, _, __: None if v == 2 else "needs two")
+    new = book.prepare({"v": "custom"})
+
+    assert old.check({"v": 1}) == {"v": 1} and new.check({"v": 2}) == {"v": 2}
+
+    with pytest.raises(Fault): old.check({"v": 2})
+    with pytest.raises(Fault): new.check({"v": 1})
+
+def test_prepared_rules_support_concurrent_independent_calls () -> None:
+
+    book = Rules()
+    plan = book.prepare({"value": "required|integer", "items.*.id": "required|integer"})
+
+    def call ( value: int ) -> dict[str, Any]:
+
+        payload: dict[str, Any] = {"value": value, "items": [{"id": value}]}
+        result = plan.check(payload)
+
+        result["items"][0]["id"] = -1
+
+        assert payload["items"][0]["id"] == value
+
+        return result
+
+    with ThreadPoolExecutor(max_workers=4) as pool: results = list(pool.map(call, range(64)))
+
+    assert [result["value"] for result in results] == list(range(64))
+
+def test_wildcard_confirmation_is_scoped_and_not_returned () -> None:
+
+    plan = Rules().prepare({"users.*.code": "required|confirmed"})
+    payload = {"users": [{"code": "a", "code_confirmation": "a"}, {"code": "b", "code_confirmation": "b"}]}
+
+    assert plan.check(payload) == {"users": [{"code": "a"}, {"code": "b"}]}
+    assert "code_confirmation" in payload["users"][0]
+    payload["users"][1]["code_confirmation"] = "a"
+
+    with pytest.raises(Fault) as caught: plan.check(payload)
+
+    assert caught.value.errors == {"users.1.code": ["must be confirmed"]}
+
+def test_nested_exclusion_is_order_independent_and_preserves_input () -> None:
+
+    payload: dict[str, Any] = {"user": {"name": "Ann", "private": {"number": "bad"}}}
+
+    for spec in (
+        {"user.private.number": "required|integer", "user.private": "exclude", "user.name": "string"},
+        {"user.private": "exclude", "user.name": "string", "user.private.number": "required|integer"},
+    ):
+
+        assert Rules().check(payload, spec) == {"user": {"name": "Ann"}}
+
+    assert payload["user"]["private"]["number"] == "bad"
+
+def test_conditional_rules_accept_several_comparison_values () -> None:
+
+    with pytest.raises(Fault): Rules().check({"mode": "b"}, {"mode": "string", "value": "required_if:mode,a,b"})
+    assert Rules().check({"mode": "c"}, {"mode": "string", "value": "required_if:mode,a,b"}) == {"mode": "c"}
+
+def test_mapping_inputs_and_shape_strictness_are_explicit () -> None:
+
+    class Strict(Shape):
+
+        strict: ClassVar[bool] = True
+        count: int
+
+    assert Rules().check(MappingProxyType({"v": 2}), {"v": "integer"}) == {"v": 2}
+
+    with pytest.raises(Fault): Strict.from_mapping({"count": "2"})
+    with pytest.raises(Fault): Strict.from_json(b'{"count":"2"}')
+
+    assert Strict.from_json(b'{"count":2}').count == 2
+    assert Signup.from_mapping({"email": "a", "age": "2"}).age == 2
+
+def test_shape_copy_validates_nested_values_and_is_independent () -> None:
+
+    item = Signup(email="a", tags=["old"])
+    changed = item.copy(tags=["new"])
+
+    changed.tags.append("extra")
+
+    assert item.tags == ["old"]
+
+    with pytest.raises(Fault): HiddenParent(user=HiddenChild(secret_key="s", name="a")).copy(user={"secretKey": "s", "name": 2})
+    with pytest.raises(Fault): item.copy(missing=1)
+
+@pytest.mark.parametrize("rule", ["min:bad", "size:nan", "between:9,1", "digits:-1", "digits:1.5", "digits:2.0", "decimal:2,1", "regex:[", "required_if:x"])
+def test_malformed_rules_fail_during_preparation ( rule: str ) -> None:
+
+    with pytest.raises(Fault) as caught: Rules().prepare({"v": rule})
+
+    assert caught.value.code is Code.INTERNAL
+
+@pytest.mark.parametrize("options", [{"cache": -1}, {"cache": True}, {"limit": 0}, {"limit": False}])
+def test_rule_limits_are_validated ( options: dict[str, Any] ) -> None:
+
+    with pytest.raises(Fault): Rules(**options)
+
+def test_wildcard_work_is_bounded () -> None:
+
+    plan = Rules(limit=4).prepare({"items.*": "integer"})
+
+    assert plan.check({"items": [1, 2, 3, 4]}) == {"items": [1, 2, 3, 4]}
+
+    with pytest.raises(Fault) as caught: plan.check({"items": [1, 2, 3, 4, 5]})
+
+    assert caught.value.reason == "validate.limit"
+
+def test_custom_checks_reject_async_or_invalid_results () -> None:
+
+    book = Rules()
+
+    async def asynchronous ( _: Any, __: str ) -> str | None:
+
+        return None
+
+    with pytest.raises(Fault): book.register("async", cast("Any", asynchronous))
+
+    book.register("invalid", cast("Any", lambda _, __: 1))
+
+    with pytest.raises(Fault) as caught: book.check({"value": "x"}, {"value": "invalid"})
+
+    assert caught.value.reason == "validate.check"
+
+def test_nested_container_shape_is_enforced () -> None:
+
+    with pytest.raises(Fault): Rules().check({"user": 1}, {"user.name": "string"})
+    with pytest.raises(Fault): Rules().check({"items": {"id": 1}}, {"items.*.id": "integer"})
+
+def test_invalid_input_and_spec_are_typed_faults () -> None:
+
+    with pytest.raises(Fault): Rules().check(cast("Any", []), {"v": "string"})
+    with pytest.raises(Fault): Rules().prepare(cast("Any", 1))
+    with pytest.raises(Fault): Rules().prepare(cast("Any", {"v": [1]}))
+
+def test_hidden_fields_are_not_exposed_by_incorrect_runtime_annotations () -> None:
+
+    class Loose(Shape):
+
+        values: list[str]
+
+    secret = HiddenChild(secret_key="hidden", name="Ann")
+    value = Loose(values=cast("Any", [secret]))
+
+    assert value.dump() == {"values": [{"name": "Ann"}]}
+
+def test_numeric_bounds_preserve_large_integer_precision () -> None:
+
+    limit = 2 ** 53 + 1
+
+    with pytest.raises(Fault): Rules().check({"value": limit - 1}, {"value": f"min:{limit}"})
+    with pytest.raises(Fault): Rules().check({"value": limit + 1}, {"value": f"max:{limit}"})
+
+    assert Rules().check({"value": limit}, {"value": f"size:{limit}"}) == {"value": limit}
+
+def test_multiple_of_is_exact_and_independent_of_decimal_context () -> None:
+
+    value = 3 * 10 ** 60
+
+    with localcontext() as context:
+
+        context.prec = 2
+
+        assert Rules().check({"value": value}, {"value": "multiple_of:3"}) == {"value": value}
+
+        with pytest.raises(Fault): Rules().check({"value": value + 1}, {"value": "multiple_of:3"})
+
+def test_numeric_rules_reject_unbounded_exponents () -> None:
+
+    with pytest.raises(Fault): Rules().prepare({"value": "min:1e999999999"})
+    with pytest.raises(Fault): Rules().check({"value": "1e999999999"}, {"value": "multiple_of:3"})
+
+def test_copy_refuses_unsupported_objects_with_a_typed_fault () -> None:
+
+    with pytest.raises(Fault) as caught: Signup(email="a").copy(age=object())
+
+    assert caught.value.reason == "validate.shape"
+
+def test_hidden_shapes_inside_dataclasses_are_redacted () -> None:
+
+    @dataclass
+    class Record:
+
+        child: HiddenChild
+
+    class Container(Shape):
+
+        value: Any
+
+    source = Container(value=Record(HiddenChild(name="Ann", secret_key="hidden")))
+
+    assert source.dump() == {"value": {"child": {"name": "Ann"}}}
+
+def test_excluded_wildcard_parents_do_not_validate_their_children () -> None:
+
+    book = Rules()
+    payload = {"items": [1, {"id": "invalid", "extra": True}]}
+
+    for spec in (
+        {"items.*": "exclude", "items.*.id": "required|integer"},
+        {"items.*.id": "exclude_if:drop,true", "items.*": "exclude", "drop": "boolean"},
+    ):
+
+        given = {**payload, "drop": True} if "drop" in spec else payload
+
+        assert book.check(given, spec) == ({"items": [], "drop": True} if "drop" in spec else {"items": []})
+
+    assert payload == {"items": [1, {"id": "invalid", "extra": True}]}
+
+def test_custom_value_checks_are_not_overridden_by_preparation () -> None:
+
+    book = Rules()
+    previous = book.prepare({"value": "min:2"})
+    book.register("min", lambda value, argument: None if value == argument else "custom")
+    book.register("regex", lambda value, argument: None if value == argument else "custom")
+
+    assert book.check({"value": "word"}, {"value": "min:word"}) == {"value": "word"}
+    assert book.check({"value": "["}, {"value": "regex:["}) == {"value": "["}
+
+    with pytest.raises(Fault): previous.check({"value": 1})
+
+def test_partial_plan_checks_supplied_values_and_keeps_full_plan () -> None:
+
+    full = Rules().prepare({"name": "required|string", "age": "required|integer", "meta.label": "required|string"})
+    patch = full.partial()
+
+    assert patch.check({}) == {}
+    assert patch.check({"age": 21}) == {"age": 21}
+    assert patch.check({"meta": {}}) == {"meta": {}}
+    assert patch.errors({"age": None}) == {"age": ["is required"]}
+    assert patch.errors({"meta": {"label": 1}}) == {"meta.label": ["must be a string"]}
+
+    with pytest.raises(Fault): full.check({"age": 21})
+    with pytest.raises(Fault): patch.check({"other": True})
+
+def test_errors_and_valid_share_rules_without_hiding_configuration_faults () -> None:
+
+    book = Rules()
+    plan = book.prepare({"items.*.id": "required|integer"})
+
+    assert plan.errors({"items": [{"id": "wrong"}]}) == {"items.0.id": ["must be an integer"]}
+    assert not plan.valid({"items": [{"id": "wrong"}]})
+    assert plan.valid({"items": [{"id": 2}]})
+    assert book.errors({"items": [{"id": 2}]}, plan) == {}
+    assert book.valid({"items": [{"id": 2}]}, {"items.*.id": "required|integer"})
+
+    with pytest.raises(Fault): book.valid({}, {"x": "unknown_rule"})
+    with pytest.raises(Fault): plan.errors(cast("Any", []))
+
+    book.register("broken", cast("Any", lambda _, __: 2))
+
+    with pytest.raises(Fault): book.valid({"x": 1}, {"x": "broken"})
+
+def test_diagnostic_checks_do_not_clone_values () -> None:
+
+    class Tracked(dict[str, int]):
+
+        def __deepcopy__ ( self, _: dict[int, Any] ) -> Tracked:
+
+            raise RuntimeError("must not copy for diagnostics")
+
+    plan = Rules().prepare({"data": "required|map"})
+    payload = {"data": Tracked(value=1)}
+
+    assert plan.valid(payload) and plan.errors(payload) == {}
+
+def test_grouped_fields_preserve_nested_failure_paths_and_input () -> None:
+
+    plan = Rules().prepare({
+        "rows.*.id": "required|integer", "rows.*.name": "required|string",
+        "rows.*.tags.*": "required|string",
+    })
+    payload = {"rows": [{"id": 1, "name": "Ann", "tags": ["x"]}, {"id": "bad", "name": 2, "tags": ["y", 3]}]}
+
+    assert plan.errors(payload) == {
+        "rows.1.id": ["must be an integer"], "rows.1.name": ["must be a string"],
+        "rows.1.tags.1": ["must be a string"],
+    }
+    payload["rows"][1] = {"id": 2, "name": "Ben", "tags": ["y"]}
+    copied = plan.check(payload)
+    copied["rows"][0]["tags"].append("z")
+
+    assert payload["rows"][0]["tags"] == ["x"]
+
+def test_grouped_paths_cover_missing_numeric_and_mapping_parents () -> None:
+
+    plan = Rules().prepare({"root.items.0.a": "required|integer", "root.items.0.b": "required|string"})
+
+    assert plan.errors({}) == {"root.items.0.a": ["is required"], "root.items.0.b": ["is required"]}
+    assert plan.check({"root": {"items": [{"a": 1, "b": "x"}]}}) == {"root": {"items": [{"a": 1, "b": "x"}]}}
+
+    source = MappingProxyType({"root": {"items": [{"a": 1, "b": "x"}]}})
+
+    assert plan.check(source) == dict(source)
+
+def test_copy_preserves_renames_hidden_values_and_detaches_unchanged_containers () -> None:
+
+    source = Signup(email="a", tags=["x"])
+    copied = source.copy(age="21")
+    copied.tags.append("y")
+
+    assert source.tags == ["x"] and copied.age == 21
+
+    renamed = HiddenChild(secret_key="s", name="Ann").copy(name="Ben")
+
+    assert renamed.name == "Ben" and renamed.secret_key == "s" and renamed.dump() == {"name": "Ben"}
+    changes = ["fresh"]
+    copied = source.copy(tags=changes)
+    changes.append("outside")
+
+    assert copied.tags == ["fresh"]
+
+def test_copy_revalidates_existing_invalid_fields () -> None:
+
+    invalid = Signup(email="a", age=cast("Any", "bad"))
+
+    with pytest.raises(Fault): invalid.copy(email="b")
+
+def test_custom_checks_keep_declared_field_execution_order () -> None:
+
+    calls: list[int] = []
+    book = Rules()
+
+    def track ( value: Any, _: str ) -> None:
+
+        calls.append(value)
+
+    book.register("track", track)
+    plan = book.prepare({"items.*.a": "track", "items.*.b": "track"})
+    plan.check({"items": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]})
+
+    assert calls == [1, 3, 2, 4]
+
+def test_prepared_results_preserve_shared_values_without_sharing_with_input () -> None:
+
+    shared = {"x": [1]}
+    source = {"a": shared, "b": shared}
+    copied = Rules().check(source, {"a": "map", "b": "map"})
+
+    assert copied["a"] is copied["b"] and copied["a"] is not shared
+    copied["a"]["x"].append(2)
+
+    assert shared == {"x": [1]}

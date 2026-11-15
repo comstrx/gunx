@@ -77,3 +77,5 @@ bench.measure("log.clean", clean)
 bench.measure("log.scrub.bearer.mixed", lambda: Render.scrub("bEaReR example_credential_0123456789"))
 
 log.close()
+
+bench.measure("log.scrub.paseto", lambda: Render.scrub("received v4.local." + "a" * 90 + ".Zm9vdGVy next"))

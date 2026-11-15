@@ -1,3 +1,4 @@
+from .base import Base
 from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -5,7 +6,7 @@ from types import NotImplementedType
 from typing import cast
 
 from engine.error import Code, Fault
-from .arch import CURRENCY, DIGITS, MAXIMUM, OUTPUT, integer, read, refuse, rounded, shifted
+from .arch import CURRENCY, DIGITS, MAXIMUM, OUTPUT
 
 @dataclass(frozen=True, slots=True)
 class Money:
@@ -18,8 +19,8 @@ class Money:
         code  = cast("object", self.currency)
         sound = type(code) is str and len(code) == CURRENCY and code.isascii() and code.isalpha() and code.isupper()
 
-        if type(cast("object", self.minor)) is not int: raise refuse("minor", self.minor)
-        if not sound: raise refuse("currency", self.currency)
+        if type(cast("object", self.minor)) is not int: raise Base.refuse("minor", self.minor)
+        if not sound: raise Base.refuse("currency", self.currency)
 
     def digits ( self ) -> int:
 
@@ -28,7 +29,7 @@ class Money:
     def major ( self ) -> Decimal:
 
         try: return Decimal(f"{self.minor}e-{self.digits()}")
-        except ValueError: return shifted(Decimal(self.minor), -self.digits())
+        except ValueError: return Base.shifted(Decimal(self.minor), -self.digits())
 
     def add ( self, other: Money ) -> Money:
 
@@ -52,7 +53,7 @@ class Money:
 
     def split ( self, parts: int ) -> list[Money]:
 
-        integer(parts, "parts", 1, OUTPUT)
+        Base.integer(parts, "parts", 1, OUTPUT)
         base, rest = divmod(self.minor, parts)
 
         return [Money(base + (index < rest), self.currency) for index in range(parts)]
@@ -61,13 +62,13 @@ class Money:
 
         if not isinstance(cast("object", ratios), Sequence) or not ratios or len(ratios) > OUTPUT:
 
-            raise refuse("ratios", ratios)
+            raise Base.refuse("ratios", ratios)
 
-        if any(type(ratio) is not int or ratio < 0 for ratio in ratios): raise refuse("ratios", ratios)
+        if any(type(ratio) is not int or ratio < 0 for ratio in ratios): raise Base.refuse("ratios", ratios)
 
         total = sum(ratios)
 
-        if not total: raise refuse("ratios", ratios)
+        if not total: raise Base.refuse("ratios", ratios)
 
         amount = abs(self.minor)
         shares: list[int] = []
@@ -132,19 +133,19 @@ class Money:
 
     def _same_ ( self, other: Money ) -> None:
 
-        if not isinstance(other, Money): raise refuse("money", other)
+        if not isinstance(other, Money): raise Base.refuse("money", other)
         if other.currency != self.currency: raise Fault(Code.CONFLICT, "Currencies differ", "number.currency")
 
     def _scaled_ ( self, factor: Decimal | int | str, shift: int ) -> Money:
 
-        if isinstance(factor, (bool, float)): raise refuse("factor", factor)
+        if isinstance(factor, (bool, float)): raise Base.refuse("factor", factor)
 
-        try: numerator, denominator = read(factor).as_integer_ratio()
-        except Fault as error: raise refuse("factor", factor) from error
+        try: numerator, denominator = Base.read(factor).as_integer_ratio()
+        except Fault as error: raise Base.refuse("factor", factor) from error
 
-        minor = rounded(self.minor * numerator, denominator * 10 ** -shift, banker=True)
+        minor = Base.rounded(self.minor * numerator, denominator * 10 ** -shift, banker=True)
 
-        if abs(minor) >= MAXIMUM: raise refuse("factor", factor)
+        if abs(minor) >= MAXIMUM: raise Base.refuse("factor", factor)
 
         return Money(minor, self.currency)
 

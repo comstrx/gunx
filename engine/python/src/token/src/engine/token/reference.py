@@ -1,8 +1,9 @@
+from .base import Base
 from typing import Any, ClassVar, override
 
 from engine.error import Code, Fault
 from engine.rand import rand
-from .arch import ENTROPY, OPAQUE_LENGTH, bounded, refused, unpack
+from .arch import ENTROPY, OPAQUE_LENGTH
 from .codec import Codec
 
 class Reference(Codec):
@@ -15,7 +16,7 @@ class Reference(Codec):
     @override
     def encode ( self, _body: dict[str, Any] ) -> str:
 
-        return rand.token(ENTROPY)
+        return rand.token(ENTROPY, secure=True)
 
     @override
     def decode ( self, text: str ) -> dict[str, Any]:
@@ -26,6 +27,6 @@ class Reference(Codec):
 
     def check ( self, text: str ) -> None:
 
-        bounded(text)
+        Base.bounded(text)
 
-        if len(text) != OPAQUE_LENGTH or len(unpack(text)) != ENTROPY: raise refused()
+        if len(text) != OPAQUE_LENGTH or len(Base.unpack(text)) != ENTROPY: raise Base.refused()

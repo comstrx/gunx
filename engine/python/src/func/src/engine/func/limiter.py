@@ -1,6 +1,7 @@
+from .base import Base
 
 from engine.error import Code, Fault
-from .arch import count, span
+
 import asyncio, time
 
 class Limiter:
@@ -9,12 +10,12 @@ class Limiter:
 
     def __init__ ( self, rate: float, burst: int ) -> None:
 
-        self._rate   = span(rate, "func.limiter")
-        self._burst  = count(burst, "func.limiter")
+        self._rate   = Base.span(rate, "func.limiter")
+        self._burst  = Base.count(burst, "func.limiter")
 
         if not self._rate: raise Fault(Code.INTERNAL, reason="func.limiter")
 
-        self._tokens = span(burst, "func.limiter")
+        self._tokens = Base.span(burst, "func.limiter")
         self._at     = time.monotonic()
 
     def allow ( self, cost: int = 1 ) -> bool:

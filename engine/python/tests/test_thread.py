@@ -336,7 +336,7 @@ async def test_tasks_refuse_bad_names_work_and_a_missing_loop () -> None:
 
     assert inspect.getcoroutinestate(coroutine) == inspect.CORO_CLOSED and tasks.count() == 0
 
-    for grace in (-1, math.nan, "1", None, True):
+    for grace in (-1, math.nan, "1", None, True, 10 ** 400):
 
         await denied("thread.seconds", tasks.close(cast("Any", grace)))
         await denied("thread.seconds", tasks.drain(cast("Any", grace)))

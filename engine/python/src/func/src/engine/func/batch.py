@@ -1,9 +1,10 @@
+from .base import Base
 from collections.abc import Sequence
 from itertools import islice
 
 from engine.error import Code, Fault
 from engine.thread import Gate
-from .arch import Flush, count, span
+from .arch import Flush
 import asyncio, math
 
 class Batch [T, R]:
@@ -17,9 +18,9 @@ class Batch [T, R]:
         if not callable(flush): raise Fault(Code.INTERNAL, reason="func.batch")
 
         self._flush   = flush
-        self._size    = count(size, "func.batch")
-        self._delay   = span(delay, "func.batch")
-        self._workers = count(workers, "func.batch")
+        self._size    = Base.count(size, "func.batch")
+        self._delay   = Base.span(delay, "func.batch")
+        self._workers = Base.count(workers, "func.batch")
         self._gate    = Gate(size * workers)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._items: dict[asyncio.Future[R], T] = {}

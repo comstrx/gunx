@@ -2025,6 +2025,7 @@ dependencies = [
     { name = "engine-date" },
     { name = "engine-error" },
     { name = "engine-json" },
+    { name = "engine-number" },
     { name = "engine-parse" },
     { name = "msgspec" },
 ]
@@ -2034,6 +2035,7 @@ requires-dist = [
     { name = "engine-date", editable = "src/date" },
     { name = "engine-error", editable = "src/error" },
     { name = "engine-json", editable = "src/json" },
+    { name = "engine-number", editable = "src/number" },
     { name = "engine-parse", editable = "src/parse" },
     { name = "msgspec" },
 ]

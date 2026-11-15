@@ -7,11 +7,12 @@ from engine.parse import parse
 from engine.string import string
 from engine.rand import rand
 from .arch import (
-    COUNTER, FRAME_BYTES, HASHED, HKDF_BYTES, KEY_BYTES, KEY_ENCODED, KEY_TEXT, LIMIT, MAX_BYTES,
-    OFFSET_MASK, Pair, SAFE,
+    COUNTER, FRAME_BYTES, HASHED, HKDF_BYTES, KEY_BYTES, KEY_ENCODED, KEY_TEXT, LIMIT, MAX_BYTES, OFFSET_MASK, SAFE,
     SIGNATURE_TEXT, TOTP_BYTES, TOTP_CEILING, TOTP_DIGITS, TOTP_FLOOR, TOTP_HASH, TOTP_LEAST, TOTP_MOST, TOTP_PACE,
-    TOTP_STEP, TOTP_TEXT, TOTP_WINDOW, TRUNCATE, Key,
+    TOTP_STEP, TOTP_TEXT, TOTP_WINDOW, TRUNCATE,
 )
+from .pair import Pair
+from .key import Key
 from .cipher import Cipher
 from .hasher import Hasher
 from .kdf import Kdf
@@ -54,7 +55,7 @@ class Crypto:
 
     def key ( self, id_: str | None = None ) -> Key:
 
-        return Key(rand.hex(4) if id_ is None else id_, rand.bytes(KEY_BYTES))
+        return Key(rand.hex(4, secure=True) if id_ is None else id_, rand.bytes(KEY_BYTES, secure=True))
 
     def parse_key ( self, text: str ) -> Key:
 
@@ -164,7 +165,7 @@ class Crypto:
 
     def totp_secret ( self ) -> str:
 
-        return base64.b32encode(rand.bytes(TOTP_BYTES)).decode()
+        return base64.b32encode(rand.bytes(TOTP_BYTES, secure=True)).decode()
 
     def totp (
         self, secret: str, at: float | None = None, digits: int = TOTP_DIGITS, step: int = TOTP_STEP,

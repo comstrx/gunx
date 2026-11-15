@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from engine.error import Fault
-from .arch import Outcome
+from .outcome import Outcome
 
 @dataclass(frozen=True, slots=True)
 class Run:

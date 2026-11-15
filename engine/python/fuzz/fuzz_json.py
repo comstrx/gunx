@@ -194,3 +194,32 @@ def one_pass_walk_matches_independent_key_value_transform ( fields: dict[str, in
 one_pass_walk_matches_independent_key_value_transform()
 
 print("fuzz json  properties=13  ok")
+
+COPY_OBSERVED = [0]
+
+@settings(max_examples=3000, deadline=None, database=None)
+@given(values)
+def copies_match_the_standard_reference ( value: Any ) -> None:
+
+    COPY_OBSERVED[0] += 1
+
+    assert json.copy(value) == deepcopy(value)
+
+@settings(max_examples=2000, deadline=None, database=None)
+@given(st.lists(leaves, max_size=30))
+def copies_keep_cycles_and_shared_references ( items: list[Any] ) -> None:
+
+    COPY_OBSERVED[0] += 1
+    source = {"a": items, "b": items}
+    items.append(source)
+    copied = json.copy(source)
+
+    assert copied is not source and copied["a"] is copied["b"]
+    assert copied["a"] is not items and copied["a"][-1] is copied
+    copied["a"].append("new")
+
+    assert items[-1] is source
+
+copies_match_the_standard_reference()
+copies_keep_cycles_and_shared_references()
+print(f"fuzz json copy observed_examples={COPY_OBSERVED[0]} properties=2 ok")

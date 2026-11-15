@@ -71,7 +71,7 @@ SURFACE = {
     "engine.thread"    : ["Cluster", "Gate", "Lane", "Outcome", "Pool", "Run", "Tasks", "Thread", "thread"],
     "engine.token"     : ["Claims", "Codec", "Issuer", "Jwt", "Opaque", "Pair", "Paseto", "Reference", "Settings", "Store", "Token", "token"],
     "engine.translate" : ["Plural", "Translate", "plural", "translate"],
-    "engine.validate"  : ["Member", "Resource", "Rules", "Shape", "Spec", "Validator", "field", "rules", "validator"],
+    "engine.validate"  : ["Member", "Plan", "Resource", "Rules", "Shape", "Spec", "Validator", "field", "rules", "validator"],
     "engine.video"     : [
         "Asset", "Cloudflare", "Driver", "Local", "Playback", "Preset", "Probe", "RENDITIONS", "Track",
         "Videos", "video",

@@ -7,6 +7,8 @@ import msgspec
 
 class Validator:
 
+    __slots__ = ("_seen",)
+
     def __init__ ( self ) -> None:
 
         self._seen = 0
@@ -38,5 +40,3 @@ class Validator:
     def stats ( self ) -> dict[str, int]:
 
         return { "seen": self._seen }
-
-validator = Validator()

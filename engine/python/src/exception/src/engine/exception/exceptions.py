@@ -317,4 +317,3 @@ class Exceptions:
         self._recent[key] = (opened, count + 1)
 
         return False
-

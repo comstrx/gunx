@@ -1,7 +1,8 @@
+from engine.thread.base import Base
 from engine.error import Code, Fault
 from engine.log import log
 from engine.thread import Gate, Outcome, Tasks, Thread, thread
-from engine.thread.arch import LIMIT, CEILING, MODES, RETRIES, WORKERS, environment, space
+from engine.thread.arch import LIMIT, CEILING, MODES, RETRIES, WORKERS
 from collections.abc import Awaitable, Callable, Coroutine, Iterator
 from contextvars import ContextVar
 from functools import partial
@@ -952,13 +953,13 @@ def lifecycle ( steps: list[str] ) -> None:
 @given(st.text(max_size=60), st.dictionaries(st.text(max_size=20), st.text(max_size=40), max_size=8))
 def configured ( namespace: str, variables: dict[str, str] ) -> None:
 
-    made = attempt(partial(space, namespace))
+    made = attempt(partial(Base.space, namespace))
 
     if namespace.strip(): assert made == namespace
     else: assert reason(made) == "thread.namespace"
 
     value: dict[str, Any] = { "env_vars": dict(variables), "excludes": ["secret"] }
-    copied = environment(value)
+    copied = Base.environment(value)
 
     assert copied == value and copied is not value
     assert copied is not None
@@ -967,7 +968,7 @@ def configured ( namespace: str, variables: dict[str, str] ) -> None:
     value["excludes"].append("other")
 
     assert copied["env_vars"] == variables and copied["excludes"] == ["secret"]
-    assert reason(attempt(partial(environment, cast("Any", { 1: value })))) == "thread.runtime_env"
+    assert reason(attempt(partial(Base.environment, cast("Any", { 1: value })))) == "thread.runtime_env"
 
 if __name__ == "__main__":
 

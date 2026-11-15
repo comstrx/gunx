@@ -1,12 +1,15 @@
 from collections import Counter
 from collections.abc import Callable, Hashable, Iterable, Iterator, Mapping, Sequence
 from itertools import dropwhile, product, takewhile, islice
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from engine.error import Code, Fault
 from engine.func import func
 from engine.json import json
-from .arch import Check, MAX_LIMIT, MISSING, NULLABLE, Page, PAIR, Pick, TESTS
+from engine.string import string
+from .arch import Check, MAX_LIMIT, MISSING, NULLABLE, PAIR, Pick
+from .page import Page
+import operator as ops
 
 class Array:
 
@@ -283,7 +286,7 @@ class Array:
 
         if value is MISSING: operator, value = "=", operator
 
-        if operator not in TESTS:
+        if operator not in self._tests:
 
             raise Fault(Code.INTERNAL, reason="array.operator", errors={ "operator": [str(operator)] })
 
@@ -524,7 +527,7 @@ class Array:
 
         def pick ( item: Any ) -> Any:
 
-            return item.get(name) if isinstance(item, Mapping) else getattr(item, name, None)
+            return item.get(name) if type(item) is dict or isinstance(item, Mapping) else getattr(item, name, None)
 
         return pick
 
@@ -532,7 +535,7 @@ class Array:
 
         if found is None and operator not in NULLABLE: return False
 
-        try: return bool(TESTS[operator](found, value))
+        try: return bool(self._tests[operator](found, value))
         except TypeError:
 
             if operator in ("in", "not_in") and isinstance(value, (set, frozenset)):
@@ -567,3 +570,44 @@ class Array:
 
         try: return sorted(found)
         except TypeError: return found
+
+    @staticmethod
+    def _inside_ ( found: Any, value: Any ) -> bool:
+
+        return found in value
+
+    @staticmethod
+    def _outside_ ( found: Any, value: Any ) -> bool:
+
+        return found not in value
+
+    @staticmethod
+    def _between_ ( found: Any, value: Any ) -> bool:
+
+        return bool(value[0] <= found <= value[1])
+
+    @staticmethod
+    def _like_ ( found: Any, value: Any ) -> bool:
+
+        return string.like(str(found), str(value))
+
+    @staticmethod
+    def _contains_ ( found: Any, value: Any ) -> bool:
+
+        return str(value) in str(found)
+
+    @staticmethod
+    def _starts_ ( found: Any, value: Any ) -> bool:
+
+        return str(found).startswith(str(value))
+
+    @staticmethod
+    def _ends_ ( found: Any, value: Any ) -> bool:
+
+        return str(found).endswith(str(value))
+
+    _tests: ClassVar[dict[str, Callable[[Any, Any], bool]]] = {
+        "=": ops.eq, "==": ops.eq, "!=": ops.ne, "<>": ops.ne, ">": ops.gt, ">=": ops.ge, "<": ops.lt, "<=": ops.le,
+        "in": _inside_, "not_in": _outside_, "between": _between_, "like": _like_,
+        "contains": _contains_, "starts": _starts_, "ends": _ends_,
+    }

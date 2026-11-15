@@ -1,12 +1,14 @@
+from .base import Base
 from collections.abc import Mapping
 from typing import Any
 
 from engine.crypto import crypto
 from engine.error import Code, Fault
 from engine.rand import rand
-from .arch import (
-    ACCESS, Claims, LEEWAY, LIFETIME, LONGEST, MINIMUM, Opaque, PREFIX, Pair, REFRESH, Settings, Store, setting,
-)
+from .arch import ACCESS, LEEWAY, LIFETIME, LONGEST, MINIMUM, Opaque, PREFIX, REFRESH, Store
+from .claims import Claims
+from .pair import Pair
+from .settings import Settings
 from .codec import Codec
 from .issuer import Issuer
 from .jwt import Jwt
@@ -29,23 +31,23 @@ class Token:
 
         if format == "jwt":
 
-            if protection is not None: raise setting("protection")
+            if protection is not None: raise Base.setting("protection")
 
             codec = Jwt(secret if secret is not None else b"", "HS256" if algorithm is None else algorithm)
 
         elif format == "paseto":
 
-            if algorithm is not None: raise setting("algorithm")
+            if algorithm is not None: raise Base.setting("algorithm")
 
             codec = Paseto(secret if secret is not None else b"", "local" if protection is None else protection)
 
         elif format == "opaque":
 
-            if secret is not None or algorithm is not None or protection is not None: raise setting("format")
+            if secret is not None or algorithm is not None or protection is not None: raise Base.setting("format")
 
             codec = Reference()
 
-        else: raise setting("format")
+        else: raise Base.setting("format")
 
         return self.use(codec, purpose=purpose, issuer=issuer, audience=audience, ttl=ttl, leeway=leeway, store=store)
 
@@ -61,7 +63,7 @@ class Token:
         refresh: int = REFRESH, *, audience: str | None = None,
     ) -> None:
 
-        if type(refresh) is not int or not 0 < refresh <= LIFETIME: raise setting("refresh")
+        if type(refresh) is not int or not 0 < refresh <= LIFETIME: raise Base.setting("refresh")
 
         scoped = self.options(secret=secret, issuer=issuer, algorithm=algorithm, ttl=access, audience=audience)
         self._state = (scoped, refresh)
@@ -108,9 +110,9 @@ class Token:
 
     def opaque ( self, size: int = 32 ) -> Opaque:
 
-        if type(size) is not int or not MINIMUM <= size <= LONGEST: raise setting("size")
+        if type(size) is not int or not MINIMUM <= size <= LONGEST: raise Base.setting("size")
 
-        plain = rand.token(size)
+        plain = rand.token(size, secure=True)
 
         return Opaque(plain, self.hash_opaque(plain), plain[:PREFIX])
 
@@ -140,7 +142,7 @@ class Token:
         found = issuer.describe()
         codec = found["adapter"]
 
-        if not isinstance(codec, dict): raise setting("adapter")
+        if not isinstance(codec, dict): raise Base.setting("adapter")
 
         return {
             "issuer": found["issuer"], "algorithm": codec["algorithm"],

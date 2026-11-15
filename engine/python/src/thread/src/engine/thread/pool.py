@@ -1,3 +1,4 @@
+from .base import Base
 from collections.abc import Callable
 from concurrent.futures import BrokenExecutor, Executor, Future, InterpreterPoolExecutor, ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
@@ -5,7 +6,7 @@ from contextvars import copy_context
 from typing import Any
 
 from engine.error import Code, Fault
-from .arch import BUFFER, DRAIN, RECYCLE, bounds, seconds
+from .arch import BUFFER, DRAIN, RECYCLE
 from .capacity import Capacity
 import asyncio, inspect, math, multiprocessing, os, threading
 
@@ -15,7 +16,7 @@ class Pool:
 
     def __init__ ( self, mode: str, workers: int ) -> None:
 
-        bounds(mode, workers)
+        Base.bounds(mode, workers)
 
         self.mode     = mode
         self.workers  = workers
@@ -87,7 +88,7 @@ class Pool:
 
     def resize ( self, workers: int ) -> None:
 
-        bounds(self.mode, workers)
+        Base.bounds(self.mode, workers)
 
         if workers == self.workers: return
 
@@ -97,7 +98,7 @@ class Pool:
 
     async def join ( self, grace: float = DRAIN ) -> None:
 
-        wait = seconds(grace)
+        wait = Base.seconds(grace)
         flights = self._flights.copy()
 
         if not flights: return

@@ -1,4 +1,4 @@
-lazy from .arch import Outcome
+lazy from .outcome import Outcome
 lazy from .cluster import Cluster
 lazy from .gate import Gate
 lazy from .lane import Lane

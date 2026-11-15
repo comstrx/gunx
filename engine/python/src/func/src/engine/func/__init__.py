@@ -1,4 +1,5 @@
-lazy from .arch import Core, Info
+lazy from .arch import Info
+lazy from .core import Core
 lazy from .batch import Batch
 lazy from .breaker import Breaker
 from .func import Func

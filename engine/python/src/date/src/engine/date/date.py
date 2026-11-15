@@ -1,3 +1,4 @@
+from .base import Base
 from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator
 from datetime import UTC, date as Day, datetime as DateTime, timedelta as TimeDelta
@@ -7,9 +8,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 from engine.error import Code, Fault
 from engine.string import string
 from .arch import (
-    ARABIC, BACKWARD, CLOCK, CLOCKED, COMPACT, DAYS, DAY_NAMES, DIRECTIVE, DURATION, END, ENDLESS, EPOCH, EPOCH_MS, FEW,
-    FILLER, FORMAT, FORMATS, FORWARD, GLUED, HOURS, LAST, LIMIT, MICRO, MILLI, MINUTES, MONTHS, MONTH_NAMES, NEXT,
-    NOON, ONES, QUARTER, SECONDS, SHORT, SOON, STEPS, TWO, UNITS, WEEK, WEEKEND, WORDS_UNITS, ZERO, utc,
+    ARABIC, BACKWARD, CLOCK, CLOCKED, COMPACT, DAYS, DAY_NAMES, DIRECTIVE, DURATION, END, ENDLESS, EPOCH, EPOCH_MS,
+    FEW, FILLER, FORMAT, FORMATS, FORWARD, GLUED, HOURS, LAST, LIMIT, MICRO, MILLI, MINUTES, MONTHS, MONTH_NAMES, NEXT,
+    NOON, ONES, QUARTER, SECONDS, SHORT, SOON, STEPS, TWO, UNITS, WEEK, WEEKEND, WORDS_UNITS, ZERO,
 )
 from .span import Span
 import calendar, time
@@ -58,7 +59,7 @@ class Date:
 
     def utc ( self, value: DateTime ) -> DateTime:
 
-        return value if value.tzinfo is UTC else utc(value)
+        return value if value.tzinfo is UTC else Base.utc(value)
 
     def zone ( self, name: str ) -> ZoneInfo:
 

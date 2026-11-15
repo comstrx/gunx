@@ -247,4 +247,13 @@ def money_text_matches_decimal_formatting ( minor: int, currency: str ) -> None:
 
 money_text_matches_decimal_formatting()
 
-print("fuzz number  properties=13  ok")
+@settings(max_examples=1500, deadline=None, database=None)
+@given(st.integers(-(10 ** 300), 10 ** 300))
+def exact_decimals_preserve_wide_integer_values ( value: int ) -> None:
+
+    assert number.exact(value) == Decimal(value)
+    assert number.exact(str(value)) == Decimal(value)
+
+exact_decimals_preserve_wide_integer_values()
+
+print("fuzz number  properties=14  ok")

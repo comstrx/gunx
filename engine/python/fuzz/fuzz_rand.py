@@ -282,4 +282,14 @@ uniform_stays_finite()
 counts_match_a_real_population()
 invalid_types_never_escape()
 
-print("fuzz rand  properties=11  max_examples=per-property settings  ok")
+@settings(max_examples=EXAMPLES, deadline=None, database=None)
+@given(st.integers(), st.integers(min_value=16, max_value=64))
+def secure_draws_ignore_the_seed ( seed: int, size: int ) -> None:
+
+    first, second = Rand(seed), Rand(seed)
+    assert first.bytes(size, secure=True) != second.bytes(size, secure=True)
+    assert first.bytes(size) == second.bytes(size)
+
+secure_draws_ignore_the_seed()
+
+print("fuzz rand  properties=12  max_examples=per-property settings  ok")

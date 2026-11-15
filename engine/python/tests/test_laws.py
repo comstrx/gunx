@@ -210,3 +210,49 @@ def test_purity_law_no_comments_prints_or_evals_in_sources () -> None:
                 offenders.append(f"{file.relative_to(ROOT)}:{index}")
 
     assert [o for o in offenders if "/test/" not in o] == []
+
+REFINED = (
+    "error", "context", "json", "rand", "log", "adapter", "exception", "metric", "thread", "func",
+    "string", "date", "number", "array", "cast", "parse", "crypto", "token", "health", "validate",
+)
+
+def test_refined_packages_keep_implementation_in_classes () -> None:
+
+    offenders: list[str] = []
+
+    for member in REFINED:
+
+        for file in (SRC / member / "src" / "engine" / member).glob("*.py"):
+
+            for node in ast.parse(file.read_text()).body:
+
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    offenders.append(f"{member}/{file.name}: floating {node.name}")
+
+                if not isinstance(node, ast.ClassDef) and any(isinstance(part, ast.Lambda) for part in ast.walk(node)):
+                    offenders.append(f"{member}/{file.name}: floating lambda")
+
+    assert offenders == []
+    assert not [str(file) for file in SRC.rglob("*") if file.is_file() and file.name.lower().startswith("readme")]
+
+def test_refined_arch_files_hold_declarations_only () -> None:
+
+    offenders: list[str] = []
+
+    for member in REFINED:
+
+        tree = ast.parse((SRC / member / "src" / "engine" / member / "arch.py").read_text())
+
+        for node in ast.walk(tree):
+
+            if isinstance(node, ast.Lambda): offenders.append(f"{member}/arch.py: lambda implementation")
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): continue
+
+            declaration = (
+                len(node.body) == 1 and isinstance(node.body[0], ast.Expr)
+                and isinstance(node.body[0].value, ast.Constant) and node.body[0].value.value is Ellipsis
+            )
+
+            if not declaration: offenders.append(f"{member}/arch.py: executable {node.name}")
+
+    assert offenders == []

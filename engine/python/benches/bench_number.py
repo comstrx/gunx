@@ -53,3 +53,5 @@ held = number.money("123.45", "USD")
 bench.measure("number.exchange", lambda: number.exchange(held, "KWD", "0.3071"))
 
 bench.measure("number.money.text", lambda: number.minor(-123456789, "KWD").text())
+
+bench.measure("number.exact80", lambda: number.exact(10 ** 80 + 1))

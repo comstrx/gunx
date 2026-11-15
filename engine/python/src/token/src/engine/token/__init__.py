@@ -1,4 +1,7 @@
-lazy from .arch import Claims, Opaque, Pair, Settings, Store
+lazy from .arch import Opaque, Store
+lazy from .claims import Claims
+lazy from .pair import Pair
+lazy from .settings import Settings
 lazy from .codec import Codec
 lazy from .issuer import Issuer
 lazy from .jwt import Jwt

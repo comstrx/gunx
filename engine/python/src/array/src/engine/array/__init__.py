@@ -1,4 +1,4 @@
-lazy from .arch import Page
+lazy from .page import Page
 from .array import Array
 
 array = Array()

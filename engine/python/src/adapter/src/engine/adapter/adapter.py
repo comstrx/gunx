@@ -3,7 +3,8 @@ from typing import ClassVar
 
 from engine.error import Code, Fault
 from engine.rand import rand
-from .arch import EMPTY, IDENT, Receipt, WORD
+from .arch import EMPTY, IDENT, WORD
+from .receipt import Receipt
 
 class Adapter:
 

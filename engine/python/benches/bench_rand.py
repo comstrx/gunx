@@ -91,3 +91,6 @@ bench.measure("rand.string.unicode", lambda: secure.string(20, "αβγδεζηθ
 bench.measure("rand.constant_equal.bytes", lambda: rand.constant_equal(b"a" * 64, b"a" * 64))
 bench.measure("rand.constant_equal.unicode", lambda: rand.constant_equal("عربي", "عربي"))
 bench.measure("rand.constant_equal.mixed", lambda: rand.constant_equal("ascii", b"ascii"))
+
+bench.measure("rand.bytes.secure", lambda: rand.bytes(32, secure=True))
+bench.measure("rand.token.secure", lambda: rand.token(32, secure=True))

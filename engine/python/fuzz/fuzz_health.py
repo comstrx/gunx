@@ -471,13 +471,33 @@ def crowded ( steps: list[tuple[str, str]] ) -> None:
 
     run(driven())
 
+@settings(max_examples=EXAMPLES // 2, deadline=None, database=None)
+@given(st.lists(st.integers(), max_size=20), st.text(max_size=40))
+def detached ( values: list[int], label: str ) -> None:
+
+    health = Health()
+    bounded = [value % (2 ** 62) for value in values]
+    health.fact(nested={ "values": bounded, "label": label })
+
+    live = health.live()
+    ready = run(health.ready())[1]
+
+    live["nested"]["values"].append(0)
+    ready["nested"]["values"].clear()
+    live["nested"]["label"] = "changed"
+
+    assert health.live()["nested"] == { "values": bounded, "label": label }
+    assert run(health.ready())[1]["nested"] == { "values": bounded, "label": label }
+
+
 declared()
 stated()
 swept()
 crowded()
+detached()
 
 run(thread.close())
 loop.close()
 log.close()
 
-print(f"fuzz health  examples={EXAMPLES * 3}  ok")
+print(f"fuzz health  examples={EXAMPLES * 3 + EXAMPLES // 2}  ok")

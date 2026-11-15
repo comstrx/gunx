@@ -432,3 +432,38 @@ async def test_a_failure_is_logged_when_it_changes () -> None:
         assert not (await waiter)[0]
 
     assert events == [] and health.describe()["failed"] == {} and (await health.ready())[0]
+
+async def test_fact_outputs_are_detached_from_state_and_each_other () -> None:
+
+    health = Health()
+    health.fact(nested={ "workers": [1, { "region": "east" }] }, tags=["a"], version="1")
+    health.register("db", good)
+
+    live = health.live()
+    reports = await asyncio.gather(*(health.ready() for _ in range(8)))
+
+    live["nested"]["workers"][1]["region"] = "changed"
+    live["tags"].append("changed")
+    reports[0][1]["nested"]["workers"].clear()
+    reports[0][1]["tags"].clear()
+    reports[0][1]["checks"]["db"] = False
+
+    wanted = { "workers": [1, { "region": "east" }] }
+
+    assert health.live()["nested"] == wanted and health.live()["tags"] == ["a"]
+    assert all(report["nested"] == wanted and report["tags"] == ["a"] for _, report in reports[1:])
+    assert all(report["checks"] == { "db": True } for _, report in reports[1:])
+
+    with pytest.raises(Fault): health.fact(nested={ "workers": [] }, invalid=object())
+
+    assert health.live()["nested"] == wanted
+
+    health.fact(nested="flat", tags="flat")
+    live = health.live()
+    live["nested"] = "changed"
+
+    assert health.live()["nested"] == "flat"
+
+    health.clear()
+
+    assert "nested" not in health.live() and await health.ready() == (True, { "status": "ok", "checks": {} })

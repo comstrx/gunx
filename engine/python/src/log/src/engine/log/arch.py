@@ -45,6 +45,9 @@ PEM      = re.compile(
     r"-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----.*?(?:-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----|\Z)", re.DOTALL,
 )
 JWT      = re.compile(r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]{5,}){2,4}")
+PASETO   = re.compile(
+    r"(?<![A-Za-z0-9_.-])v[1-4]\.(?:local|public)\.[A-Za-z0-9_-]{16,}+(?:\.[A-Za-z0-9_-]++)?",
+)
 QUERY    = frozenset({ "key", "code" })
 PLAIN    = (int, float, bool, NoneType)
 NESTED   = (Mapping, list, tuple, set, frozenset)

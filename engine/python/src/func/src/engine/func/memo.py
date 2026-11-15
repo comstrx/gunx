@@ -1,8 +1,9 @@
+from .base import Base
 from collections.abc import Hashable
 from typing import Any, cast
 
 from engine.error import Code, Fault
-from .arch import Lease, Work, count, span
+from .arch import Lease, Work
 import asyncio, time
 
 class Memo:
@@ -11,8 +12,8 @@ class Memo:
 
     def __init__ ( self, ttl: float = 60.0, size: int = 1024 ) -> None:
 
-        self._ttl   = span(ttl, "func.memo", infinite=True)
-        self._size  = count(size, "func.memo")
+        self._ttl   = Base.span(ttl, "func.memo", infinite=True)
+        self._size  = Base.count(size, "func.memo")
         self._items: dict[Hashable, tuple[float, Any]] = {}
         self._locks: dict[Hashable, Lease] = {}
 
@@ -58,7 +59,7 @@ class Memo:
 
     def set ( self, key: Hashable, value: Any, ttl: float | None = None ) -> None:
 
-        wait = self._ttl if ttl is None else span(ttl, "func.memo", infinite=True)
+        wait = self._ttl if ttl is None else Base.span(ttl, "func.memo", infinite=True)
 
         self._invalid_(key)
         self._store_(key, value, wait)

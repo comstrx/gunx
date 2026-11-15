@@ -800,10 +800,12 @@ async def test_opaque_collision_is_atomic_and_bounded ( monkeypatch: pytest.Monk
     held   = rand.token(32)
     calls  = 0
 
-    def fixed ( _size: int ) -> str:
+    def fixed ( _size: int, *, secure: bool = False ) -> str:
 
         nonlocal calls
         calls += 1
+
+        assert secure
 
         return held
 
@@ -864,7 +866,7 @@ def test_setup_publication_keeps_an_inflight_pair_on_one_snapshot ( monkeypatch:
     original = rand.hex
     changed = False
 
-    def change ( size: int ) -> str:
+    def change ( size: int, *, secure: bool = False ) -> str:
 
         nonlocal changed
 
@@ -873,7 +875,9 @@ def test_setup_publication_keeps_an_inflight_pair_on_one_snapshot ( monkeypatch:
             changed = True
             client.setup("b" * 32, issuer="new", access=90, refresh=180)
 
-        return original(size)
+        assert secure
+
+        return original(size, secure=secure)
 
     monkeypatch.setattr(rand, "hex", change)
     pair = client.pair("u")
@@ -1005,3 +1009,26 @@ async def test_prepared_hmac_isolation_across_parallel_callers ( algorithm: str,
     assert len(set(encoded)) == 4
     made = await issuer.issue("u")
     assert (await issuer.verify(made)).subject == "u"
+
+@pytest.mark.parametrize("format_", ["jwt", "opaque", "paseto"])
+async def test_seed_cannot_repeat_token_identity_or_opaque_credential ( format_: str ) -> None:
+
+    owner = make_issuer(format_, store=memory()) if format_ == "opaque" else make_issuer(format_)
+
+    try:
+
+        rand.seed(123)
+        first = await owner.issue("u")
+        rand.seed(123)
+        second = await owner.issue("u")
+
+        assert first != second
+        assert (await owner.verify(first)).id != (await owner.verify(second)).id
+
+        rand.seed(123)
+        legacy = token.opaque().plain
+        rand.seed(123)
+
+        assert legacy != token.opaque().plain
+
+    finally: rand.seed(None)

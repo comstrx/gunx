@@ -605,3 +605,48 @@ def test_walk_releases_callback_without_waiting_for_cyclic_collection () -> None
     finally:
 
         if enabled: gc.enable()
+
+def test_copy_preserves_cycles_shared_identity_and_special_values () -> None:
+
+    shared: list[Any] = [1, bytearray(b"x"), (2, 3), {4}]
+    source: dict[str, Any] = {"left": shared, "right": shared}
+    source["self"] = source
+    copied = json.copy(source)
+
+    assert copied is not source and copied["self"] is copied
+    assert copied["left"] is copied["right"] and copied["left"] is not shared
+    assert copied["left"][1] is not shared[1] and copied["left"][1] == bytearray(b"x")
+    copied["left"].append(5)
+
+    assert len(shared) == 4
+
+def test_copy_falls_back_for_subclasses_and_custom_copy_protocols () -> None:
+
+    class Values(dict[str, list[int]]):
+
+        pass
+
+    source = Values(a=[1])
+    copied = json.copy(source)
+
+    assert type(copied) is Values and copied == source
+    copied["a"].append(2)
+
+    assert source["a"] == [1]
+
+def test_edit_shares_one_memo_across_the_original_graph () -> None:
+
+    common: list[Any] = []
+    source = {"left": common, "right": common}
+    common.append(source)
+    copied = json.edit(source, {"flag": True})
+
+    assert copied["left"] is copied["right"]
+    assert copied["left"][0] is copied and copied["flag"] is True
+    assert "flag" not in source
+
+def test_copy_handles_exact_large_integers_and_non_finite_floats () -> None:
+
+    source = {"number": 10 ** 100, "infinity": float("inf"), "keys": {1: ("x",)}}
+
+    assert json.copy(source) == source

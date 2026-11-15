@@ -605,3 +605,19 @@ def test_free_text_bearer_redaction_is_case_insensitive ( scheme: str ) -> None:
 
     assert Render.scrub(text) == f"received {scheme} ***"
     assert secret not in str(Render.clean({ "detail": [text] }))
+
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
+@pytest.mark.parametrize("purpose", ["local", "public"])
+def test_paseto_payloads_and_footers_never_reach_log_output ( version: int, purpose: str ) -> None:
+
+    credential = f"v{version}.{purpose}." + "a" * 90 + ".Zm9vdGVy"
+    assert Render.scrub(f"received {credential} from upstream") == "received *** from upstream"
+    assert Render.clean({ "detail": [credential] }) == { "detail": ["***"] }
+
+    logger = Log()
+
+    with logger.capture() as events: logger.info("upstream", detail=credential)
+
+    assert events[-1]["detail"] == "***"
+    assert Render.scrub("v4.local.configuration docs") == "v4.local.configuration docs"
+    assert Render.scrub("servicev4.local." + "a" * 90).startswith("servicev4.local.")

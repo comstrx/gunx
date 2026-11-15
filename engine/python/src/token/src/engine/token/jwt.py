@@ -1,3 +1,4 @@
+from .base import Base
 from collections.abc import Mapping
 from typing import Any, ClassVar, override
 
@@ -5,7 +6,7 @@ from engine.crypto import crypto
 from engine.error import Code, Fault
 from engine.json import json
 from engine.rand import rand
-from .arch import DIGESTS, HEADERS, LONGEST, bounded, pack, payload, refused, ring, secret, setting, unpack
+from .arch import DIGESTS, HEADERS, LONGEST
 from .codec import Codec
 
 class Jwt(Codec):
@@ -26,7 +27,7 @@ class Jwt(Codec):
 
         digest, least   = found
         self._algorithm = algorithm
-        signer          = crypto.signer(secret(key, least), digest)
+        signer          = crypto.signer(Base.secret(key, least), digest)
         self._keys      = {}
         head            = { "alg": algorithm, "typ": "JWT" }
 
@@ -36,13 +37,13 @@ class Jwt(Codec):
 
             if active is None: raise Fault(Code.INTERNAL, reason="token.key")
 
-            ring(keys, active)
+            Base.ring(keys, active)
 
-            self._keys = { name: crypto.signer(secret(value, least), digest) for name, value in keys.items() }
+            self._keys = { name: crypto.signer(Base.secret(value, least), digest) for name, value in keys.items() }
             signer = self._keys[active]
             head["kid"] = active
 
-        self._head = pack(json.encode(head))
+        self._head = Base.pack(json.encode(head))
         self._signer = signer
 
     @override
@@ -50,11 +51,11 @@ class Jwt(Codec):
 
         raw = json.encode(body)
 
-        if len(raw) > LONGEST: raise setting("size")
+        if len(raw) > LONGEST: raise Base.setting("size")
 
-        signed = self._head + "." + pack(raw)
+        signed = self._head + "." + Base.pack(raw)
 
-        return signed + "." + pack(self._signer.copy().update(signed).digest())
+        return signed + "." + Base.pack(self._signer.copy().update(signed).digest())
 
     @override
     def decode ( self, text: str ) -> dict[str, Any]:
@@ -64,24 +65,24 @@ class Jwt(Codec):
 
         if head != self._head:
 
-            header = payload(unpack(head))
+            header = Base.payload(Base.unpack(head))
 
-            if header.get("alg") != self._algorithm or not HEADERS.issuperset(header): raise refused()
-            if not all(type(value) is str for value in header.values()): raise refused()
+            if header.get("alg") != self._algorithm or not HEADERS.issuperset(header): raise Base.refused()
+            if not all(type(value) is str for value in header.values()): raise Base.refused()
 
             if self._keys:
 
                 kid = header.get("kid")
 
-                if type(kid) is not str or kid not in self._keys: raise refused()
+                if type(kid) is not str or kid not in self._keys: raise Base.refused()
 
                 signer = self._keys[kid]
 
-        expected = pack(signer.copy().update(signed).digest())
+        expected = Base.pack(signer.copy().update(signed).digest())
 
-        if not rand.constant_equal(expected, mark): raise refused()
+        if not rand.constant_equal(expected, mark): raise Base.refused()
 
-        return payload(unpack(body))
+        return Base.payload(Base.unpack(body))
 
     @override
     def peek ( self, text: str ) -> dict[str, Any]:
@@ -91,12 +92,12 @@ class Jwt(Codec):
     @staticmethod
     def peek_unconfigured ( text: str ) -> dict[str, Any]:
 
-        return payload(unpack(Jwt._split_(text)[2]))
+        return Base.payload(Base.unpack(Jwt._split_(text)[2]))
 
     @override
     def rotate ( self, keys: Mapping[str, str | bytes], active: str ) -> Jwt:
 
-        ring(keys, active)
+        Base.ring(keys, active)
 
         return Jwt(keys[active], self._algorithm, keys=keys, active=active)
 
@@ -108,11 +109,11 @@ class Jwt(Codec):
     @staticmethod
     def _split_ ( text: str ) -> tuple[str, str, str, str]:
 
-        bounded(text)
+        Base.bounded(text)
 
         signed, _, mark = text.rpartition(".")
         head, dot, body = signed.partition(".")
 
-        if not dot or not head or not body or not mark or "." in body: raise refused()
+        if not dot or not head or not body or not mark or "." in body: raise Base.refused()
 
         return signed, head, body, mark

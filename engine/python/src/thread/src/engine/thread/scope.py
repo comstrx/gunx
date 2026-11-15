@@ -1,8 +1,9 @@
+from .base import Base
 from collections.abc import Callable, Mapping
 from typing import Any
 
 from engine.error import Code, Fault
-from .arch import CEILING, CORES, DRAIN, GRACE, ISOLATED, SCOPES, Submit, WORKERS, direct, environment, seconds, space
+from .arch import CEILING, CORES, DRAIN, GRACE, ISOLATED, SCOPES, Submit, WORKERS
 from .gate import Gate
 from .cluster import Cluster
 from .lane import Lane
@@ -116,7 +117,7 @@ class Scope:
 
     async def join ( self, grace: float = DRAIN ) -> None:
 
-        wait = seconds(grace)
+        wait = Base.seconds(grace)
         self.bind()
         loop = asyncio.get_running_loop()
         until = loop.time() + wait
@@ -129,7 +130,7 @@ class Scope:
 
     async def drop ( self, grace: float = GRACE ) -> int:
 
-        wait = seconds(grace)
+        wait = Base.seconds(grace)
 
         if self.closed: return 0
 
@@ -176,7 +177,7 @@ class Scope:
 
             raise Fault(Code.INTERNAL, reason="thread.host")
 
-        return space(namespace), environment(runtime_env)
+        return Base.space(namespace), Base.environment(runtime_env)
 
     async def _opened_ ( self ) -> Submit:
 
@@ -196,7 +197,7 @@ class Scope:
         elif self.mode == "async":
 
             self._capacity = Gate(self.workers)
-            self._submit = direct
+            self._submit = Base.direct
 
         elif self.mode == "thread":
 
@@ -209,4 +210,3 @@ class Scope:
             self._submit = self._lane.submit
 
         return self._submit
-

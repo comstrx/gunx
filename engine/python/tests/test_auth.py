@@ -718,3 +718,33 @@ def test_scoped_auth_configuration_is_atomic () -> None:
     with pytest.raises(Fault): App("bad-purpose").tokens(refresh)
 
     assert auth.sessions is kept
+
+async def test_seeded_randomness_cannot_repeat_independent_session_families () -> None:
+
+    token.setup(SECRET)
+    cache = Cache(Memory())
+    sessions = Sessions(cache)
+
+    try:
+
+        rand.seed(123)
+        first = await sessions.issue(Actor("u"))
+        rand.seed(123)
+        second = await sessions.issue(Actor("u"))
+
+        one, two = token.verify(first.access), token.verify(second.access)
+        assert one.get("sid") != two.get("sid")
+
+        await sessions.verify(one)
+        await sessions.verify(two)
+
+        await sessions.revoke(one.get("sid"))
+
+        with pytest.raises(Fault): await sessions.verify(one)
+
+        await sessions.verify(two)
+
+    finally:
+
+        rand.seed(None)
+        await cache.close()

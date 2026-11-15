@@ -6,8 +6,7 @@ from enum import Enum
 from pathlib import PurePath
 from typing import Any
 from uuid import UUID
-from engine.error import Code, Fault
-import asyncio, math, re
+import asyncio, re
 
 type Work[T] = Callable[[], Awaitable[T]]
 type Loader = Callable[[], Any]
@@ -36,18 +35,7 @@ TAGGED   = (bool, float, str, int, bytes, Decimal, UUID, date, datetime, time, t
 ORDERED  = (list, tuple)
 LOOSE    = (set, frozenset)
 
-@dataclass(frozen=True, slots=True)
-class Core:
 
-    name   : str
-    module : str
-    native : Loader
-    pure   : Loader
-    chosen : str
-
-    def available ( self ) -> bool:
-
-        return self.chosen == "native"
 
 @dataclass(frozen=True, slots=True)
 class Info:
@@ -72,22 +60,3 @@ class Lease:
     lock  : asyncio.Lock = field(default_factory=asyncio.Lock)
     users : int = 0
     valid : bool = True
-
-def count ( value: int, reason: str ) -> int:
-
-    if type(value) is not int or value < 1: raise Fault(Code.INTERNAL, reason=reason)
-
-    return value
-
-def span ( value: float, reason: str, *, infinite: bool = False ) -> float:
-
-    if type(value) not in (int, float) or not value >= 0:
-
-        raise Fault(Code.INTERNAL, reason=reason)
-
-    try: found = float(value)
-    except OverflowError as error: raise Fault(Code.INTERNAL, reason=reason) from error
-
-    if not infinite and not math.isfinite(found): raise Fault(Code.INTERNAL, reason=reason)
-
-    return found

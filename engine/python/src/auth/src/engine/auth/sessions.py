@@ -35,7 +35,7 @@ class Sessions:
 
         if "sid" in actor.facts: raise Fault(Code.INTERNAL, reason="auth.session.claim")
 
-        family = rand.hex(16)
+        family = rand.hex(16, secure=True)
         facts  = { **actor.facts, "roles": list(actor.roles), "scopes": list(actor.scopes), "tenant": actor.tenant }
         pair   = await self._pair_(actor.id, family, facts, fingerprint)
         claims = await self._read_(pair.refresh, fingerprint)

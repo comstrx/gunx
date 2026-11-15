@@ -9,10 +9,13 @@ from .codec import Codec
 from .document import Document
 from engine.string import string
 from .arch import (
-    BYTE, CONTROL, DELETE, DURATION, EMAIL, Email, HEX, HOST_MAX, LABEL, LAT_MAX, LNG_MAX, MAC, MAX_FLOAT, MAX_INT,
-    MAX_QUERY, MAX_TEXT, MAX_URL, Mime, NOISE, PAIR, PHONE, PORT_MAX, RGB, SEMVER, SHORT,
-    SIZE, SIZES, SLUG, SPELLED, ULID, UNITS, UUID, Url, QUOTED_PAIR, separated,
+    BYTE, CONTROL, DELETE, DURATION, EMAIL, HEX, HOST_MAX, LABEL, LAT_MAX, LNG_MAX, MAC, MAX_FLOAT, MAX_INT, MAX_QUERY,
+    MAX_TEXT, MAX_URL, NOISE, PAIR, PHONE, PORT_MAX, RGB, SEMVER, SHORT, SIZE, SIZES, SLUG, SPELLED, ULID, UNITS, UUID,
+    QUOTED_PAIR,
 )
+from .email import Email
+from .mime import Mime
+from .url import Url
 import csv, io, math
 
 class Parse:
@@ -411,8 +414,25 @@ class Parse:
 
             raise self._refuse_("header", text)
 
-        try: return separated(text, separator)
-        except ValueError as error: raise self._refuse_("header", text) from error
+        parts: list[str] = []
+        begin = 0
+        quoted = escaped = False
+
+        for index, char in enumerate(text):
+
+            if escaped: escaped = False
+            elif char == "\\" and quoted: escaped = True
+            elif char == '"': quoted = not quoted
+            elif char == separator and not quoted:
+
+                parts.append(text[begin:index])
+                begin = index + 1
+
+        if quoted or escaped: raise self._refuse_("header", text)
+
+        parts.append(text[begin:])
+
+        return parts
 
     def mime ( self, text: str ) -> Mime:
 
