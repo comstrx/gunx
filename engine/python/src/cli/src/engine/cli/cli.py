@@ -248,7 +248,7 @@ class Cli:
 
             return FAILED
 
-        log.exception("cli.crashed", command=name)
+        log.error("cli.crashed", command=name, exc_info=error)
 
         self._told_(f"error: {type(error).__name__} (cli.crashed)", wrong=True)
 

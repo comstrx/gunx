@@ -1,0 +1,59 @@
+name: notify
+
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] reads the payload as data
+    workflows: [ci, daily, release]
+    types: [completed]
+
+concurrency:
+  group: notify-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/engine/bash/src/module/gate/template
+
+      - env:
+          TRIGGER_STATUS: ${{ github.event.workflow_run.conclusion }}
+          TRIGGER_NAME: ${{ github.event.workflow_run.name }}
+          TRIGGER_NUMBER: ${{ github.event.workflow_run.run_number }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+          TRIGGER_ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
+          TRIGGER_LINK: ${{ github.event.workflow_run.html_url }}
+          TRIGGER_STARTED: ${{ github.event.workflow_run.run_started_at }}
+          TRIGGER_ENDED: ${{ github.event.workflow_run.updated_at }}
+
+          NOTIFY_TELEGRAM_TOKEN: ${{ secrets.NOTIFY_TELEGRAM_TOKEN }}
+          NOTIFY_TELEGRAM_CHAT: ${{ secrets.NOTIFY_TELEGRAM_CHAT }}
+          NOTIFY_SLACK_WEBHOOK_URL: ${{ secrets.NOTIFY_SLACK_WEBHOOK_URL }}
+          NOTIFY_DISCORD_WEBHOOK_URL: ${{ secrets.NOTIFY_DISCORD_WEBHOOK_URL }}
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+          NOTIFY_WEBHOOK_TOKEN: ${{ secrets.NOTIFY_WEBHOOK_TOKEN }}
+
+          NOTIFY_EMAIL_SMTP_URL: ${{ secrets.NOTIFY_EMAIL_SMTP_URL }}
+          NOTIFY_EMAIL_USER: ${{ secrets.NOTIFY_EMAIL_USER }}
+          NOTIFY_EMAIL_PASSWORD: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
+          NOTIFY_EMAIL_FROM: ${{ secrets.NOTIFY_EMAIL_FROM }}
+          NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
+
+        run: |
+          infra notify \
+            --channel telegram \
+            --status "${TRIGGER_STATUS}" \
+            --title "${GITHUB_REPOSITORY#*/} ${TRIGGER_NAME}" \
+            --message "#${TRIGGER_NUMBER} · ${TRIGGER_EVENT}${TRIGGER_BRANCH:+ on ${TRIGGER_BRANCH}} · ${TRIGGER_SHA:0:12} by ${TRIGGER_ACTOR}" \
+            --link "${TRIGGER_LINK}" \
+            --seconds "$(( $(date -d "${TRIGGER_ENDED}" +%s) - $(date -d "${TRIGGER_STARTED}" +%s) ))"

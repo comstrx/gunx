@@ -25,16 +25,16 @@ class Wire:
         if db < 0: raise self._url_()
         if type(inflight) is not int or inflight < 1: raise Fault(Code.INTERNAL, reason="cache.pool")
 
-        self.host     = parts.host
-        self.port     = parts.port or PORT
-        self.db       = db
-        self.user     = parts.user
-        self.password = parts.password
-        self.secure   = ssl.create_default_context() if parts.scheme == "rediss" else None
-        self.wait     = real(wait, "wait")
+        self.host      = parts.host
+        self.port      = parts.port or PORT
+        self.db        = db
+        self.user      = parts.user
+        self.password  = parts.password
+        self.secure    = ssl.create_default_context() if parts.scheme == "rediss" else None
+        self.wait      = real(wait, "wait")
         self._inflight = inflight
-        self._gate    = Gate(inflight)
-        self._lock: asyncio.Lock | None = None
+        self._gate     = Gate(inflight)
+        self._lock     = asyncio.Lock()
         self._protocol: Replies | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -51,7 +51,7 @@ class Wire:
 
         if self._protocol is not None and self._protocol.alive(): return self._protocol
 
-        async with self._lock:  # type: ignore[union-attr]
+        async with self._lock:
 
             if self._protocol is not None and self._protocol.alive(): return self._protocol
 

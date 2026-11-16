@@ -148,6 +148,31 @@ describe("spec.edges", () => {
         expect(spec.match(again, "/a/b")?.screen.name).toBe("fixed");
 
     });
+    it("a surface carries the api address it talks to through serialize and revive, and refuses one that is not http or https", () => {
+
+        const addressed = spec.compile(spec.surface({ name: "s", role: "admin", address: "https://api.example.test/v1", screens: [spec.screen({ name: "home", path: "/", title: "Home" })] }));
+        const again = spec.revive(JSON.parse(JSON.stringify(spec.serialize(addressed))));
+
+        expect([addressed.issues, again.surface.address, "address" in compiled.surface, spec.revive(JSON.parse(JSON.stringify(spec.serialize(compiled)))).surface.address]).toEqual([[], "https://api.example.test/v1", false, undefined]);
+        expect(spec.compile(spec.surface({ name: "s", role: "admin", address: "file:///etc", screens: [] })).issues.map(( issue ) => issue.rule)).toEqual(["surface.address"]);
+        expect(reasonOf(() => spec.compile({ name: "s", role: "admin", platform: "web", world: [], locales: ["en"], locale: "en", address: "file:///etc", screens: [], signals: [] }))).toBe("spec.surface");
+        expect(reasonOf(() => spec.revive({ ...spec.serialize(addressed), surface: { ...(spec.serialize(addressed).surface as object), address: 7 } }))).toBe("spec.revive");
+
+    });
+    it("roles name the units a product compiles, its current one and how each is written", () => {
+
+        const units = { admin: { brand: "a" }, courier: { brand: "c" } };
+        const compileUnit = ( name: keyof typeof units ): spec.Compiled => spec.compile(spec.surface({ name: `web-${name}`, role: name, screens: [] }));
+        const made = spec.roles({ roles: units, current: "courier", compile: compileUnit });
+
+        expect([made.names, made.current, spec.roles({ roles: units, compile: compileUnit }).current, made.serialize === spec.serialize, Object.isFrozen(made), made.compile("admin").surface.name]).toEqual([["admin", "courier"], "courier", "admin", true, true, "web-admin"]);
+        expect([
+            () => spec.roles({ roles: {}, compile: compileUnit as never }),
+            () => spec.roles({ roles: units, compile: 1 as never }),
+            () => spec.roles({ roles: units, current: "ghost" as never, compile: compileUnit }),
+        ].map(reasonOf)).toEqual(["spec.roles", "spec.roles", "spec.roles"]);
+
+    });
     it("the runtime refuses paths outside the namespaces, deep or unsafe keys and mistyped namespaces; effects must be objects and nest at most 64 deep; navigation fills params and appends the rest", async () => {
 
         const bus = event.bus();

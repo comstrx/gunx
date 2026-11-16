@@ -3,7 +3,7 @@ from typing import Any, cast
 
 from engine.error import Code, Fault
 from .arch import AsyncWork, QUANTILES, ROUNDS, SHARE, Sample, WARM, WORD, Work
-import asyncio, inspect, time
+import asyncio, inspect, sys, time
 
 class Bench:
 
@@ -64,7 +64,7 @@ class Bench:
 
     def print ( self ) -> None:
 
-        for sample in self._samples: print(sample.line())
+        for sample in self._samples: sys.stdout.write(f"{sample.line()}\n")
 
     def clear ( self ) -> None:
 
@@ -99,7 +99,7 @@ class Bench:
 
         self._samples.append(made)
 
-        if self._echo: print(made.line())
+        if self._echo: sys.stdout.write(f"{made.line()}\n")
 
         return made
 

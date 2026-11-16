@@ -3,9 +3,10 @@ from engine.json import json
 from engine.net import Egress, Remote, net
 from collections.abc import AsyncIterator
 from typing import Any, Self
-import pytest
+import asyncio, pytest
 
-LOCAL = Egress(allow_private=True, ports=frozenset())
+LOCAL  = Egress(allow_private=True, ports=frozenset())
+SETTLE = 3
 
 class Provider:
 
@@ -68,3 +69,18 @@ class Provider:
 async def provider () -> AsyncIterator[Provider]:
 
     async with Provider() as made: yield made
+
+@pytest.fixture(autouse=True)
+async def settled () -> AsyncIterator[None]:
+
+    before = asyncio.all_tasks()
+
+    yield
+
+    for _ in range(SETTLE): await asyncio.sleep(0)
+
+    current = asyncio.current_task()
+    alive   = [task for task in asyncio.all_tasks() - before if not task.done() and task is not current]
+    names   = sorted(getattr(task.get_coro(), "__qualname__", task.get_name()) for task in alive)
+
+    assert names == [], f"tasks outlived the test: {names}"

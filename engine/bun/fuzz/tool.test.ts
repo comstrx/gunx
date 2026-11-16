@@ -5,8 +5,6 @@ import * as stage from "engine/test";
 import * as tool from "engine/tool";
 import * as fc from "fast-check";
 
-const name = fc.stringMatching(/^[a-z]{1,3}$/);
-const surface = fc.dictionary(name, fc.uniqueArray(name, { maxLength: 5 }), { maxKeys: 5 });
 
 function rings ( size: number, edges: ReadonlySet<string> ): string[][] {
 
@@ -35,39 +33,6 @@ function rings ( size: number, edges: ReadonlySet<string> ): string[][] {
 
 describe("fuzz tool", () => {
 
-    it("an api diff is exactly the set difference of the dotted names, and its kind follows removals then additions", () => {
-
-        fc.assert(fc.property(surface, surface, ( before, after ) => {
-
-            const was = new Set(Object.entries(before).flatMap(([member, list]) => list.map(( item ) => `${member}.${item}`)));
-            const now = new Set(Object.entries(after).flatMap(([member, list]) => list.map(( item ) => `${member}.${item}`)));
-            const change = tool.apiDiff(before, after);
-
-            expect(change.added).toEqual([...now].filter(( item ) => !was.has(item)).sort());
-            expect(change.removed).toEqual([...was].filter(( item ) => !now.has(item)).sort());
-            expect(change.kind).toBe(change.removed.length ? "major" : change.added.length ? "minor" : "none");
-            expect(tool.apiDiff(after, before).added).toEqual(change.removed);
-            expect(tool.describeChange(change, []).split("\n")).toHaveLength(1 + change.added.length + change.removed.length);
-
-        }), { numRuns: 3000 });
-
-    });
-    it("growth names only members sized on both sides that changed, sorted by the size of the change then the name", () => {
-
-        const sizes = fc.dictionary(name, fc.option(fc.integer({ min: 0, max: 1000 }), { nil: null }), { maxKeys: 8 });
-
-        fc.assert(fc.property(sizes, sizes, ( before, after ) => {
-
-            const grown = tool.sizeDiff(before, after);
-
-            for ( const growth of grown ) expect<unknown[]>([growth.before, growth.after, growth.delta]).toEqual([before[growth.member], after[growth.member], (after[growth.member] as number) - (before[growth.member] as number)]);
-
-            expect(grown.map(( growth ) => growth.member).sort()).toEqual(Object.keys(after).filter(( member ) => typeof after[member] === "number" && typeof before[member] === "number" && Object.hasOwn(before, member) && after[member] !== before[member]).sort());
-            expect(grown.every(( growth, at ) => at === 0 || Math.abs((grown[at - 1] as tool.Growth).delta) > Math.abs(growth.delta) || (Math.abs((grown[at - 1] as tool.Growth).delta) === Math.abs(growth.delta) && (grown[at - 1] as tool.Growth).member < growth.member))).toBe(true);
-
-        }), { numRuns: 3000 });
-
-    });
     it("digests are deterministic, clamp their length and shorten by prefix", () => {
 
         fc.assert(fc.property(fc.string({ maxLength: 64 }), fc.integer({ min: -5, max: 80 }), ( text, length ) => {
@@ -148,6 +113,28 @@ describe("fuzz tool", () => {
             temp.remove();
 
         }
+
+    });
+    it("render carries every given value escaped and leaves no placeholder; a csp always names the api's origin and its socket", () => {
+
+        fc.assert(fc.property(fc.dictionary(fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/), fc.string(), { minKeys: 1, maxKeys: 6 }), ( values ) => {
+
+            const template = Object.keys(values).map(( key ) => `<i>{{${key}}}</i>`).join("");
+            const filled = tool.render(template, values);
+            const inner = filled.replace(/<\/?i>/g, "");
+
+            expect(filled.includes("{{")).toBe(false);
+            expect(/[<>"']/.test(inner)).toBe(false);
+
+        }));
+        fc.assert(fc.property(fc.constantFrom("http", "https"), fc.stringMatching(/^[a-z]{1,10}\.test$/), fc.integer({ min: 1, max: 65535 }), ( scheme, host, port ) => {
+
+            const policy = tool.csp(`${scheme}://${host}:${port}/v1`);
+            const origin = new URL(`${scheme}://${host}:${port}`).origin;
+
+            expect(policy).toContain(`connect-src 'self' ${origin} ${origin.replace(/^http/, "ws")}`);
+
+        }));
 
     });
 

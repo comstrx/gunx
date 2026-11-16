@@ -8,7 +8,7 @@ from engine.config import env
 from engine.crypto import crypto
 from engine.database import database
 from engine.health import health
-from engine.http import App, Request, Response, Route
+from engine.http import App, Response, Route
 from engine.log import log
 from engine.metric import MEDIA, metrics
 from engine.net import net
@@ -58,7 +58,7 @@ class Stage:
 
         app = App(name, "0.0.0", origins=origins)
 
-        async def exposition ( request: Request ) -> Any:
+        async def exposition () -> Any:
 
             return Response.text(metrics.render(), media=MEDIA)
 

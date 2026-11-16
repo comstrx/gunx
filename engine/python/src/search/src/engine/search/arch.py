@@ -14,6 +14,8 @@ B     = 0.75
 NDJSON = "application/x-ndjson"
 DONE   = frozenset({ "succeeded", "failed", "canceled" })
 BOLD   = re.compile(r"</?hi>")
+SCHEMA = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+DOTS   = frozenset({ "", ".", ".." })
 EXISTS = frozenset({ "index_already_exists" })
 
 @dataclass(frozen=True, slots=True)

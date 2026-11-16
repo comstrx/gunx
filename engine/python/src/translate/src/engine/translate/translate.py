@@ -172,7 +172,10 @@ class Translate:
 
     def _offer_ ( self, header: str ) -> str:
 
-        for name in parse.accept(header[:HEADER])[:OFFERS]:
+        try: names = parse.accept(header[:HEADER])[:OFFERS]
+        except Fault: return self._fallback
+
+        for name in names:
 
             if name == ANY: return self._fallback
 

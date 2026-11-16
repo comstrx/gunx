@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, TYPE_CHECKING, override
+from typing import Any, override
 
 from engine.error import Code, Fault
 from engine.json import json
@@ -8,12 +8,8 @@ from engine.thread import Gate
 from .arch import KAFKA_INFLIGHT, Message, RESERVED, WILD
 from .driver import Driver
 import asyncio, dataclasses, re
-
-if TYPE_CHECKING:
-
-    from .cursor import Cursor
-    from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
-    from aiokafka.admin import AIOKafkaAdminClient
+lazy import aiokafka, aiokafka.admin, aiokafka.errors
+lazy from .cursor import Cursor
 
 class Kafka(Driver):
 
@@ -35,9 +31,9 @@ class Kafka(Driver):
         self._wait        = wait
         self._compression = compression
         self._security    = dict(security)
-        self._producer: AIOKafkaProducer | None = None
-        self._admin: AIOKafkaAdminClient | None = None
-        self._consumers: dict[str, AIOKafkaConsumer] = {}
+        self._producer: aiokafka.AIOKafkaProducer | None = None
+        self._admin: aiokafka.admin.AIOKafkaAdminClient | None = None
+        self._consumers: dict[str, aiokafka.AIOKafkaConsumer] = {}
         self._topics: dict[str, list[str]] = {}
         self._failures: tuple[type[BaseException], ...] = (OSError, TimeoutError)
         self._lock = asyncio.Lock()
@@ -47,18 +43,15 @@ class Kafka(Driver):
         self._cursors: dict[str, Cursor] = {}
         self._publishing = Gate(KAFKA_INFLIGHT)
 
-    async def producer ( self ) -> AIOKafkaProducer:
+    async def producer ( self ) -> aiokafka.AIOKafkaProducer:
 
         async with self._lock:
 
             if self._producer is not None: return self._producer
 
-            from aiokafka import AIOKafkaProducer
-            from aiokafka.errors import KafkaError
+            self._failures = (aiokafka.errors.KafkaError, OSError, TimeoutError)
 
-            self._failures = (KafkaError, OSError, TimeoutError)
-
-            made = AIOKafkaProducer(
+            made = aiokafka.AIOKafkaProducer(
                 bootstrap_servers=self._servers, client_id=self._client, acks="all", enable_idempotence=True,
                 compression_type=self._compression, request_timeout_ms=int(self._wait * 1000), **self._security,
             )
@@ -97,14 +90,11 @@ class Kafka(Driver):
 
         if not literal: return
 
-        from aiokafka.admin import NewTopic
-        from aiokafka.errors import TopicAlreadyExistsError
-
         admin = await self._admin_()
-        fresh = [NewTopic(topic, self._partitions, self._replication) for topic in literal]
+        fresh = [aiokafka.admin.NewTopic(topic, self._partitions, self._replication) for topic in literal]
 
         try: await admin.create_topics(fresh, validate_only=False)
-        except TopicAlreadyExistsError: pass
+        except aiokafka.errors.TopicAlreadyExistsError: pass
         except self._failures as error: raise self._down_("broker.declare") from error
 
     @override
@@ -159,8 +149,6 @@ class Kafka(Driver):
 
     async def _pull_ ( self, queue: str, limit: int, wait: float ) -> list[Message]:
 
-        from aiokafka import TopicPartition
-
         consumer = await self._consumer_(queue)
         cursor = self._cursors[queue]
         room = KAFKA_INFLIGHT - cursor.count()
@@ -180,7 +168,7 @@ class Kafka(Driver):
 
             for record in records:
 
-                tag = cursor.seen(TopicPartition(record.topic, record.partition), int(record.offset))
+                tag = cursor.seen(aiokafka.TopicPartition(record.topic, record.partition), int(record.offset))
 
                 try: message = self.message(record, queue)
                 except Fault:
@@ -303,9 +291,7 @@ class Kafka(Driver):
 
         if not isinstance(payload, dict): raise Fault(Code.VALIDATION, reason="broker.malformed")
 
-        from aiokafka import TopicPartition
-
-        tag = (TopicPartition(record.topic, record.partition), int(record.offset))
+        tag = (aiokafka.TopicPartition(record.topic, record.partition), int(record.offset))
 
         return Message(id_, str(record.topic), payload, headers, attempts, tag, queue)
 
@@ -337,11 +323,11 @@ class Kafka(Driver):
 
         return found
 
-    async def _consumer_ ( self, queue: str ) -> AIOKafkaConsumer:
+    async def _consumer_ ( self, queue: str ) -> aiokafka.AIOKafkaConsumer:
 
         async with self._creating: return await self._created_(queue)
 
-    async def _created_ ( self, queue: str ) -> AIOKafkaConsumer:
+    async def _created_ ( self, queue: str ) -> aiokafka.AIOKafkaConsumer:
 
         found = self._consumers.get(queue)
 
@@ -351,18 +337,13 @@ class Kafka(Driver):
 
         if topics is None: raise Fault(Code.INTERNAL, reason="broker.queue", errors={ "queue": [queue] })
 
-        from aiokafka import AIOKafkaConsumer
-        from aiokafka.errors import KafkaError
+        self._failures = (aiokafka.errors.KafkaError, OSError, TimeoutError)
 
-        self._failures = (KafkaError, OSError, TimeoutError)
-
-        made = AIOKafkaConsumer(
+        made = aiokafka.AIOKafkaConsumer(
             bootstrap_servers=self._servers, group_id=f"{self._group}.{queue}", client_id=self._client,
             enable_auto_commit=False, auto_offset_reset="earliest", isolation_level="read_committed",
             request_timeout_ms=int(self._wait * 1000), **self._security,
         )
-
-        from .cursor import Cursor
 
         cursor = Cursor()
 
@@ -391,20 +372,17 @@ class Kafka(Driver):
 
         return made
 
-    async def _admin_ ( self ) -> AIOKafkaAdminClient:
+    async def _admin_ ( self ) -> aiokafka.admin.AIOKafkaAdminClient:
 
         async with self._lock: return await self._administrator_()
 
-    async def _administrator_ ( self ) -> AIOKafkaAdminClient:
+    async def _administrator_ ( self ) -> aiokafka.admin.AIOKafkaAdminClient:
 
         if self._admin is not None: return self._admin
 
-        from aiokafka.admin import AIOKafkaAdminClient
-        from aiokafka.errors import KafkaError
+        self._failures = (aiokafka.errors.KafkaError, OSError, TimeoutError)
 
-        self._failures = (KafkaError, OSError, TimeoutError)
-
-        made = AIOKafkaAdminClient(
+        made = aiokafka.admin.AIOKafkaAdminClient(
             bootstrap_servers=self._servers, client_id=self._client, request_timeout_ms=int(self._wait * 1000),
             **self._security,
         )

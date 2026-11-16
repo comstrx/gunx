@@ -623,6 +623,11 @@ function compileScreen ( found: Screen, shared: Shared ): CompiledScreen {
     return { ...found, features, params, kinds: sorted, depth, ids: [...scope.ids].sort(), watches: scope.watches, emits: [...scope.emitted].sort(), listens: [...scope.listened].sort() };
 
 }
+function reachable ( address: string ): boolean {
+
+    return URL.canParse(address) && (new URL(address).protocol === "https:" || new URL(address).protocol === "http:");
+
+}
 function trusted<T extends object> ( given: T, shape: validate.Schema<T>, reason: string ): T {
 
     if ( isBuilt(given) ) return given;
@@ -748,6 +753,8 @@ export function compile ( given: Surface, options: Options = {} ): Compiled {
     const seenPaths = new Map<string, string>();
     const seenNames = new Set<string>();
     const ranked: Ranked[] = [];
+
+    if ( surface.address !== undefined && !reachable(surface.address) ) told(issues, "surface.address", "surface.address", `${surface.address}: the api address is an absolute http or https url`);
 
     for ( const found of surface.screens ) {
 

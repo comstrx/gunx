@@ -150,6 +150,7 @@ export const surfaceShape = validate.strictObject({
     world: upTo(catalogShape, 4),
     locales: validate.array(validate.locale()).check(validate.minLength(1), validate.maxLength(200)),
     locale: validate.locale(),
+    address: validate.optional(validate.url()),
     screens: upTo(screenShape, 500),
     signals: upTo(field, 100),
 });

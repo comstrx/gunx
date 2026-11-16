@@ -2,12 +2,11 @@ from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from engine.error import Code, Fault
+lazy import redis.asyncio as aioredis, redis.exceptions as failures
 
 class Channel:
 
     def __init__ ( self, url: str, wait: float = 2.0 ) -> None:
-
-        import redis.asyncio as aioredis, redis.exceptions as failures
 
         self._client: Any = aioredis.Redis.from_url(url, socket_timeout=wait, socket_connect_timeout=wait, protocol=3)
         self._failures: tuple[type[Exception], ...] = (failures.RedisError,)

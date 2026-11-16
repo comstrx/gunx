@@ -6,7 +6,7 @@ type Compiled = { surface: { name: string; locale: string }; app: { slug: string
 
 const path = resolve(__dirname, ".cache/spec/client.json");
 
-if ( !existsSync(path) ) throw new Error("compile the spec first: bun tools/compile.ts");
+if ( !existsSync(path) ) throw new Error("compile the spec first: bun run tool compile");
 
 const compiled = JSON.parse(readFileSync(path, "utf8")) as Compiled;
 

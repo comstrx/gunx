@@ -26,7 +26,7 @@ jobs:
     uses: $/.github/workflows/ci.yml
     with:
       all: true
-      type: deps,fuzz
+      type: fuzz
       timeout: 3600
 
   bench:
@@ -35,5 +35,5 @@ jobs:
     uses: $/.github/workflows/ci.yml
     with:
       all: true
-      type: deps,bench
+      type: bench
       timeout: 3600

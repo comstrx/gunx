@@ -5,7 +5,7 @@ from http import HTTPStatus
 from itertools import count
 from functools import lru_cache
 from ipaddress import IPv4Network, IPv6Network
-from typing import Any, TYPE_CHECKING
+from typing import Any, Protocol, TYPE_CHECKING
 
 from multidict import istr
 from sanic import HTTPResponse
@@ -173,3 +173,20 @@ class Credential:
     token       : str
     fingerprint : str
     claims      : Claims
+
+class Served(Protocol):
+
+    def startup ( self ) -> Awaitable[None]: ...
+    def before_start ( self ) -> Awaitable[None]: ...
+    def after_start ( self ) -> Awaitable[None]: ...
+    def before_stop ( self ) -> Awaitable[None]: ...
+    def close ( self ) -> Awaitable[None]: ...
+    def after_stop ( self ) -> Awaitable[None]: ...
+
+class Resettable(Protocol):
+
+    def reset ( self ) -> None: ...
+
+class Responding(Protocol):
+
+    def on_response ( self, middleware: Callable[[Request, Answer], Awaitable[None]] ) -> object: ...

@@ -12,6 +12,8 @@ const importPattern = new RegExp([clause, passed, bare, called].map(( part ) => 
 const commented = /^[ \t]*\/\/[^\n]*|^[ \t]*\/\*[\s\S]*?\*\//gm;
 const visible = /[^\n]/g;
 const scripted = /\.[cm]?jsx?$/;
+const inlineTyped = /\{[^}]*\btype\s+[\w$]/;
+const transpilers = new Map<string, Bun.Transpiler>();
 const tails: readonly string[] = [".ts", ".tsx", "/index.ts", "/index.tsx"];
 const shared: readonly string[] = ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "zod"];
 const builtins: ReadonlySet<string> = new Set([
@@ -83,11 +85,88 @@ function scanned ( given: string ): Found[] {
 
         at = match.index;
 
-        if ( target !== "" ) found.push({ target, line, typed: match[1] !== undefined || match[3] !== undefined });
+        if ( target !== "" ) found.push({ target, line, typed: match[1] !== undefined || match[3] !== undefined, text: match[0] });
 
     }
 
     return found;
+
+}
+function truthOf ( text: string, loader: "ts" | "tsx" ): ReadonlySet<string> | undefined {
+
+    let made = transpilers.get(loader);
+
+    if ( made === undefined ) {
+
+        made = new Bun.Transpiler({ loader });
+        transpilers.set(loader, made);
+
+    }
+
+    try {
+
+        return new Set(made.scanImports(text).map(( found ) => found.path));
+
+    } catch {
+
+        return undefined;
+
+    }
+
+}
+function lineOf ( text: string, target: string ): number {
+
+    const at = Math.max(text.indexOf(`"${target}"`), text.indexOf(`'${target}'`));
+
+    return at === -1 ? 1 : text.slice(0, at).split("\n").length;
+
+}
+function imports ( text: string, loader: "ts" | "tsx" ): Found[] {
+
+    const found = scanned(text);
+    const truth = truthOf(text, loader);
+
+    if ( truth === undefined ) return found;
+
+    const kept: Found[] = [];
+    const seen = new Set<string>();
+
+    for ( const one of found ) {
+
+        seen.add(one.target);
+
+        if ( one.typed || truth.has(one.target) ) kept.push(one);
+        else if ( inlineTyped.test(one.text) ) kept.push({ ...one, typed: true });
+
+    }
+
+    for ( const target of truth ) if ( !seen.has(target) ) kept.push({ target, line: lineOf(text, target), typed: false, text: "" });
+
+    return kept.sort(( left, right ) => left.line - right.line);
+
+}
+function orphansOf ( files: readonly string[], links: ReadonlyMap<string, readonly string[]>, entries: readonly string[] ): string[] {
+
+    if ( entries.length === 0 ) return [];
+
+    const globs = entries.map(( pattern ) => new Bun.Glob(pattern));
+    const pending = files.filter(( file ) => globs.some(( glob ) => glob.match(file)));
+    const reached = new Set(pending);
+
+    for ( let next = pending.pop(); next !== undefined; next = pending.pop() ) {
+
+        for ( const target of links.get(next) ?? [] ) {
+
+            if ( reached.has(target) ) continue;
+
+            reached.add(target);
+            pending.push(target);
+
+        }
+
+    }
+
+    return files.filter(( file ) => !reached.has(file));
 
 }
 function cyclesOf ( graph: ReadonlyMap<string, readonly string[]> ): string[][] {
@@ -176,6 +255,8 @@ export function defineRules ( rules: Rules ): Resolved {
 
     if ( typeof alias !== "string" || alias === "/" || !alias.endsWith("/") ) throw error.fault("internal", "tool.rules", { message: "an alias is a prefix ending in a slash, such as @/" });
 
+    if ( rules.framework !== undefined && (typeof rules.framework !== "object" || Array.isArray(rules.framework) || !Object.values(rules.framework).every(Array.isArray)) ) throw error.fault("internal", "tool.rules", { message: "a framework names the layers it may enter, such as { next: [\"app\"] }" });
+
     return {
         root: rules.root,
         source: rules.source ?? "src",
@@ -184,10 +265,10 @@ export function defineRules ( rules: Rules ): Resolved {
         vendor: [...(rules.vendor ?? ["native"])],
         engine: rules.engine ?? "engine",
         members: [...(rules.members ?? [])],
-        framework: [...(rules.framework ?? [])],
-        frameworkLayers: [...(rules.frameworkLayers ?? ["app"])],
+        framework: Object.fromEntries(Object.entries(rules.framework ?? {}).map(([name, layers]) => [name, [...layers]])),
         outside: [...(rules.outside ?? [])],
         shared: [...(rules.shared ?? shared)],
+        entries: [...(rules.entries ?? [])],
     };
 
 }
@@ -199,6 +280,7 @@ export function analyze ( given: Rules ): Analysis {
     const known = new Set(files.map(( file ) => file.relative));
     const rank = new Map(rules.layers.map(( layer, index ) => [layer, index] as const));
     const graph = new Map<string, string[]>();
+    const links = new Map<string, string[]>();
     const issues: Issue[] = [];
     const edges: Record<string, string[]> = {};
     const prefix = `${rules.engine}/`;
@@ -210,6 +292,7 @@ export function analyze ( given: Rules ): Analysis {
         const inVendor = rules.vendor.some(( folder ) => file.relative.startsWith(`${folder}/`));
         const targets = new Set<string>();
         const reached: string[] = [];
+        const linked: string[] = [];
         const told = ( line: number, rule: Rule, message: string ): void => {
 
             issues.push({ file: file.relative, line, message, rule });
@@ -218,7 +301,7 @@ export function analyze ( given: Rules ): Analysis {
 
         if ( from === undefined && !inVendor ) told(1, "layer", `not in a layer: ${file.relative}`);
 
-        for ( const { target, line, typed } of scanned(readFileSync(file.path, "utf8")) ) {
+        for ( const { target, line, typed } of imports(readFileSync(file.path, "utf8"), file.relative.endsWith(".tsx") ? "tsx" : "ts") ) {
 
             if ( target === rules.engine || target.startsWith(prefix) ) {
 
@@ -256,6 +339,7 @@ export function analyze ( given: Rules ): Analysis {
 
                 targets.add(to);
 
+                if ( to !== file.relative && known.has(to) ) linked.push(to);
                 if ( !typed && to !== file.relative && known.has(to) ) reached.push(to);
 
                 if ( from !== undefined && above !== undefined && above > from ) told(line, "layer", `${head} reaches up into ${headOf(to)}: ${target}`);
@@ -273,7 +357,7 @@ export function analyze ( given: Rules ): Analysis {
             }
 
             const name = packageOf(target);
-            const framed = from !== undefined && rules.framework.includes(name) && rules.frameworkLayers.includes(head);
+            const framed = from !== undefined && (rules.framework[name]?.includes(head) ?? false);
 
             if ( from !== undefined && !inVendor && !framed && !rules.shared.includes(name) && !rules.shared.includes(target) ) told(line, "vendor", `a third-party import outside ${rules.vendor.join("|")}/: ${target}`);
 
@@ -283,9 +367,10 @@ export function analyze ( given: Rules ): Analysis {
 
         edges[file.relative] = [...targets].sort(byText);
         graph.set(file.relative, reached);
+        links.set(file.relative, linked);
 
     }
 
-    return { files: files.length, issues, edges, cycles: cyclesOf(graph) };
+    return { files: files.length, issues, edges, cycles: cyclesOf(graph), orphans: orphansOf(files.map(( file ) => file.relative), links, rules.entries) };
 
 }

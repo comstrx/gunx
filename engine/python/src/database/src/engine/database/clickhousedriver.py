@@ -9,6 +9,8 @@ from .dialect import Dialect
 from .driver import Driver
 from .vector import Vector
 import asyncio
+lazy import clickhouse_connect
+lazy from clickhouse_connect.driver import exceptions
 
 if TYPE_CHECKING:
 
@@ -34,9 +36,6 @@ class ClickhouseDriver(Driver):
     async def connect ( self ) -> None:
 
         if self._client is not None: return
-
-        import clickhouse_connect
-        from clickhouse_connect.driver import exceptions
 
         self.failures = (exceptions.ClickHouseError, OSError, TimeoutError)
 

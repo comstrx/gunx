@@ -10,6 +10,10 @@ from .dialect import Dialect
 from .driver import Driver
 from .session import Session
 from .sql import Sql
+lazy from .clickhousedriver import ClickhouseDriver
+lazy from .mysqldriver import MysqlDriver
+lazy from .postgresdriver import PostgresDriver
+lazy from .sqlitedriver import SqliteDriver
 
 class Database:
 
@@ -231,24 +235,8 @@ class Database:
 
         if family is None: raise Fault(Code.INTERNAL, reason="database.scheme", errors={ "scheme": [scheme[:32]] })
 
-        if family == "postgres":
-
-            from .postgresdriver import PostgresDriver
-
-            return PostgresDriver(url, **options)
-
-        if family == "sqlite":
-
-            from .sqlitedriver import SqliteDriver
-
-            return SqliteDriver(url.split("://", 1)[1] if "://" in url else url, **options)
-
-        if family == "mysql":
-
-            from .mysqldriver import MysqlDriver
-
-            return MysqlDriver(url, **options)
-
-        from .clickhousedriver import ClickhouseDriver
+        if family == "postgres": return PostgresDriver(url, **options)
+        if family == "sqlite": return SqliteDriver(url.split("://", 1)[1] if "://" in url else url, **options)
+        if family == "mysql": return MysqlDriver(url, **options)
 
         return ClickhouseDriver(url, **options)

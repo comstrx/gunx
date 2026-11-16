@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from http import HTTPStatus
 from typing import Any, cast
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +39,7 @@ class Reply:
 
     def ok ( self ) -> bool:
 
-        return 200 <= self.status < 300
+        return HTTPStatus.OK <= self.status < HTTPStatus.MULTIPLE_CHOICES
 
     def _field_ ( self, name: str ) -> Any:
 

@@ -10,7 +10,9 @@
       "!dist",
       "!.expo",
       "!.cache",
-      "!public"
+      "!public",
+      "!android",
+      "!ios"
     ]
   },
   "formatter": {
@@ -80,18 +82,6 @@
     ]
   },
   "overrides": [
-    {
-      "includes": [
-        "tools/**"
-      ],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noConsole": "off"
-          }
-        }
-      }
-    },
     {
       "includes": [
         "tests/setup.ts"

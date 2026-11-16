@@ -1,9 +1,11 @@
 import { describe, expect, test as it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import recorded from "./api.json" with { type: "json" };
+import { types } from "node:util";
+import { type Node, type SourceFile, SyntaxKind } from "typescript/unstable/ast";
+import { API } from "typescript/unstable/async";
 
-type Manifest = { name: string; description: string; exports: Record<string, string>; dependencies?: Record<string, string> | undefined };
+type Manifest = { name: string; description: string; private: boolean; type: string; sideEffects: boolean; exports: Record<string, string>; dependencies?: Record<string, string> | undefined };
 
 const root = resolve(import.meta.dir, "..");
 const source = resolve(root, "src");
@@ -18,8 +20,19 @@ const hosted = new Set(["adapter", "test", "tool"]);
 const hostNames = ["globalThis", "window", "document", "navigator", "location", "history", "localStorage", "sessionStorage", "fetch", "WebSocket", "Notification", "matchMedia", "ResizeObserver", "HermesInternal", "importScripts", "WorkerGlobalScope", "process", "Bun", "Deno", "crypto"];
 const hostRead = new RegExp(`(?<![.\\w$])(?:${hostNames.join("|")})\\b(?!\\s*\\??:)`, "g");
 const namespaces = /import \* as ([A-Za-z_]+) from "engine-[a-z]+"/g;
-const constructors = /^(?:make|build|new|init|setup|construct)[A-Z]|^use[A-Z]/;
-const surface = recorded as Record<string, string[]>;
+const ladder: readonly (readonly string[])[] = [
+    ["date", "error", "json", "list", "number", "string", "value", "virtual"],
+    ["adapter", "event", "func", "log", "parse", "search", "seo", "translate", "validate"],
+    ["crypto", "device", "geo", "history", "rand"],
+    ["cache", "fs", "net", "socket"],
+    ["auth", "form", "queue", "state", "world"],
+    ["api", "fake", "spec", "test", "tool"],
+];
+const rung = new Map(ladder.flatMap(( names, index ) => names.map(( name ) => [name, index] as const)));
+const arrowVerb = /^export const [A-Za-z_$][\w$]*\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?=>/m;
+const definitions = new Set([SyntaxKind.TypeAliasDeclaration, SyntaxKind.InterfaceDeclaration, SyntaxKind.EnumDeclaration]);
+const declarations = new Set([SyntaxKind.ImportDeclaration, SyntaxKind.ExportDeclaration, SyntaxKind.TypeAliasDeclaration, SyntaxKind.InterfaceDeclaration, SyntaxKind.EnumDeclaration, SyntaxKind.VariableStatement]);
+const executions = new Set([SyntaxKind.CallExpression, SyntaxKind.NewExpression, SyntaxKind.ArrowFunction, SyntaxKind.FunctionExpression, SyntaxKind.FunctionDeclaration, SyntaxKind.ClassDeclaration, SyntaxKind.ClassExpression, SyntaxKind.MethodDeclaration, SyntaxKind.GetAccessor, SyntaxKind.SetAccessor, SyntaxKind.TaggedTemplateExpression, SyntaxKind.AwaitExpression]);
 
 function manifest ( member: string ): Manifest {
 
@@ -47,7 +60,7 @@ function travelling ( folder: string ): string[] {
 
     return readdirSync(folder, { withFileTypes: true }).flatMap(( entry ) => {
 
-        if ( entry.isDirectory() ) return ["node_modules", "coverage", ".bun"].includes(entry.name) ? [] : travelling(resolve(folder, entry.name));
+        if ( entry.isDirectory() ) return ["node_modules", ".bun"].includes(entry.name) ? [] : travelling(resolve(folder, entry.name));
 
         return entry.isFile() ? [resolve(folder, entry.name)] : [];
 
@@ -69,6 +82,39 @@ function packageOf ( specifier: string ): string {
 function used ( member: string ): Set<string> {
 
     return new Set(files(member).flatMap(( code ) => [...code.matchAll(reach)].map(( found ) => found[1] ?? found[2] ?? "")).filter(( name ) => name !== member));
+
+}
+function names ( loaded: Record<string, unknown>, prefix = "" ): string[] {
+
+    return Object.entries(loaded).flatMap(([name, found]) => (types.isModuleNamespaceObject(found) ? names(found as Record<string, unknown>, `${prefix}${name}.`) : [`${prefix}${name}`])).sort();
+
+}
+function surface (): Promise<[string, string[]][]> {
+
+    return Promise.all(members.map(async ( member ): Promise<[string, string[]]> => [member, names(await import(`engine/${member}`) as Record<string, unknown>)]));
+
+}
+function inspect ( file: SourceFile, name: string ): string[] {
+
+    const found = new Set<string>();
+    let classes = 0;
+    const visit = ( node: Node ): void => {
+
+        if ( definitions.has(node.kind) && name !== "arch.ts" ) found.add("definitions outside arch");
+        if ( name === "arch.ts" && executions.has(node.kind) ) found.add("implementation inside arch");
+        if ( node.kind === SyntaxKind.ClassDeclaration || node.kind === SyntaxKind.ClassExpression ) classes += 1;
+
+        node.forEachChild(visit);
+
+    };
+
+    visit(file);
+
+    if ( name === "arch.ts" && file.statements.some(( node ) => !declarations.has(node.kind)) ) found.add("implementation inside arch");
+    if ( name === "index.ts" && file.statements.some(( node ) => node.kind !== SyntaxKind.ExportDeclaration) ) found.add("implementation inside index");
+    if ( classes > 1 ) found.add("more than one implementation class");
+
+    return [...found].sort();
 
 }
 function cycle ( edges: Map<string, Set<string>> ): string[] {
@@ -127,6 +173,9 @@ describe("laws", () => {
             expect(found.name).toBe(`engine-${member}`);
             expect(found.exports["."]).toBe("./src/index.ts");
             expect(found.description.length).toBeLessThanOrEqual(80);
+            expect(Object.keys(found).sort()).toEqual(["dependencies", "description", "exports", "name", "private", "sideEffects", "type"]);
+            expect([found.private, found.type, found.sideEffects]).toEqual([true, "module", false]);
+            expect(["index.ts", "arch.ts"].filter(( file ) => !existsSync(resolve(source, member, "src", file))), `${member} lacks its door or its arch`).toEqual([]);
 
             const entries = Object.entries(found.dependencies ?? {});
             const siblings = entries.filter(([name]) => name.startsWith("engine-"));
@@ -156,6 +205,23 @@ describe("laws", () => {
         }
 
         expect(cycle(edges)).toEqual([]);
+
+    });
+    it("ladder: every member stands on one rung and leans only on members at or below it", () => {
+
+        const climbs: string[] = [];
+
+        expect(ladder.flat().toSorted()).toEqual(members);
+
+        for ( const member of members ) {
+
+            const own = rung.get(member) ?? 0;
+
+            for ( const other of used(member) ) if ( (rung.get(other) ?? 0) > own ) climbs.push(`${member} (${own}) -> ${other} (${rung.get(other)})`);
+
+        }
+
+        expect(climbs).toEqual([]);
 
     });
     it("facade: one namespace per member, one door file each", () => {
@@ -222,35 +288,60 @@ describe("laws", () => {
         expect(offenders).toEqual([]);
 
     });
-    it("verbs: create, define and open construct; use binds a port; no maker, builder or hook names; no host names; a nested name answers by its last word", () => {
+    it("arch: definitions live in arch.ts, index.ts only exports, and a file holds at most one implementation class", async () => {
 
-        const offenders: string[] = [];
+        const failures: string[] = [];
+        const api = new API({ cwd: root });
 
-        for ( const [member, names] of Object.entries(surface) ) {
+        try {
 
-            for ( const path of names ) {
+            const snapshot = await api.updateSnapshot({ openProjects: [resolve(root, "tsconfig.json")] });
 
-                const name = path.slice(path.lastIndexOf(".") + 1);
+            try {
 
-                if ( constructors.test(name) ) offenders.push(`${member}.${path}`);
-                if ( name === "use" && member !== "cache" ) offenders.push(`${member}.${path}`);
-                if ( hostNames.includes(name) ) offenders.push(`${member}.${path}`);
+                const project = snapshot.getProjects()[0];
+
+                expect(project).toBeDefined();
+
+                for ( const member of members ) {
+
+                    for ( const [name] of sources(member) ) {
+
+                        const file = await project?.program.getSourceFile(resolve(source, member, "src", name));
+
+                        failures.push(...(file ? inspect(file, name) : ["unread"]).map(( issue ) => `${member}/${name}: ${issue}`));
+
+                    }
+
+                }
+
+            } finally {
+
+                await snapshot.dispose();
 
             }
 
+        } finally {
+
+            await api.close();
+
         }
 
-        expect(offenders).toEqual([]);
+        expect(failures).toEqual([]);
 
-    });
-    it("proof: every recorded export is named by a test, a nested one by its dotted name", () => {
+    }, 15000);
+    it("proof: every member owns unit, fuzz and bench files, and every export is named by a test", async () => {
 
         const proofs = readdirSync(resolve(root, "tests")).filter(( name ) => name.endsWith(".test.ts")).map(( name ) => readFileSync(resolve(root, "tests", name), "utf8")).join("\n");
         const unnamed: string[] = [];
+        const owned = ( folder: string, member: string, suffix: string ): boolean => readdirSync(resolve(root, folder)).some(( name ) => name.endsWith(suffix) && (name === `${member}${suffix}` || name.startsWith(`${member}.`)));
+        const missing = ["engine", ...members].flatMap(( member ) => [["tests", ".test.ts"], ["fuzz", ".test.ts"], ["benches", ".bench.ts"]].filter(([folder = "", suffix = ""]) => !owned(folder, member, suffix)).map(([folder]) => `${folder}/${member}`));
 
-        for ( const [member, names] of Object.entries(surface) ) {
+        expect(missing).toEqual([]);
 
-            for ( const name of names ) if ( !new RegExp(`\\b${escaped(name)}\\b`).test(proofs) ) unnamed.push(`${member}.${name}`);
+        for ( const [member, exported] of await surface() ) {
+
+            for ( const name of exported ) if ( !new RegExp(`\\b${escaped(name)}\\b`).test(proofs) ) unnamed.push(`${member}.${name}`);
 
         }
 
@@ -274,6 +365,13 @@ describe("laws", () => {
             }
 
         }
+
+    });
+    it("declared: a member's verbs are function declarations, never exported arrows", () => {
+
+        const arrows = members.flatMap(( member ) => sources(member).filter(([, code]) => arrowVerb.test(code)).map(([name]) => `${member}/${name}`));
+
+        expect(arrows).toEqual([]);
 
     });
     it("nameless: no file that leaves with the engine names a product or the tree it grew in", () => {

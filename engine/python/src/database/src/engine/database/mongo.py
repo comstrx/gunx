@@ -3,10 +3,10 @@ from typing import Any, TYPE_CHECKING
 from engine.error import Code, Fault
 from engine.log import log
 from .arch import VALIDATION
+lazy import pymongo, pymongo.errors
 
 if TYPE_CHECKING:
 
-    from pymongo import AsyncMongoClient
     from pymongo.asynchronous.collection import AsyncCollection
     from pymongo.asynchronous.database import AsyncDatabase
 
@@ -17,7 +17,7 @@ class Mongo:
 
     def __init__ ( self ) -> None:
 
-        self._client: AsyncMongoClient[dict[str, Any]] | None = None
+        self._client: pymongo.AsyncMongoClient[dict[str, Any]] | None = None
         self._database: AsyncDatabase[dict[str, Any]] | None = None
 
     def ready ( self ) -> bool:
@@ -30,12 +30,9 @@ class Mongo:
 
         if self._client is not None: return
 
-        from pymongo import AsyncMongoClient
-        from pymongo.errors import PyMongoError
+        self.failures = (pymongo.errors.PyMongoError, OSError, TimeoutError)
 
-        self.failures = (PyMongoError, OSError, TimeoutError)
-
-        client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(
+        client: pymongo.AsyncMongoClient[dict[str, Any]] = pymongo.AsyncMongoClient(
             url, serverSelectionTimeoutMS=int(wait * 1000), connectTimeoutMS=int(wait * 1000), appname=application,
             tz_aware=True, uuidRepresentation="standard",
         )
@@ -83,22 +80,27 @@ class Mongo:
 
     def translate ( self, error: BaseException ) -> Fault:
 
-        from pymongo import errors
+        failures = pymongo.errors
 
-        if isinstance(error, errors.DuplicateKeyError):
+        if isinstance(error, failures.DuplicateKeyError):
 
             return Fault(Code.CONFLICT, "Already exists", "database.unique", { "constraint": [str(error)[:120]] })
 
-        if isinstance(error, errors.WriteError) and error.code == VALIDATION:
+        if isinstance(error, failures.WriteError) and error.code == VALIDATION:
 
             return Fault(Code.VALIDATION, "A constraint refused the data", "database.check")
 
-        if isinstance(error, errors.ServerSelectionTimeoutError | errors.ConnectionFailure | TimeoutError):
+        if isinstance(error, failures.ServerSelectionTimeoutError | failures.ConnectionFailure | TimeoutError):
 
             return Fault(Code.UNAVAILABLE, "The database is unavailable", "database.connection", unknown=True)
 
-        if isinstance(error, errors.OperationFailure): return Fault(Code.INTERNAL, str(error)[:200], "database.command")
-        if isinstance(error, errors.ConfigurationError): return Fault(Code.INTERNAL, str(error)[:200], "database.url")
+        if isinstance(error, failures.OperationFailure):
+
+            return Fault(Code.INTERNAL, str(error)[:200], "database.command")
+
+        if isinstance(error, failures.ConfigurationError):
+
+            return Fault(Code.INTERNAL, str(error)[:200], "database.url")
 
         return Fault(Code.UNAVAILABLE, "The database is unavailable", "database.connection", unknown=True)
 

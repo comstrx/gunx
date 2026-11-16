@@ -37,7 +37,7 @@ describe("tool.edges", () => {
             writeFileSync(join(src, "index.ts"), "export const root = 1;\n");
             writeFileSync(join(src, "types.d.ts"), 'import x from "nowhere";\n');
 
-            const result = tool.analyze({ root: temp.path, layers: ["api", "stores", "features", "app"], members: ["json"], framework: ["next"] });
+            const result = tool.analyze({ root: temp.path, layers: ["api", "stores", "features", "app"], members: ["json"], framework: { next: ["app"] } });
 
             expect(result.issues.map(( issue ) => `${issue.file}:${issue.line} ${issue.rule} ${issue.message}`)).toEqual([
                 "api/a.ts:19 vendor a third-party import outside native/: @scope/pkg",
@@ -181,14 +181,9 @@ describe("tool.edges", () => {
         }
 
     });
-    it("digests clamp their length and agree on bytes and text; diffs ignore junk entries, sort growth by size then name and describe both directions", () => {
+    it("digests clamp their length and agree on bytes and text; members skip the facade and carry their descriptions", () => {
 
         expect([tool.digestOf("x", 0).length, tool.digestOf("x", 100).length, tool.digestOf("x", Number.NaN).length, tool.digestOf("x", 1.5).length, tool.digestOf(new Uint8Array([120])) === tool.digestOf("x"), tool.digestOf("x", 8) === tool.digestOf("x").slice(0, 8)]).toEqual([1, 64, 16, 16, true, true]);
-        expect(tool.apiDiff({ a: "x" as never, b: [1 as never, "y"] }, { b: ["y", "z"] })).toEqual({ kind: "minor", added: ["b.z"], removed: [] });
-        expect(tool.sizeDiff({ a: 100, b: 50, c: 10, d: 5, e: 20, f: 30 }, { a: 90, b: 70, c: 10, d: null, e: 30, f: 20, g: 3 })).toEqual([{ member: "b", before: 50, after: 70, delta: 20 }, { member: "a", before: 100, after: 90, delta: -10 }, { member: "e", before: 20, after: 30, delta: 10 }, { member: "f", before: 30, after: 20, delta: -10 }]);
-        expect(tool.describeChange({ kind: "minor", added: ["a.x"], removed: [] }, [{ member: "b", before: 1, after: 3, delta: 2 }])).toBe("api: minor\n+ a.x\n↑ b 1 → 3 (+2)");
-        expect(tool.describeChange({ kind: "none", added: [], removed: [] }, [])).toBe("api: none");
-        expect(tool.sizeDiff({ f: 30, a: 100 }, { f: 20, a: 90 }).map(( growth ) => growth.member)).toEqual(["a", "f"]);
 
         const members = tool.members();
 

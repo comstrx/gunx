@@ -55,7 +55,7 @@ export function revive ( given: unknown ): Compiled {
     const screens = json.isRecord(given) ? given.screens : undefined;
     const topics = json.isRecord(given) && json.isRecord(given.topics) ? given.topics : {};
 
-    if ( !json.isRecord(given) || !json.isRecord(surface) || !named(surface.name) || typeof surface.role !== "string" || typeof surface.locale !== "string" || !texts(surface.locales) ) throw error.fault("internal", "spec.revive", { message: "spec: not a serialized surface" });
+    if ( !json.isRecord(given) || !json.isRecord(surface) || !named(surface.name) || typeof surface.role !== "string" || typeof surface.locale !== "string" || !texts(surface.locales) || !(surface.address === undefined || typeof surface.address === "string") ) throw error.fault("internal", "spec.revive", { message: "spec: not a serialized surface" });
     if ( !Array.isArray(screens) || !screens.every(screenFits) ) throw error.fault("internal", "spec.revive", { message: "spec: a serialized screen is malformed" });
 
     const byName: Record<string, CompiledScreen> = {};

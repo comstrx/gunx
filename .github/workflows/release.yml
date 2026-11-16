@@ -45,7 +45,7 @@ jobs:
           bun-version-file: engine/bun/package.json
           no-cache: true
 
-      - uses: $/engine/infra/src/module/gate/template
+      - uses: $/engine/bash/src/module/gate/template
 
       - run: infra sync --gates --timeout 1800
         env:

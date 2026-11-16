@@ -33,6 +33,7 @@ const offline = /fetch|network|load failed|unable to connect/i;
 export const poison = "__proto__";
 
 export class Fault extends Error implements Failure {
+
     readonly code: Code;
     readonly status: number;
     readonly reason: string | undefined;

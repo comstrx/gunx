@@ -93,6 +93,9 @@
     },
     "src/engine": {
       "name": "engine",
+      "bin": {
+        "tool": "./bin/tool.ts",
+      },
       "dependencies": {
         "engine-adapter": "workspace:*",
         "engine-api": "workspace:*",
@@ -352,6 +355,8 @@
         "engine-error": "workspace:*",
         "engine-fs": "workspace:*",
         "engine-json": "workspace:*",
+        "engine-translate": "workspace:*",
+        "engine-world": "workspace:*",
       },
     },
     "src/translate": {

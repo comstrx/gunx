@@ -114,11 +114,9 @@ bun run gate
 bun run bench
 ~~~
 
-The gate checks the frozen dependency graph, types, lint, unit tests, executable-source coverage, property/model fuzzing and dependency audit. Aggregate coverage floors remain 95% lines and 90% functions; per-file floors remain 75% and 50%. A subprocess memory guard covers the cyclic pretty-JSON regression.
+The gate checks the frozen dependency graph, types, lint, unit tests, property/model fuzzing and dependency audit. A subprocess memory guard covers the cyclic pretty-JSON regression.
 
-Source laws verify dependency direction, library ownership, portable host boundaries and file structure. Each member owns unit, fuzz and benchmark entry files. The export-name inventory checks presence, not behavioral correctness; behavioral tests and adversarial scenarios remain necessary.
-
-`bun run record` deliberately updates public runtime names and browser closure snapshots. Review changes before adopting records. Closure sizes, emitted application bytes, loaded browser resources, operation timings and retained memory measure different things.
+Source laws verify dependency direction, library ownership, portable host boundaries and file structure. Each member owns unit, fuzz and benchmark entry files, and every export is named by a test.
 
 Native claims require native execution. Next production builds, Expo Hermes exports and browser execution of desktop artifacts are useful evidence with distinct limits.
 

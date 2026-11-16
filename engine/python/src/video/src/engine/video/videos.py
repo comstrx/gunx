@@ -13,11 +13,12 @@ from engine.stream import Hls, Variant
 from engine.thread import thread
 from .arch import (
     Asset, CLOUDFLARE, CODECS, EVEN, LONGEST, MICRO, Playback, Preset, Probe, Progress, RENDITIONS, SAMPLE, SECOND,
-    SHORTEST, SHOTS, SLOWEST, Track, WIDEST,
+    SHORTEST, SHOTS, SLOWEST, Still, Track, WIDEST,
 )
 from .cloudflare import Cloudflare
 from .driver import Driver
 from .local import Local
+lazy import av
 
 if TYPE_CHECKING:
 
@@ -227,8 +228,6 @@ class Videos:
 
     def _probe_ ( self, path: Path ) -> Probe:
 
-        import av
-
         try: container = av.open(str(path))
         except (av.FFmpegError, OSError) as error: raise self._refuse_(path, error) from error
 
@@ -259,8 +258,6 @@ class Videos:
 
     def _frame_ ( self, path: Path, at: float ) -> Picture:
 
-        import av
-
         try: container = av.open(str(path))
         except (av.FFmpegError, OSError) as error: raise self._refuse_(path, error) from error
 
@@ -276,7 +273,7 @@ class Videos:
 
             for frame in container.decode(stream):
 
-                if frame.time >= at - SECOND / 10: return Picture(frame.to_image(), "png")
+                if frame.time >= at - SECOND / 10: return Picture(cast("Still", frame).to_image(), "png")
 
             raise Fault(Code.NOT_FOUND, reason="video.frame")
 
@@ -284,8 +281,6 @@ class Videos:
         self, source: Path, target: Path, preset: Preset, options: dict[str, str] | None, progress: Progress | None,
         keyframes: float | None = None,
     ) -> None:
-
-        import av
 
         try: inbound = av.open(str(source))
         except (av.FFmpegError, OSError) as error: raise self._refuse_(source, error) from error
@@ -362,8 +357,6 @@ class Videos:
 
     def _remux_ ( self, source: Path, target: Path ) -> None:
 
-        import av
-
         try: inbound = av.open(str(source))
         except (av.FFmpegError, OSError) as error: raise self._refuse_(source, error) from error
 
@@ -381,8 +374,6 @@ class Videos:
                 outbound.mux(packet)
 
     def _audio_ ( self, source: Path, target: Path, codec: str, bitrate: int ) -> None:
-
-        import av
 
         try: inbound = av.open(str(source))
         except (av.FFmpegError, OSError) as error: raise self._refuse_(source, error) from error

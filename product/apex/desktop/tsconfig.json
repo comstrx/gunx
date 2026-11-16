@@ -39,7 +39,7 @@
   "include": [
     "src",
     "specs",
-    "tools",
+    "tool.config.ts",
     "tests",
     "native/types"
   ],

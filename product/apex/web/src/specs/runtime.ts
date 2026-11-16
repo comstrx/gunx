@@ -1,9 +1,10 @@
+import * as error from "engine/error";
 import * as event from "engine/event";
 import * as log from "engine/log";
 import * as seo from "engine/seo";
 import * as spec from "engine/spec";
 import * as translate from "engine/translate";
-import { addressOf, type Compiled, roleOf } from "@/specs/deployment.ts";
+import { type Compiled, roleOf } from "@/specs/deployment.ts";
 import type { Locale } from "@/types/index.ts";
 import { platform } from "@/types/platform.ts";
 import serialized from "../../.cache/spec/current.json" with { type: "json" };
@@ -13,7 +14,11 @@ export type Public = { indexable: boolean; url: string | undefined };
 
 export type Asked = { key: string; resolve: ( yes: boolean ) => void };
 
-export const compiled: Compiled = { ...spec.revive(serialized), role: roleOf(), address: addressOf(roleOf()) };
+const revived = spec.revive(serialized);
+
+if ( revived.surface.address === undefined ) throw error.fault("internal", "spec.address", { message: "the compiled spec names no api address; compile it again" });
+
+export const compiled: Compiled = { ...revived, role: roleOf(), address: revived.surface.address };
 const dictionaries = new Map(compiled.surface.locales.map(( locale ) => [locale, translate.dictionary(compiled.role.messages, locale, compiled.surface.locale)]));
 const sheets = new Map<string, Labels>();
 

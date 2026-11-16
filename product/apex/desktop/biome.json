@@ -70,18 +70,6 @@
   "overrides": [
     {
       "includes": [
-        "tools/**"
-      ],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noConsole": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": [
         "src/native/**"
       ],
       "linter": {

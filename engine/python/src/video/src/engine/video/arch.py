@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from engine.error import Code, Fault
 
@@ -163,3 +163,7 @@ RENDITIONS = (
     Preset("480p", width=854, crf=24, bandwidth=1_400_000),
     Preset("360p", width=640, crf=26, bandwidth=800_000),
 )
+
+class Still(Protocol):
+
+    def to_image ( self ) -> Any: ...

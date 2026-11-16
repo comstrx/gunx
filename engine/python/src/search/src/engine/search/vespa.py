@@ -1,10 +1,11 @@
 from collections.abc import Mapping, Sequence
 from typing import Any, override
+from urllib.parse import quote
 
 from engine.error import Code, Fault
 from engine.json import json
 from engine.net import Egress, Net, Remote
-from .arch import BOLD, Document, Hit, Query, Result, Schema
+from .arch import BOLD, Document, DOTS, Hit, Query, Result, Schema, SCHEMA
 from .engine import Engine
 import time
 
@@ -27,7 +28,7 @@ class Vespa(Engine):
     @override
     async def prepare ( self, index: str, schema: Schema ) -> None:
 
-        self._schemas[index] = schema
+        self._schemas[self._named_(index)] = schema
 
     @override
     async def index ( self, index: str, documents: Sequence[Document] ) -> int:
@@ -118,7 +119,7 @@ class Vespa(Engine):
     @override
     async def count ( self, index: str ) -> int:
 
-        body: dict[str, Any] = { "yql": f"select * from {index} where true", "hits": 0 }
+        body: dict[str, Any] = { "yql": f"select * from {self._named_(index)} where true", "hits": 0 }
         found = await self._remote.post("/search/", data=body)
 
         return int(((found.get("root") or {}).get("fields") or {}).get("totalCount", 0))
@@ -145,7 +146,16 @@ class Vespa(Engine):
 
     def _path_ ( self, index: str, id_: str ) -> str:
 
-        return f"/document/v1/{self._namespace}/{index}/docid/{id_}"
+        if id_ in DOTS: raise Fault(Code.VALIDATION, reason="search.id", errors={ "id": [id_] })
+
+        return f"/document/v1/{self._namespace}/{self._named_(index)}/docid/{quote(id_, safe='')}"
+
+    @staticmethod
+    def _named_ ( index: str ) -> str:
+
+        if SCHEMA.fullmatch(index): return index
+
+        raise Fault(Code.VALIDATION, reason="search.index", errors={ "index": [index[:64]] })
 
     def _body_ ( self, index: str, schema: Schema, query: Query ) -> dict[str, Any]:
 

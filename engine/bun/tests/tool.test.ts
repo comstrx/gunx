@@ -65,8 +65,8 @@ describe("tool", () => {
             "stores/cart.ts:2 unknown engine member: nope",
         ]);
         expect(result.edges["features/hello.tsx"]).toEqual(["components/button.tsx", "outside.ts", "react"]);
-        expect(tool.defineRules({ root: "/x", layers: ["a"] })).toMatchObject({ root: "/x", source: "src", alias: "@/", layers: ["a"], vendor: ["native"], engine: "engine", members: [], frameworkLayers: ["app"], outside: [] });
-        expect(tool.analyze({ root: temp.path, layers: ["api", "features"], framework: ["next"], frameworkLayers: ["features"], outside: ["outside.ts"] }).issues.map(( issue ) => issue.message)).not.toContain("an import leaves src: ../../outside.ts");
+        expect(tool.defineRules({ root: "/x", layers: ["a"] })).toMatchObject({ root: "/x", source: "src", alias: "@/", layers: ["a"], vendor: ["native"], engine: "engine", members: [], framework: {}, outside: [] });
+        expect(tool.analyze({ root: temp.path, layers: ["api", "features"], framework: { next: ["features"] }, outside: ["outside.ts"] }).issues.map(( issue ) => issue.message)).not.toContain("an import leaves src: ../../outside.ts");
         temp.remove();
 
     });
@@ -111,17 +111,6 @@ describe("tool", () => {
         expect(await disk.stat(temp.file("nope.txt"))).toBeUndefined();
         expect((await disk.list(temp.path)).map(( entry ) => entry.name)).toEqual(["a.txt"]);
         temp.remove();
-
-    });
-    it("an api record diff is minor on additions, major on removals, and the growth report names bytes", () => {
-
-        const before = { a: ["x", "y"], b: ["z"] };
-
-        expect(tool.apiDiff(before, { a: ["x", "y"], b: ["z"] })).toEqual({ kind: "none", added: [], removed: [] });
-        expect(tool.apiDiff(before, { a: ["x", "y", "w"], b: ["z"], c: ["q"] })).toEqual({ kind: "minor", added: ["a.w", "c.q"], removed: [] });
-        expect(tool.apiDiff(before, { a: ["x"], b: ["z", "k"] })).toEqual({ kind: "major", added: ["b.k"], removed: ["a.y"] });
-        expect(tool.sizeDiff({ a: 100, b: 50, c: null }, { a: 120, b: 50, c: 10 })).toEqual([{ member: "a", before: 100, after: 120, delta: 20 }]);
-        expect(tool.describeChange({ kind: "major", added: ["b.k"], removed: ["a.y"] }, [{ member: "a", before: 100, after: 90, delta: -10 }])).toBe("api: major\n- a.y\n+ b.k\n↓ a 100 → 90 (-10)");
 
     });
 });

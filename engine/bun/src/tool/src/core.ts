@@ -3,9 +3,9 @@ import { type Dirent, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, 
 import { dirname, join } from "node:path";
 import * as error from "engine-error";
 import * as json from "engine-json";
-import type { Member, Pending, Walked, WalkOptions } from "./arch.ts";
+import type { Member, Pending, Scope, View, Walked, WalkOptions } from "./arch.ts";
 
-const skipped: readonly string[] = ["node_modules", ".git", ".next", ".expo", "dist", "build", ".bun", ".cache", ".infra"];
+const skipped: readonly string[] = ["node_modules", ".git", ".next", ".expo", "dist", "build", ".bun", ".cache", ".cottontail-tmp", ".hutch", ".infra"];
 const deepest = 64;
 const widest = 64;
 
@@ -50,6 +50,18 @@ export function isMissing ( caught: unknown ): boolean {
     const code = typeof caught === "object" && caught !== null && "code" in caught ? caught.code : undefined;
 
     return code === "ENOENT" || code === "ENOTDIR";
+
+}
+export function counted ( count: number, noun: string ): string {
+
+    return `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+}
+export function viewIn ( scope: Scope ): View | undefined {
+
+    const role = scope.role;
+
+    return json.isRecord(role) && typeof role.name === "string" && json.isRecord(role.surface) ? role as View : undefined;
 
 }
 export function byText ( left: string, right: string ): number {
@@ -131,8 +143,12 @@ export function writeJson ( path: string, value: unknown ): boolean {
 
     if ( !made.ok || typeof made.value !== "string" ) throw error.fault("internal", "tool.json", { message: `${path}: the value has no json form`, cause: made.ok ? undefined : made.fault.cause });
 
-    const text = `${made.value}\n`;
+    return writeText(path, `${made.value}\n`);
 
+}
+export function writeText ( path: string, text: string ): boolean {
+
+    if ( typeof text !== "string" ) throw error.fault("internal", "tool.text", { message: `${path}: the content is not text` });
     if ( textAt(path) === text ) return false;
 
     const draft = `${path}.${process.pid}.tmp`;

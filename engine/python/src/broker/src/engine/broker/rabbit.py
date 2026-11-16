@@ -64,9 +64,11 @@ class Rabbit(Driver):
             message_id=message.id, delivery_mode=2, content_type="application/json", headers=dict(message.headers),
         )
 
+        if not isinstance(channel, aiormq.Channel): raise Fault(Code.INTERNAL, reason="broker.channel")
+
         try:
 
-            confirmation = await channel.basic_publish(  # type: ignore[call-arg]
+            confirmation = await channel.basic_publish(
                 json.encode(message.payload), exchange=self._exchange, routing_key=message.topic, mandatory=True,
                 properties=properties, timeout=self._wait, wait=False,
             )

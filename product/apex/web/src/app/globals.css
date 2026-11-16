@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import "tailwindcss" source("..");
 @import "../../.cache/styles/theme.css";
 @import "../../.cache/styles/fonts.css";
 

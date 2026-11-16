@@ -554,3 +554,50 @@ async def test_elasticsearch_meilisearch_and_vespa_speak_their_wire () -> None:
         assert facets.value.reason == "search.capability"
 
     await net.close()
+
+async def test_vespa_refuses_an_index_name_that_would_rewrite_its_query_or_path () -> None:
+
+    vespa = Vespa(net, "http://127.0.0.1:9", egress=LOCAL)
+
+    for name in ("books where true or true", "books/../../state", "", "books\n"):
+
+        for work in (vespa.count(name), vespa.get(name, "b1"), vespa.prepare(name, Schema(("title",), ()))):
+
+            with pytest.raises(Fault) as refused: await work
+
+            assert refused.value.reason == "search.index"
+
+async def test_vespa_keeps_every_document_id_inside_its_own_path () -> None:
+
+    hostile = ["a/b", "q?x=1", "h#y", "p%2Fz", "../../state", "a b", "ي/ك", "..x"]
+
+    async with VespaFake() as vespa:
+
+        engine = Vespa(net, vespa.base(), egress=LOCAL)
+
+        await engine.prepare("books", Schema(("title",), ()))
+
+        assert await engine.index("books", [Document(id_, { "title": id_ }) for id_ in hostile]) == len(hostile)
+        assert sorted(vespa.indexes["books"]) == sorted(hostile)
+
+        for id_ in hostile:
+
+            found = await engine.get("books", id_)
+
+            assert found is not None and found.fields == { "title": id_ }, id_
+
+        assert await engine.delete("books", hostile) == len(hostile) and vespa.indexes["books"] == {}
+
+        before = len(vespa.seen)
+
+        for id_ in ("", ".", ".."):
+
+            for work in (engine.get("books", id_), engine.delete("books", [id_])):
+
+                with pytest.raises(Fault) as refused: await work
+
+                assert refused.value.reason == "search.id"
+
+        assert len(vespa.seen) == before
+
+    await net.close()

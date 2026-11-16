@@ -14,9 +14,9 @@ bun:
   - changed-files:
       - any-glob-to-any-file: ['engine/bun/**']
 
-infra:
+bash:
   - changed-files:
-      - any-glob-to-any-file: ['engine/infra/**']
+      - any-glob-to-any-file: ['engine/bash/**']
 
 api:
   - changed-files:
@@ -45,7 +45,7 @@ global:
 ci:
   - changed-files:
       - any-glob-to-any-file:
-          ['.github/workflows/**', '.github/dependabot.yml', '.zizmor.yml', 'engine/infra/src/module/gate/**']
+          ['.github/workflows/**', '.github/dependabot.yml', '.zizmor.yml', 'engine/bash/src/module/gate/**']
 
 deps:
   - changed-files:

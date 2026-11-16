@@ -14,6 +14,7 @@ from .arch import (
 )
 from .fluent import Fluent
 import binascii, difflib, fnmatch, html, re, textwrap, unicodedata
+lazy from stringzilla import find
 
 class String:
 
@@ -858,8 +859,6 @@ class String:
         if not 0.0 <= floor <= 1.0: raise Fault(Code.INTERNAL, reason="string.floor")
 
     def _native_find_ ( self ) -> Callable[[bytes, bytes, int], int]:
-
-        from stringzilla import find
 
         return cast("Callable[[bytes, bytes, int], int]", find)
 

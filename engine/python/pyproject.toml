@@ -14,6 +14,7 @@ dev = [
     "tomli-w",
     "hypothesis",
     "mypy",
+    "numpy",
     "pip-audit",
     "pyjwt",
     "pytest",
@@ -53,6 +54,7 @@ constraint-dependencies = [
     "msgspec==0.22.0",
     "multidict==6.9.1",
     "mypy==2.4.1",
+    "numpy==2.5.5",
     "obstore==0.12.1",
     "orjson==3.13.0",
     "pamqp==5.0.0",
@@ -172,14 +174,16 @@ ignore = [
     "N811",
     "N812",
 ]
+allowed-confusables = ["ı", "ا", "ه"]
+logger-objects = ["engine.log.log"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/test_engine.py" = ["S603"]
 "tests/**" = [
     "INP001",
     "S101",
     "S105",
     "S106",
+    "S603",
     "PLR0915",
     "PLR2004",
     "PT012",
@@ -190,41 +194,28 @@ ignore = [
 ]
 "benches/**" = ["INP001", "T201", "PLR2004", "ARG001", "E501"]
 "fuzz/**" = ["INP001", "S101", "T201", "PLR2004", "PT018", "E501"]
-"src/engine/src/engine/__init__.py" = ["E402"]
-"src/*/src/engine/*/__init__.py" = ["PLC0414"]
-"src/ai/src/engine/ai/ai.py" = ["BLE001"]
-"src/schedule/src/engine/schedule/schedule.py" = ["BLE001"]
-"src/socket/src/engine/socket/sockets.py" = ["BLE001"]
-"src/broadcast/src/engine/broadcast/broadcast.py" = ["BLE001"]
-"src/ai/src/engine/ai/model.py" = ["ARG002"]
+"src/**" = ["ASYNC109"]
 "src/adapter/src/engine/adapter/manager.py" = ["BLE001"]
+"src/ai/src/engine/ai/model.py" = ["ARG002"]
 "src/array/src/engine/array/array.py" = ["PLC0415"]
 "src/broker/src/engine/broker/broker.py" = ["BLE001"]
 "src/broker/src/engine/broker/driver.py" = ["ARG002"]
-"src/broker/src/engine/broker/kafka.py" = ["PLC0415"]
-"src/cache/src/engine/cache/channel.py" = ["PLC0415"]
 "src/cli/src/engine/cli/cli.py" = ["BLE001"]
 "src/context/src/engine/context/deferral.py" = ["BLE001"]
-"src/database/src/engine/database/clickhousedriver.py" = ["PLC0415"]
-"src/database/src/engine/database/database.py" = ["PLC0415"]
 "src/database/src/engine/database/dialect.py" = ["ARG002", "S608"]
-"src/database/src/engine/database/driver.py" = ["ARG002", "ASYNC109"]
+"src/database/src/engine/database/driver.py" = ["ARG002"]
 "src/database/src/engine/database/lane.py" = ["BLE001"]
-"src/database/src/engine/database/mongo.py" = ["PLC0415"]
-"src/database/src/engine/database/mysqldriver.py" = ["PLC0415", "PLR0911"]
+"src/database/src/engine/database/mysqldriver.py" = ["PLR0911"]
 "src/database/src/engine/database/outbox.py" = ["BLE001"]
 "src/database/src/engine/database/postgresdriver.py" = ["C901", "PLR0911"]
-"src/database/src/engine/database/session.py" = ["ASYNC109"]
 "src/database/src/engine/database/sql.py" = ["S608"]
-"src/database/src/engine/database/sqlitedriver.py" = ["ASYNC109", "PLR0911"]
+"src/database/src/engine/database/sqlitedriver.py" = ["PLR0911"]
 "src/date/src/engine/date/date.py" = ["DTZ007"]
 "src/domain/src/engine/domain/registrar.py" = ["ARG002"]
-"src/event/src/engine/event/events.py" = ["ASYNC109", "BLE001"]
 "src/exception/src/engine/exception/exceptions.py" = ["BLE001"]
 "src/fs/src/engine/fs/file.py" = ["PLC0415"]
 "src/fs/src/engine/fs/watch.py" = ["PLC0415"]
 "src/func/src/engine/func/batch.py" = ["BLE001"]
-"src/func/src/engine/func/func.py" = ["ASYNC109"]
 "src/func/src/engine/func/limiter.py" = ["ASYNC110"]
 "src/gateway/src/engine/gateway/provider.py" = ["ARG002"]
 "src/geo/src/engine/geo/geocoder.py" = ["ARG002"]
@@ -233,24 +224,21 @@ ignore = [
 "src/http/src/engine/http/request.py" = ["S104"]
 "src/log/src/engine/log/log.py" = ["LOG004"]
 "src/mail/src/engine/mail/mailer.py" = ["ARG002"]
-"src/net/src/engine/net/net.py" = ["ASYNC109", "PLR0913"]
+"src/net/src/engine/net/net.py" = ["PLR0913"]
 "src/notify/src/engine/notify/pusher.py" = ["ARG002"]
+"src/queue/src/engine/queue/queue.py" = ["TRY400"]
 "src/rag/src/engine/rag/store.py" = ["ARG002"]
 "src/rand/src/engine/rand/rand.py" = ["S311"]
+"src/schedule/src/engine/schedule/schedule.py" = ["TRY400"]
 "src/search/src/engine/search/engine.py" = ["ARG002"]
 "src/search/src/engine/search/vespa.py" = ["S608"]
 "src/sms/src/engine/sms/texter.py" = ["ARG002"]
 "src/socket/src/engine/socket/socket.py" = ["BLE001"]
-"src/string/src/engine/string/arch.py" = ["RUF001"]
-"src/string/src/engine/string/string.py" = ["PLC0415"]
-"src/test/src/engine/test/bench.py" = ["T201"]
-"src/test/src/engine/test/reply.py" = ["PLR2004"]
-"src/test/src/engine/test/stage.py" = ["ARG001"]
 "src/thread/src/engine/thread/cluster.py" = ["PLC0415"]
+"src/thread/src/engine/thread/thread.py" = ["BLE001", "PLR0913", "PLR0917"]
 "src/token/src/engine/token/token.py" = ["A002", "PLR0913"]
-"src/thread/src/engine/thread/thread.py" = ["ASYNC109", "BLE001", "PLR0913", "PLR0917"]
 "src/video/src/engine/video/driver.py" = ["ARG002"]
-"src/video/src/engine/video/videos.py" = ["C901", "PLC0415", "PLR0912"]
+"src/video/src/engine/video/videos.py" = ["C901", "PLR0912"]
 
 [tool.ruff.lint.flake8-builtins]
 builtins-ignorelist = ["dir"]
@@ -283,12 +271,8 @@ mypy_path = "src/engine/src:src/adapter/src:src/ai/src:src/array/src:src/auth/sr
 files = ["src/*/src/engine", "tests", "benches", "fuzz", "metadata.py", "distribution.py"]
 
 [[tool.mypy.overrides]]
-module = ["stringzilla", "pyroaring", "aiokafka", "aiokafka.*", "ray", "ray.*"]
+module = ["stringzilla", "aiokafka", "aiokafka.*", "ray", "ray.*"]
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["engine.http.app", "engine.cache.channel", "engine.video.videos"]
-disallow_untyped_calls = false
 
 [[tool.mypy.overrides]]
 module = ["engine.broker.cursor"]
@@ -301,4 +285,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 strict = true
-filterwarnings = ["error", "ignore:'return' in a 'finally' block:SyntaxWarning"]
+filterwarnings = [
+    "error",
+    "ignore:'return' in a 'finally' block:SyntaxWarning:sanic\\.server\\.websockets\\.impl\\Z",
+]

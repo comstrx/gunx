@@ -4,7 +4,7 @@ from typing import Any
 from engine.error import Code, Fault
 from engine.string import string
 from engine.thread import thread
-from .arch import BROKEN, CHUNK, LEVELS, OPENERS, PACK_ITEMS, PACK_MAX, RATIO, SUFFIXES, TARS, Target
+from .arch import BROKEN, CHUNK, LEVELS, OPENERS, PACK_ITEMS, PACK_MAX, RATIO, SUFFIXES, Tar, TARS, Target
 import pathlib, shutil, tarfile, zipfile
 
 class Pack:
@@ -131,10 +131,10 @@ class Pack:
         return goal
 
     def _tar_ (
-        self, goal: pathlib.Path, items: list[pathlib.Path], base: pathlib.Path | None, mode: str,
+        self, goal: pathlib.Path, items: list[pathlib.Path], base: pathlib.Path | None, mode: Tar,
     ) -> pathlib.Path:
 
-        with tarfile.open(goal, mode) as bundle:  # type: ignore[call-overload]
+        with tarfile.open(goal, mode) as bundle:
 
             for item in items: bundle.add(item, arcname=str(item.relative_to(base or item.parent)))
 

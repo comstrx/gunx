@@ -293,7 +293,7 @@ class Events:
             try: await listener(event)
             except Exception as error:
 
-                log.error("event.listener", name=event.name, reason=Fault.wrap(error).reason, remote=remote)
+                log.exception("event.listener", name=event.name, reason=Fault.wrap(error).reason, remote=remote)
 
                 if remote: raise
 

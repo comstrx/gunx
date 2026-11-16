@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
-from typing import Any, ClassVar, TYPE_CHECKING, override
+from typing import Any, ClassVar, override
 from uuid import UUID
 
 from engine.date import DateTime, date
@@ -17,10 +17,8 @@ from .driver import Driver
 from .mysql import MYSQL
 from .vector import Vector
 import asyncio, inspect, ssl
-
-if TYPE_CHECKING:
-
-    import asyncmy
+lazy import asyncmy
+lazy from asyncmy.cursors import DictCursor
 
 class MysqlDriver(Driver):
 
@@ -46,9 +44,6 @@ class MysqlDriver(Driver):
     async def connect ( self ) -> None:
 
         if self._pool is not None: return
-
-        import asyncmy
-        from asyncmy.cursors import DictCursor
 
         self.failures = (asyncmy.errors.MySQLError, OSError, TimeoutError)
 

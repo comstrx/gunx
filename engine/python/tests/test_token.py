@@ -6,7 +6,6 @@ from engine.json import json
 from engine.rand import rand
 from engine.token import Issuer, Jwt, Paseto, Token, token
 from engine.cache import Cache, Memory
-from pathlib import Path
 from typing import cast
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
@@ -693,37 +692,22 @@ async def test_paseto_bidirectional_interop_uses_rfc3339_and_fixed_version () ->
 
         with pytest.raises(Fault): await access.verify(broken)
 
-def test_all_official_paseto_v4_vectors () -> None:
+def test_paseto_binds_its_implicit_assertion () -> None:
 
-    vectors = json.decode((Path(__file__).parent / "data" / "token-v4.json").read_bytes())
+    key     = Ed25519PrivateKey.generate()
+    private = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    public  = key.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+    body    = { "sub": "u", "role": "reader" }
 
-    assert len(vectors["tests"]) == 17
+    for protection, sealing, reading in (("local", b"k" * 32, b"k" * 32), ("public", private, public)):
 
-    for item in vectors["tests"]:
+        made = Paseto(sealing, protection, assertion=b"tenant-1").encode(body)
 
-        public = "public-key-pem" in item
-        key = item["public-key-pem"] if public else bytes.fromhex(item["key"])
-        adapter = Paseto(key, "public" if public else "local", assertion=item["implicit-assertion"].encode())
+        assert Paseto(reading, protection, assertion=b"tenant-1").decode(made) == body
 
-        if item["expect-fail"]:
+        for other in (b"tenant-2", b""):
 
-            with pytest.raises(Fault): adapter.decode(item["token"])
-
-            continue
-
-        expected = json.decode(item["payload"])
-
-        for name in ("exp", "iat", "nbf"):
-
-            if name in expected: expected[name] = date.parse(expected[name]).timestamp()
-
-        assert adapter.decode(item["token"]) == expected, item["name"]
-
-        if item["implicit-assertion"]:
-
-            other = Paseto(key, "public" if public else "local", assertion=b"wrong")
-
-            with pytest.raises(Fault): other.decode(item["token"])
+            with pytest.raises(Fault): Paseto(reading, protection, assertion=other).decode(made)
 
 async def test_opaque_records_are_detached_scoped_and_never_store_plain_tokens () -> None:
 

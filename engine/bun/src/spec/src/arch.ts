@@ -66,6 +66,7 @@ export type Surface = {
     world: world.Catalog[];
     locales: string[];
     locale: string;
+    address?: string | undefined;
     screens: Screen[];
     signals: string[];
 };
@@ -127,7 +128,7 @@ export type ScreenOptions = {
     triggers?: Trigger[] | undefined;
     flow?: string[] | undefined;
 };
-export type SurfaceOptions = { name: string; role: string; platform?: Platform | undefined; world?: world.Catalog[] | undefined; locales?: string[] | undefined; locale?: string | undefined; screens: Screen[]; signals?: string[] | undefined };
+export type SurfaceOptions = { name: string; role: string; platform?: Platform | undefined; world?: world.Catalog[] | undefined; locales?: string[] | undefined; locale?: string | undefined; address?: string | undefined; screens: Screen[]; signals?: string[] | undefined };
 export type Input = Record<string, Value>;
 export type Issue = { path: string; rule: string; message: string; near?: string | undefined; fix?: string | undefined };
 export type Edge = { from: string; to: string };
@@ -141,6 +142,15 @@ export type Compiled = {
     kinds: string[];
     topics: { emitted: string[]; consumed: string[] };
     issues: Issue[];
+};
+export type Named<R> = Extract<keyof R, string>;
+export type RolesOptions<R extends Readonly<Record<string, object>>, C extends Compiled> = { roles: R; current?: Named<R> | undefined; compile: ( name: Named<R> ) => C };
+export type Roles<R extends Readonly<Record<string, object>>, C extends Compiled> = {
+    readonly roles: R;
+    readonly names: readonly Named<R>[];
+    readonly current: Named<R>;
+    compile: ( name: Named<R> ) => C;
+    serialize: ( compiled: Compiled ) => json.Dictionary;
 };
 export type Options = {
     kinds?: readonly string[] | undefined;

@@ -2,7 +2,7 @@
   "name": "engine-tool",
   "private": true,
   "type": "module",
-  "description": "Tool: the surface analyzer, engine members, json files, the node disk, records",
+  "description": "Tool: the project DSL, specs, budgets, the surface analyzer and the node disk",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
@@ -10,6 +10,8 @@
   "dependencies": {
     "engine-error": "workspace:*",
     "engine-fs": "workspace:*",
-    "engine-json": "workspace:*"
+    "engine-json": "workspace:*",
+    "engine-translate": "workspace:*",
+    "engine-world": "workspace:*"
   }
 }

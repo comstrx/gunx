@@ -12,7 +12,10 @@ from engine.health import health
 from engine.log import log
 from engine.thread import Gate
 from engine.token import Issuer
-from .arch import Answer, Bound, INSTANCES, Lifecycle, Limits, Middleware, Mountable, Next, PHASES, Renderer
+from .arch import (
+    Answer, Bound, INSTANCES, Lifecycle, Limits, Middleware, Mountable, Next, PHASES, Renderer, Resettable, Responding,
+    Served,
+)
 from .binder import Binder
 from .channel import Channel
 from .docs import Docs
@@ -218,7 +221,7 @@ class App:
                 await edge.leave(request, response)
 
             edged.on_request(enter)
-            edged.on_response(leave)
+            cast("Responding", edged).on_response(leave)
 
             for channel in self._channels.values(): self._upgrade_(edged, channel)
             for prefix, folder in self._public: self._serve_(edged, prefix, folder)
@@ -285,7 +288,7 @@ class App:
         sock.settimeout(0.0)
 
         bound  = sock.getsockname()[1]
-        server = await self._sanic.create_server(sock=sock, return_asyncio_server=True)
+        server = cast("Served | None", await self._sanic.create_server(sock=sock, return_asyncio_server=True))
 
         if server is None: raise Fault(Code.INTERNAL, reason="http.listen")
 
@@ -306,8 +309,8 @@ class App:
             await server.after_stop()
 
             sock.close()
-            self._sanic.router.reset()
-            self._sanic.signal_router.reset()
+            cast("Resettable", self._sanic.router).reset()
+            cast("Resettable", self._sanic.signal_router).reset()
 
     async def start ( self ) -> None:
 

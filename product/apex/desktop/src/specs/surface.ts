@@ -3,7 +3,7 @@ import * as validate from "engine/validate";
 import { catalogue, manifests } from "@/api/index.ts";
 import { addressOf, type Compiled, type Deployment, deployment, type Role, roleOf } from "@/specs/deployment.ts";
 import { platform } from "@/types/platform.ts";
-import type { RoleName } from "../../specs/index.ts";
+import { current, type RoleName, roles } from "../../specs/index.ts";
 
 const space = validate.enum(["none", "xs", "sm", "md", "lg", "xl"]);
 
@@ -27,7 +27,7 @@ export function compileRole ( name: RoleName, given: Deployment = deployment() )
 
     const role: Role = roleOf(name);
     const address = addressOf(role, given);
-    const surface = spec.surface({ name: `${platform}-${role.role}`, role: role.role, platform, world: [...(role.config.settings.world ?? [])], locales: [...role.config.settings.locales], locale: role.config.settings.locale, screens: [...role.screens] });
+    const surface = spec.surface({ name: `${platform}-${role.role}`, role: role.role, platform, world: [...(role.config.settings.world ?? [])], locales: [...role.config.settings.locales], locale: role.config.settings.locale, address, screens: [...role.screens] });
 
     const sheet = (role.messages as Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>)[surface.locale];
     const texts = Object.entries(sheet ?? {}).flatMap(([feature, keys]) => Object.keys(keys).map(( key ) => `${feature}.${key}`));
@@ -35,3 +35,5 @@ export function compileRole ( name: RoleName, given: Deployment = deployment() )
     return { ...spec.compile(surface, { blocks, features: manifests, catalogue, texts, grants: [...role.config.settings.grants], maxDepth: 4 }), role, address };
 
 }
+
+export const specs = spec.roles({ roles, current, compile: compileRole });

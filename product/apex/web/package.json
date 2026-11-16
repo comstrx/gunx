@@ -26,14 +26,15 @@
   },
   "scripts": {
     "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/bun && pwd)/.bun\" bun install --frozen-lockfile",
-    "compile": "bun tools/compile.ts",
-    "check": "bun tools/compile.ts && tsc -p . && bun tools/analyze.ts",
-    "typecheck": "tsc -p .",
-    "lint": "biome ci .",
-    "test": "bun test ./tests",
-    "build": "bun tools/build.ts",
-    "dev": "bun tools/compile.ts && next dev",
-    "audit": "bun audit --audit-level=low",
-    "gate": "bun run deps && bun run check && bun run lint && bun run test && bun run build && bun run audit"
+    "tool": "bun node_modules/engine/bin/tool.ts",
+    "compile": "bun run tool compile",
+    "check": "bun run tool check",
+    "lint": "bun run tool lint",
+    "test": "bun run tool test",
+    "build": "bun run tool build",
+    "release": "bun run tool release",
+    "dev": "bun run tool dev",
+    "audit": "bun run tool audit",
+    "gate": "bun run deps && bun run tool gate"
   }
 }

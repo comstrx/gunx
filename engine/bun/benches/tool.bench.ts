@@ -1,15 +1,12 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import * as stage from "engine/test";
 import * as tool from "engine/tool";
 import { bench, do_not_optimize, run } from "mitata";
 
 const engine = resolve(import.meta.dir, "..");
-const record = join(engine, "tests", "api.json");
-const surface = tool.readJson<tool.Surface>(record) ?? {};
-const grown = Object.fromEntries(Object.entries(surface).map(([member, names]) => [member, [...names, "extra"]]));
-const sizes = Object.fromEntries(Object.keys(surface).map(( member, at ) => [member, at * 100]));
-const resized = Object.fromEntries(Object.keys(surface).map(( member, at ) => [member, at * 100 + (at % 3)]));
+const members = readdirSync(join(engine, "src"), { withFileTypes: true }).filter(( entry ) => entry.isDirectory() && entry.name !== "engine").map(( entry ) => entry.name);
+const surface: Record<string, string[]> = Object.fromEntries(await Promise.all(members.map(async ( member ) => [member, Object.keys(await import(`engine/${member}`)).sort()] as const)));
 const temp = stage.tmp("engine-tool-bench-");
 const kilobyte = "x".repeat(1024);
 const megabyte = new Uint8Array(1024 * 1024);
@@ -37,15 +34,15 @@ bench("tool.members", () => do_not_optimize(tool.members(engine)));
 bench("tool.walk.src", () => do_not_optimize(tool.walk(resolve(engine, "src"), { extensions: [".ts"] })));
 bench("tool.walk.src ignore", () => do_not_optimize(tool.walk(resolve(engine, "src"), { extensions: [".ts"], ignore: ["world/asset", "data"] })));
 bench("tool.sizeOf.src", () => do_not_optimize(tool.sizeOf(resolve(engine, "src"), [".ts"])));
+bench("tool.measure.src ts", () => do_not_optimize(tool.measure(resolve(engine, "src"), "*/src/**/*.ts")));
+bench("tool.measure.src ts gzip", () => do_not_optimize(tool.measure(resolve(engine, "src"), "*/src/**/*.ts", true)));
 bench("tool.analyze.40", () => do_not_optimize(tool.analyze({ root: temp.path, layers, members: ["json"] })));
 bench("tool.defineRules", () => do_not_optimize(tool.defineRules({ root: temp.path, layers })));
-bench("tool.apiDiff record", () => do_not_optimize(tool.apiDiff(surface, grown)));
-bench("tool.sizeDiff", () => do_not_optimize(tool.sizeDiff(sizes, resized)));
-bench("tool.describeChange", () => do_not_optimize(tool.describeChange(tool.apiDiff(surface, grown), tool.sizeDiff(sizes, resized))));
 bench("tool.digestOf 1KB", () => do_not_optimize(tool.digestOf(kilobyte)));
 bench("tool.digestOf 1MB", () => do_not_optimize(tool.digestOf(megabyte)));
-bench("tool.readJson record", () => do_not_optimize(tool.readJson(record)));
+bench("tool.readJson manifest", () => do_not_optimize(tool.readJson(join(engine, "package.json"))));
 bench("tool.writeJson unchanged", () => do_not_optimize(tool.writeJson(written, surface)));
+bench("tool.render", () => do_not_optimize(tool.render("<html lang=\"{{lang}}\"><meta content=\"{{csp}}\"></html>", { lang: "ar", csp: tool.csp("https://api.example.test/v1") })));
 
 await run();
 

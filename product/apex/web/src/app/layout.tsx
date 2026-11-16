@@ -21,7 +21,7 @@ export default function Layout ({ children }: { children: ReactNode } ) {
     return (
         <html lang={locale} dir={translate.direction(locale)} suppressHydrationWarning>
             <head>
-                <script src="/appearance.js" data-appearance={JSON.stringify({ locales: compiled.surface.locales, scheme: compiled.role.config.settings.scheme })} />
+                <script src="/appearance.js" data-locales={compiled.surface.locales.join(" ")} data-scheme={compiled.role.config.settings.scheme} />
                 {["readex-pro-arabic", "figtree-latin"].map(( file ) => <link key={file} rel="preload" as="font" type="font/woff2" crossOrigin="anonymous" href={`/fonts/${file}.woff2`} />)}
             </head>
             <body>{children}</body>

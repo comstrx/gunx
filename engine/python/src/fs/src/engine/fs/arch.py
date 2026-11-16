@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime as DateTime
-from typing import Any
+from typing import Any, Literal
 
 from compression import zstd
 from engine.date import date
@@ -10,6 +10,7 @@ import asyncio, bz2, gzip, lzma, os, pathlib, tarfile, zipfile, zlib
 
 type Target  = str | os.PathLike[str]
 type Reader  = Callable[[pathlib.Path, int], Awaitable[bytes]]
+type Tar     = Literal["w", "w:gz", "w:zst", "w:xz", "w:bz2"]
 type Watcher = Callable[[pathlib.Path, bool, float, asyncio.Event | None], AsyncIterator[list[Change]]]
 
 MAX_READ = 64 * 1024 * 1024
@@ -38,7 +39,7 @@ RATIO    = 200
 SUFFIXES = { "gzip": ".gz", "zstd": ".zst", "xz": ".xz", "bz2": ".bz2" }
 OPENERS: dict[str, Callable[..., Any]] = { "gzip": gzip.open, "zstd": zstd.open, "xz": lzma.open, "bz2": bz2.open }
 LEVELS   = { "gzip": "compresslevel", "zstd": "level", "xz": "preset", "bz2": "compresslevel" }
-TARS: dict[str, str] = {
+TARS: dict[str, Tar] = {
     ".tar": "w", ".tar.gz": "w:gz", ".tgz": "w:gz", ".tar.zst": "w:zst", ".tar.xz": "w:xz", ".tar.bz2": "w:bz2",
 }
 

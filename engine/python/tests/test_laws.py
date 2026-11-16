@@ -1,15 +1,116 @@
 from pathlib import Path
 from engine.parse import parse
-import ast, re, sys
+import ast, engine, importlib, io, re, sys, tokenize
 
 ROOT    = Path(__file__).resolve().parents[1]
 SRC     = ROOT / "src"
 KEPT    = frozenset({ "__pycache__", "py.typed" })
 MEMBERS = sorted(p.name for p in SRC.iterdir() if p.is_dir() and p.name != "engine")
 HEADER  = re.compile(r"^\s*(?:async\s+)?(?:def|class)\s+\S.*:\s*$")
-IMPORT  = re.compile(r"^(?:lazy )?from engine\.([a-z]+)")
 LIBRARY = re.compile(r"^(?:lazy )?(?:from|import)\s+([A-Za-z_][\w]*)")
 NATIVE  = frozenset(sys.stdlib_module_names) | { "engine" }
+BANNED  = frozenset(f"{root}{call}" for root in ("", "builtins.", "__builtins__.") for call in ("eval", "exec", "print"))
+
+REFINED = (
+    "error", "context", "json", "rand", "log", "adapter", "exception", "metric", "thread", "func",
+    "string", "date", "number", "array", "cast", "parse", "crypto", "token", "health", "validate",
+)
+
+LADDER = (
+    ("error", "context", "log"),
+    ("rand", "func", "thread", "adapter", "exception"),
+    ("json", "parse", "number", "date", "string", "array", "cast"),
+    ("crypto", "token", "validate", "config", "translate", "metric", "health", "cli"),
+    ("fs", "net", "cache", "stream", "storage", "view"),
+    ("database", "search"),
+    ("broker", "queue", "event", "schedule", "socket", "broadcast"),
+    ("http", "auth"),
+    ("mail", "sms", "notify", "gateway", "geo", "domain", "ai", "rag", "video"),
+    ("fake", "test"),
+)
+
+RUNG = {
+    name: index for index,
+    names in enumerate(LADDER) for name in names
+}
+
+SURFACE = {
+    "engine.adapter"   : ["Adapter", "Manager", "Receipt"],
+    "engine.ai"        : [
+        "Ai", "Anthropic", "Call", "Gemini", "Hosted", "Message", "Mock", "Model", "Ollama", "Openai", "Reply", "Tool",
+        "Turn", "ai",
+    ],
+    "engine.array"     : ["Array", "Page", "array"],
+    "engine.auth"      : ["Actor", "Auth", "Otp", "Relay", "Sessions", "auth"],
+    "engine.broadcast" : ["Broadcast", "broadcast"],
+    "engine.broker"    : ["Broker", "Driver", "Kafka", "Memory", "Message", "Rabbit", "broker"],
+    "engine.cache"     : ["Cache", "Channel", "Hit", "Memory", "Redis", "Store", "Tagged", "cache"],
+    "engine.cast"      : ["Cast", "cast"],
+    "engine.cli"       : ["Argument", "Cli", "Command"],
+    "engine.config"    : ["Config", "Env", "Settings", "config", "env"],
+    "engine.context"   : ["Context", "Deferral", "Opened", "Report", "Trace", "Work", "context"],
+    "engine.crypto"    : ["Crypto", "Hasher", "Key", "Pair", "Sealed", "crypto"],
+    "engine.database"  : [
+        "CLICKHOUSE", "Clickhouse", "ClickhouseDriver", "Cluster", "Column", "Database", "Dialect", "Documents",
+        "Driver", "Index", "Listener", "MYSQL", "Memory", "Migrator", "Model", "Mongo", "Mysql", "MysqlDriver",
+        "Operation", "Outbox", "POSTGRES", "Plan", "Postgres", "PostgresDriver", "Provision", "Record",
+        "Repository", "SQLITE", "Session", "Sql", "Sqlite", "SqliteDriver", "Table", "Vector", "database",
+        "outbox",
+    ],
+    "engine.date"      : ["Date", "DateTime", "Day", "Span", "TimeDelta", "UTC", "date"],
+    "engine.domain"    : ["Dns", "Domains", "Record", "Registrar", "domains"],
+    "engine.error"     : ["Bag", "Code", "Errors", "Fault", "Headers"],
+    "engine.event"     : ["Event", "Events", "Signal", "Subscriber", "events"],
+    "engine.exception" : ["Context", "Exceptions", "Factory", "Reporter", "exception"],
+    "engine.fake"      : ["Fake", "fake"],
+    "engine.fs"        : [
+        "Change", "Dir", "Encrypt", "File", "Image", "Info", "Pack", "Path", "Picture", "Watch", "dir",
+        "encrypt", "file", "image", "pack", "path", "watch",
+    ],
+    "engine.func"      : ["Batch", "Breaker", "Core", "Func", "Info", "Limiter", "Memo", "func"],
+    "engine.gateway"   : ["Charge", "Gateway", "Http", "Mock", "Provider", "Refund", "Webhook", "gateway"],
+    "engine.geo"       : ["Geo", "Place", "Point", "geo"],
+    "engine.health"    : ["Health", "Probe", "health"],
+    "engine.http"      : [
+        "Action", "Answer", "App", "Binder", "Channel", "Docs", "Edge", "Envelope", "Form", "Group", "Guard",
+        "Handler", "Layer", "Lifecycle", "Limits", "Middleware", "Mountable", "Next", "Renderer", "Request",
+        "Response", "Route", "Router", "Throttle",
+    ],
+    "engine.json"      : ["Json", "JsonValue", "json"],
+    "engine.log"       : ["Fields", "Log", "Logger", "Render", "log"],
+    "engine.mail"      : ["Http", "Log", "Mail", "Mailer", "Message", "Smtp", "mail"],
+    "engine.metric"    : ["Counter", "Gauge", "Histogram", "MEDIA", "Meter", "Metrics", "metrics"],
+    "engine.net"       : ["Egress", "Net", "Remote", "Reply", "net"],
+    "engine.notify"    : ["Http", "Log", "Notice", "Notify", "Pusher", "notify"],
+    "engine.number"    : ["Decimal", "Money", "Number", "number"],
+    "engine.parse"     : ["Document", "Email", "Mime", "Parse", "Url", "parse"],
+    "engine.queue"     : ["Job", "Queue", "Task", "Work", "queue"],
+    "engine.rag"       : ["Answer", "Chunk", "Database", "Hit", "Memory", "Rag", "Store", "rag"],
+    "engine.rand"      : ["Rand", "Uuid", "rand"],
+    "engine.schedule"  : ["Cron", "Plan", "Schedule", "Spot", "schedule"],
+    "engine.search"    : [
+        "Database", "Document", "Elastic", "Engine", "Hit", "Meili", "Memory", "Query", "Result", "Schema",
+        "Search", "Vespa", "search",
+    ],
+    "engine.sms"       : ["Http", "Log", "Sms", "Text", "Texter", "sms"],
+    "engine.socket"    : ["Frame", "Hub", "Socket", "Sockets", "sockets"],
+    "engine.storage"   : ["Disk", "Drive", "Policy", "Storage", "Stored", "storage"],
+    "engine.stream"    : [
+        "Dash", "Hls", "Pipe", "Range", "Representation", "Segment", "Served", "Stream", "Tee", "Upload",
+        "Uploads", "Variant", "stream",
+    ],
+    "engine.string"    : ["Fluent", "String", "string"],
+    "engine.test"      : ["Bench", "Client", "Reply", "Sample", "Stage", "stage"],
+    "engine.thread"    : ["Cluster", "Gate", "Lane", "Outcome", "Pool", "Run", "Tasks", "Thread", "thread"],
+    "engine.token"     : ["Claims", "Codec", "Issuer", "Jwt", "Opaque", "Pair", "Paseto", "Reference", "Settings", "Store", "Token", "token"],
+    "engine.translate" : ["Plural", "Translate", "plural", "translate"],
+    "engine.validate"  : ["Member", "Plan", "Resource", "Rules", "Shape", "Spec", "Validator", "field", "rules", "validator"],
+    "engine.video"     : [
+        "Asset", "Cloudflare", "Driver", "Local", "Playback", "Preset", "Probe", "RENDITIONS", "Track",
+        "Videos", "video",
+    ],
+    "engine.view"      : ["View", "view"],
+}
 
 def test_workspace_law_every_member_is_declared_once () -> None:
 
@@ -19,13 +120,15 @@ def test_workspace_law_every_member_is_declared_once () -> None:
 
     assert sorted(facade["project"]["dependencies"]) == [f"engine-{m}" for m in MEMBERS]
     assert all(f"engine-{m}" in sources for m in MEMBERS) and sources["engine"] == { "workspace": True }
+    assert root["tool"]["mypy"]["mypy_path"].split(":") == [f"src/{m}/src" for m in ("engine", *MEMBERS)]
 
     for member in MEMBERS:
 
         manifest = parse.toml((SRC / member / "pyproject.toml").read_text())
         project  = manifest["project"]
 
-        assert project["name"] == f"engine-{member}" and project["dynamic"] == ["version", "requires-python", "license"] and len(project["description"]) <= 80
+        assert project["name"] == f"engine-{member}" and len(project["description"]) <= 80
+        assert project["dynamic"] == ["version", "requires-python", "license"]
         assert sorted(project) == ["dependencies", "description", "dynamic", "name"], member
         assert manifest["tool"]["hatch"]["metadata"]["hooks"]["custom"]["path"] == "../../metadata.py"
         assert manifest["tool"]["hatch"]["build"]["targets"]["sdist"]["hooks"]["custom"]["path"] == "../../distribution.py"
@@ -77,11 +180,13 @@ def test_shape_law_domains_form_a_dag_and_declare_their_imports () -> None:
 
         for file in (SRC / member / "src" / "engine" / member).glob("*.py"):
 
-            for line in file.read_text().splitlines():
+            for node in ast.walk(ast.parse(file.read_text())):
 
-                found = IMPORT.match(line)
+                if isinstance(node, ast.Import): names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and not node.level: names = [f"{node.module}.{alias.name}" for alias in node.names]
+                else: continue
 
-                if found and found.group(1) != member: used.add(found.group(1))
+                used |= { name.removeprefix("engine.").split(".")[0] for name in names if name.partition(".")[0] == "engine" } - { member }
 
         assert used <= declared, f"{member} imports {sorted(used - declared)} without declaring them"
         assert member not in used
@@ -107,20 +212,6 @@ def test_shape_law_domains_form_a_dag_and_declare_their_imports () -> None:
     for member in MEMBERS: visit(member, ())
 
     assert edges["error"] == set() and "error" in edges["log"] | edges["context"]
-
-LADDER = (
-    ("error", "context", "log"),
-    ("rand", "func", "thread", "adapter", "exception"),
-    ("json", "parse", "number", "date", "string", "array", "cast"),
-    ("crypto", "token", "validate", "config", "translate", "metric", "health", "cli"),
-    ("fs", "net", "cache", "stream", "storage", "view"),
-    ("database", "search"),
-    ("broker", "queue", "event", "schedule", "socket", "broadcast"),
-    ("http", "auth"),
-    ("mail", "sms", "notify", "gateway", "geo", "domain", "ai", "rag", "video"),
-    ("fake", "test"),
-)
-RUNG = { name: index for index, names in enumerate(LADDER) for name in names }
 
 def test_ladder_law_a_member_leans_only_on_members_at_or_below_its_rung () -> None:
 
@@ -177,6 +268,16 @@ def test_facade_law_every_package_exports_a_sorted_surface () -> None:
 
         assert names == sorted(names, key=lambda n: (0 if n.isupper() else 1 if n[0].isupper() else 2, n)), member
 
+def test_surface_law_every_domain_exports_exactly_its_recorded_surface () -> None:
+
+    for name, exported in SURFACE.items(): assert sorted(importlib.import_module(name).__all__) == exported, name
+
+def test_surface_law_the_facade_reaches_every_recorded_domain () -> None:
+
+    assert sorted(engine.__all__) == [name.removeprefix("engine.") for name in SURFACE]
+
+    for name in engine.__all__: assert getattr(engine, name) is not None, name
+
 def test_blank_line_law_every_header_breathes () -> None:
 
     offenders: list[str] = []
@@ -189,7 +290,9 @@ def test_blank_line_law_every_header_breathes () -> None:
 
             if HEADER.match(line) and lines[index + 1].strip() and not line.rstrip().endswith("..."):
 
-                if not line.lstrip().startswith("def") and not line.lstrip().startswith("async def") and not line.lstrip().startswith("class"): continue
+                header = line.lstrip()
+
+                if not header.startswith(("def", "async def", "class")): continue
 
                 offenders.append(f"{file.relative_to(ROOT)}:{index + 1}")
 
@@ -201,20 +304,20 @@ def test_purity_law_no_comments_prints_or_evals_in_sources () -> None:
 
     for file in SRC.rglob("*.py"):
 
-        for index, line in enumerate(file.read_text().splitlines(), 1):
+        text = file.read_text()
+        name = file.relative_to(ROOT)
 
-            stripped = line.strip()
+        offenders += [
+            f"{name}:{piece.start[0]}: comment" for piece in tokenize.generate_tokens(io.StringIO(text).readline)
+            if piece.type == tokenize.COMMENT
+        ]
 
-            if stripped.startswith("#") or "eval(" in stripped or "exec(" in stripped or re.search(r"(^|\s)print\(", stripped):
+        offenders += [
+            f"{name}:{node.lineno}: {ast.unparse(node.func)}" for node in ast.walk(ast.parse(text))
+            if isinstance(node, ast.Call) and ast.unparse(node.func) in BANNED
+        ]
 
-                offenders.append(f"{file.relative_to(ROOT)}:{index}")
-
-    assert [o for o in offenders if "/test/" not in o] == []
-
-REFINED = (
-    "error", "context", "json", "rand", "log", "adapter", "exception", "metric", "thread", "func",
-    "string", "date", "number", "array", "cast", "parse", "crypto", "token", "health", "validate",
-)
+    assert offenders == []
 
 def test_refined_packages_keep_implementation_in_classes () -> None:
 
@@ -246,6 +349,7 @@ def test_refined_arch_files_hold_declarations_only () -> None:
         for node in ast.walk(tree):
 
             if isinstance(node, ast.Lambda): offenders.append(f"{member}/arch.py: lambda implementation")
+
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)): continue
 
             declaration = (

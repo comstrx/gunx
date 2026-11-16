@@ -1,0 +1,14 @@
+@use module::gate::src::bash
+@use module::gate::src::bun
+@use module::gate::src::changes
+@use module::gate::src::go
+@use module::gate::src::install
+@use module::gate::src::life
+@use module::gate::src::python
+@use module::gate::src::root
+@use module::gate::src::run
+@use module::gate::src::rust
+@use module::gate::src::safety
+@use module::gate::src::semver
+@use module::gate::src::target
+@use module::gate::src::usage

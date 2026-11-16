@@ -4,6 +4,9 @@
   "type": "module",
   "description": "The one door into the engine: one subpath per member.",
   "sideEffects": false,
+  "bin": {
+    "tool": "./bin/tool.ts"
+  },
   "exports": {
     ".": {
       "browser": "./src/runtime.ts",

@@ -22,8 +22,8 @@ const output = process.env.WEB_OUTPUT === "standalone" ? "standalone" : "export"
 const config: NextConfig = {
     output,
     reactStrictMode: true,
-    env: { API_URL: process.env.API_URL ?? "", ENGINE_ENV: process.env.ENGINE_ENV ?? "" },
     poweredByHeader: false,
+    agentRules: false,
     transpilePackages: ["engine", ...members],
     trailingSlash: false,
     images: { unoptimized: true },

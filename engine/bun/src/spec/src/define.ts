@@ -72,6 +72,7 @@ export function surface ( given: SurfaceOptions ): Surface {
         world: given.world ?? [],
         locales: given.locales ?? ["en"],
         locale: given.locale ?? given.locales?.[0] ?? "en",
+        ...(given.address === undefined ? {} : { address: given.address }),
         screens: given.screens,
         signals: given.signals ?? [],
     });
