@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Binding, Equal, Memo, Renderer, Source } from "./arch.ts";
 import { readable, shallow } from "./derive.ts";
 
@@ -18,7 +18,7 @@ export function bind<T> ( source: Source<T>, server?: () => T, using?: Renderer 
 
     const useSelect = <R>( select: ( state: T ) => R, equal: Equal<R> = Object.is ): R => {
 
-        if ( using === undefined ) throw error.fault("unavailable", "state.renderer", { message: "a state binding needs a surface renderer" });
+        if ( using === undefined ) throw exception.fault("unavailable", "state.renderer", { message: "a state binding needs a surface renderer" });
 
         const last = using.ref<Memo<T, R> | undefined>(undefined);
         const read = ( state: T ): R => {

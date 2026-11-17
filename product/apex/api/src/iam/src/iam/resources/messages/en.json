@@ -5,6 +5,9 @@
     "session.revoked": "The session was ended",
     "session.input": "Check the email and the code",
     "session.tenant": "This workspace is not available",
-    "session.member": "You are not a member of this workspace"
+    "session.member": "You are not a member of this workspace",
+    "avatar.empty": "Choose an image first",
+    "avatar.kind": "The photo must be a PNG, JPG or WebP image",
+    "avatar.missing": "This account has no photo"
   }
 }

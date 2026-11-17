@@ -2,13 +2,10 @@
   "name": "engine-error",
   "private": true,
   "type": "module",
-  "description": "Faults: the closed code set, status, reason, field errors, envelope, flow guards",
+  "description": "Errors: the closed code set, each code's status and message, a failure's shape",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
   },
-  "dependencies": {
-    "engine-json": "workspace:*",
-    "engine-string": "workspace:*"
-  }
+  "dependencies": {}
 }

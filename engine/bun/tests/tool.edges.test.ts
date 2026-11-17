@@ -2,11 +2,11 @@ import { describe, expect, test as it } from "bun:test";
 import { mkdirSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as stage from "engine/test";
 import * as tool from "engine/tool";
 
-const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return error.isFault(caught) ? caught.reason ?? "?" : "?"; } };
+const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return exception.isFault(caught) ? caught.reason ?? "?" : "?"; } };
 
 describe("tool.edges", () => {
 
@@ -40,10 +40,10 @@ describe("tool.edges", () => {
             const result = tool.analyze({ root: temp.path, layers: ["api", "stores", "features", "app"], members: ["json"], framework: { next: ["app"] } });
 
             expect(result.issues.map(( issue ) => `${issue.file}:${issue.line} ${issue.rule} ${issue.message}`)).toEqual([
-                "api/a.ts:19 vendor a third-party import outside native/: @scope/pkg",
+                "api/a.ts:19 vendor a third-party import outside host/: @scope/pkg",
                 "api/a.ts:20 member an import reaches inside an engine member: engine/json/src/x",
                 "api/a.ts:21 member the whole engine is imported, name a member: engine",
-                "features/f.tsx:1 vendor a third-party import outside native/: next/link",
+                "features/f.tsx:1 vendor a third-party import outside host/: next/link",
                 "index.ts:1 layer not in a layer: index.ts",
                 "stores/up.ts:1 layer stores reaches up into features: @/features/f.tsx",
             ]);
@@ -51,7 +51,7 @@ describe("tool.edges", () => {
             expect([result.cycles, result.files]).toEqual([[["api/a.ts", "api/b.ts"], ["stores/s.ts", "stores/t.ts", "stores/u.ts"]], 20]);
             expect(tool.analyze({ root: temp.path, layers: ["api", "stores", "features", "app"], shared: ["@scope/pkg", "next", "zod"] }).issues.filter(( issue ) => issue.rule === "vendor")).toEqual([]);
             expect(tool.analyze({ root: temp.path, layers: ["api", "stores", "features", "app"], shared: ["@scope/pkg", "next"] }).issues.filter(( issue ) => issue.rule === "vendor").map(( issue ) => `${issue.file}:${issue.line}`)).toEqual(["app/page.tsx:2"]);
-            expect(tool.analyze({ root: temp.path, layers: ["api", "stores", "features", "app"], members: ["json"] }).issues.filter(( issue ) => issue.file === "app/page.tsx").map(( issue ) => issue.message)).toEqual(["a third-party import outside native/: next/link"]);
+            expect(tool.analyze({ root: temp.path, layers: ["api", "stores", "features", "app"], members: ["json"] }).issues.filter(( issue ) => issue.file === "app/page.tsx").map(( issue ) => issue.message)).toEqual(["a third-party import outside host/: next/link"]);
             expect([() => tool.defineRules({ root: temp.path, layers: ["a"], alias: "@" }), () => tool.defineRules({ root: temp.path, layers: ["a"], alias: "/" }), () => tool.defineRules({ root: temp.path, layers: ["a"], alias: "" }), () => tool.defineRules({ root: "", layers: ["a"] }), () => tool.defineRules({ root: temp.path, layers: [] }), () => tool.defineRules({ root: temp.path, layers: ["a"], alias: "~/" })].map(reasonOf)).toEqual(["tool.rules", "tool.rules", "tool.rules", "tool.rules", "tool.rules", "ok"]);
 
         } finally {
@@ -68,15 +68,15 @@ describe("tool.edges", () => {
 
         try {
 
-            for ( const folder of ["components/native", "stores"] ) mkdirSync(join(src, folder), { recursive: true });
+            for ( const folder of ["components/host", "stores"] ) mkdirSync(join(src, folder), { recursive: true });
 
             mkdirSync(join(temp.path, "shared-other"), { recursive: true });
-            writeFileSync(join(src, "components/native/map.ts"), 'import mapbox from "mapbox-gl";\n');
+            writeFileSync(join(src, "components/host/map.ts"), 'import mapbox from "mapbox-gl";\n');
             writeFileSync(join(src, "components/card.ts"), 'import mapbox from "mapbox-gl";\nimport { a } from "../../shared/a.ts";\nimport { b } from "../../shared-other/b.ts";\n');
             writeFileSync(join(src, "stores/p.ts"), 'export type { Q } from "./q.ts";\n');
             writeFileSync(join(src, "stores/q.ts"), 'import { p } from "./p.ts";\nexport type Q = 1;\n');
 
-            const result = tool.analyze({ root: temp.path, layers: ["stores", "components"], vendor: ["components/native"], outside: ["shared"] });
+            const result = tool.analyze({ root: temp.path, layers: ["stores", "components"], vendor: ["components/host"], outside: ["shared"] });
 
             expect(result.issues.map(( issue ) => `${issue.file}:${issue.line} ${issue.rule}`)).toEqual(["components/card.ts:1 vendor", "components/card.ts:3 outside"]);
             expect(result.cycles).toEqual([]);
@@ -141,7 +141,7 @@ describe("tool.edges", () => {
 
             process.chdir(inner);
 
-            const refused = async ( path: string ): Promise<string> => disk.remove(path, true).then(() => "ok", ( caught: unknown ) => (error.isFault(caught) ? `${caught.code}/${caught.reason}` : "?"));
+            const refused = async ( path: string ): Promise<string> => disk.remove(path, true).then(() => "ok", ( caught: unknown ) => (exception.isFault(caught) ? `${caught.code}/${caught.reason}` : "?"));
 
             expect([await refused(""), await refused("."), await refused(inner), await refused(join(temp.path, "a")), await refused(".."), await refused("x\u0000y")]).toEqual(["validation/fs.path", "forbidden/fs.root", "forbidden/fs.root", "forbidden/fs.root", "forbidden/fs.root", "validation/fs.path"]);
             expect(await refused(join(temp.path, "other"))).toBe("ok");

@@ -1,10 +1,10 @@
 import * as cache from "engine/cache";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as queue from "engine/queue";
 import { bench, do_not_optimize, run } from "mitata";
 
 const box = queue.create({ owner: "u", perform: async () => undefined });
-const failing = queue.create({ owner: "u", retries: 2, delay: 0, perform: async () => { throw error.fault("unavailable", "down"); } });
+const failing = queue.create({ owner: "u", retries: 2, delay: 0, perform: async () => { throw exception.fault("unavailable", "down"); } });
 const wide = queue.create({ owner: "u", lanes: 8, perform: async () => undefined });
 const stored = queue.create({ store: cache.memory(), owner: "u", perform: async () => undefined });
 const pace = queue.backoff({ delay: 100, factor: 2, max: 60_000, jitter: 0.2 });

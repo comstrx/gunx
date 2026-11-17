@@ -1,5 +1,5 @@
 import { describe, expect, test as it, jest } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as log from "engine/log";
 
 const origin = 1_700_000_000_000;
@@ -64,7 +64,7 @@ describe("log", () => {
         logger.debug("hidden");
         logger.info("hello", { password: "supersecret", nested: { token: "abcdef", keep: 1 } });
         logger.warn("careful");
-        logger.error("boom", error.fault("conflict", "r"), { requestId: "1" });
+        logger.error("boom", exception.fault("conflict", "r"), { requestId: "1" });
         logger.error("again");
 
         expect(memory.entries).toHaveLength(3);
@@ -212,7 +212,7 @@ describe("log", () => {
         expect(log.redact({ a: shared, b: shared })).toEqual({ a: { token: "***", keep: 1 }, b: { token: "***", keep: 1 } });
         expect(shared).toEqual({ token: "t", keep: 1 });
 
-        const kept = log.redact({ big: 12n, when, bytes: new Uint8Array(4), buffer: new ArrayBuffer(8), view: new DataView(new ArrayBuffer(2)), nil: null, none: undefined, yes: true, zero: 0, text: "", failure: new TypeError("bad", { cause: error.fault("conflict", "r") }) });
+        const kept = log.redact({ big: 12n, when, bytes: new Uint8Array(4), buffer: new ArrayBuffer(8), view: new DataView(new ArrayBuffer(2)), nil: null, none: undefined, yes: true, zero: 0, text: "", failure: new TypeError("bad", { cause: exception.fault("conflict", "r") }) });
 
         expect(kept).toMatchObject({ big: "12", bytes: "[bytes 4]", buffer: "[bytes 8]", view: "[bytes 2]", nil: null, yes: true, zero: 0, text: "", failure: { name: "TypeError", message: "bad", cause: { name: "Fault", code: "conflict", status: 409, reason: "r" } } });
         expect([kept.when === when, "none" in kept, kept.none]).toEqual([true, true, undefined]);
@@ -348,7 +348,7 @@ describe("log", () => {
             logger.error("text", "just text");
             logger.error("nil", null);
             logger.error("object", { code: 7, password: "p", nested: { token: "t" }, url: "redis://:hunter2@cache:6379/0" });
-            logger.error("fault", error.fault("conflict", "r", { retryAfter: 3 }));
+            logger.error("fault", exception.fault("conflict", "r", { retryAfter: 3 }));
             logger.error("facts only", undefined, { id: 8 });
             logger.error("zero", 0);
             logger.error("caused", new Error("outer", { cause: { password: "p", note: "postgres://u:hunter2@h/db" } }));

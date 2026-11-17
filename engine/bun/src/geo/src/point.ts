@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as number from "engine-number";
 import type { Compass, MapApp, Point } from "./arch.ts";
 
@@ -36,15 +37,9 @@ function made ( lat: unknown, lng: unknown ): Point | undefined {
 }
 function quoted ( label: string ): string {
 
-    try {
+    const made = exception.run(encodeURIComponent, label.slice(0, 256));
 
-        return encodeURIComponent(label.slice(0, 256));
-
-    } catch {
-
-        return "";
-
-    }
+    return exception.threw(made) ? "" : made;
 
 }
 
@@ -59,7 +54,7 @@ export function isPoint ( value: unknown ): value is Point {
 }
 export function sure<T extends Point> ( point: T ): T {
 
-    if ( !isPoint(point) ) throw new RangeError("not a point");
+    if ( !isPoint(point) ) throw exception.misuse("not a point");
 
     return point;
 
@@ -73,7 +68,7 @@ export function spot ( point: Point ): string {
 }
 export function normalize ( point: Point ): Point {
 
-    if ( !Number.isFinite(point.lat) || !Number.isFinite(point.lng) ) throw new RangeError("not a point");
+    if ( !Number.isFinite(point.lat) || !Number.isFinite(point.lng) ) throw exception.misuse("not a point");
 
     return { lat: Math.max(-90, Math.min(90, point.lat)), lng: Math.abs(point.lng) <= 180 ? point.lng : number.wrap(point.lng, -180, 180) };
 
@@ -145,15 +140,15 @@ export function bearing ( a: Point, b: Point ): number {
 }
 export function compass ( degrees: number ): Compass {
 
-    if ( !Number.isFinite(degrees) ) throw new RangeError("not a heading");
+    if ( !Number.isFinite(degrees) ) throw exception.misuse("not a heading");
 
     return winds[Math.round(number.wrap(degrees, 0, 360) / 45) % 8] ?? "N";
 
 }
 export function destination ( from: Point, meters: number, heading: number ): Point {
 
-    if ( !Number.isFinite(meters) ) throw new RangeError("not a distance");
-    if ( !Number.isFinite(heading) ) throw new RangeError("not a heading");
+    if ( !Number.isFinite(meters) ) throw exception.misuse("not a distance");
+    if ( !Number.isFinite(heading) ) throw exception.misuse("not a heading");
 
     const angular = meters / earthRadius;
     const lat1 = from.lat * rad;

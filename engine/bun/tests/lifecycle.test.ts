@@ -1,5 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
-import * as adapter from "engine/adapter";
+import * as exception from "engine/exception";
 import * as search from "engine/search";
 import * as state from "engine/state";
 
@@ -148,27 +148,24 @@ describe("operation ownership", () => {
     });
 });
 
-describe("adapter failure ownership", () => {
+describe("slot failure ownership", () => {
 
-    it("a throwing then getter restores both a port and a bundle", () => {
+    it("a throwing then getter restores the slot", () => {
 
-        const made = adapter.port<number>("scope", { fallback: () => 0 });
-        const all = adapter.bundle({ made });
+        const made = exception.slot<number>("scope", { fallback: () => 0 });
         // biome-ignore lint/suspicious/noThenProperty: exercise hostile promise assimilation and scope cleanup.
         const hostile = (): object => Object.defineProperty({}, "then", { get: () => { throw new Error("getter"); } });
 
         expect(() => made.with(1, hostile)).toThrow("getter");
         expect(made.bound()).toBe(false);
-        expect(() => all.with({ made: 2 }, hostile)).toThrow("getter");
         expect(made.get()).toBe(0);
-        expect(all.matrix()).toEqual({ made: "fallback" });
 
     });
     it("callable thenables keep the binding until settlement", async () => {
 
-        const made = adapter.port<number>("callable", { fallback: () => 0 });
+        const made = exception.slot<number>("callable", { fallback: () => 0 });
         const pending = Promise.withResolvers<number>();
-        // biome-ignore lint/suspicious/noThenProperty: callable thenables must retain their scoped adapter.
+        // biome-ignore lint/suspicious/noThenProperty: callable thenables must retain their scoped value.
         const callable = Object.assign(() => undefined, { then: pending.promise.then.bind(pending.promise) });
         const result = made.with(3, () => callable);
 
@@ -182,7 +179,7 @@ describe("adapter failure ownership", () => {
 
         let value = -1;
         let calls = 0;
-        const made = adapter.port<number>("fallback", { fallback: () => { calls += 1; return value; }, check: ( found ) => found >= 0 });
+        const made = exception.slot<number>("fallback", { fallback: () => { calls += 1; return value; }, check: ( found ) => found >= 0 });
 
         expect(calls).toBe(0);
         expect(() => made.get()).toThrow("does not pass");

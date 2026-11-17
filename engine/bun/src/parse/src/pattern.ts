@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as string from "engine-string";
 import type { Fallback, Params, Route } from "./arch.ts";
@@ -34,17 +35,17 @@ export function interpolate ( template: string, data: Readonly<Record<string, un
 }
 function piece ( text: string ): string {
 
-    if ( dots.has(text) ) throw new RangeError("not a path segment");
+    if ( dots.has(text) ) throw exception.misuse("not a path segment");
 
-    try {
+    return exception.rescue(() => {
 
         return encodeURIComponent(text);
 
-    } catch {
+    }, () => {
 
-        throw new RangeError("not a path segment");
+        throw exception.misuse("not a path segment");
 
-    }
+    });
 
 }
 export function fill ( pattern: string, params: Readonly<Record<string, string | number>> ): string {
@@ -109,15 +110,9 @@ function decoded ( raw: string ): string {
 
     if ( !raw.includes("%") ) return raw;
 
-    try {
+    const read = exception.run(decodeURIComponent, raw);
 
-        return decodeURIComponent(raw);
-
-    } catch {
-
-        return raw;
-
-    }
+    return exception.threw(read) ? raw : read;
 
 }
 export function match ( pattern: string, path: string ): Params | undefined {

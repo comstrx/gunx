@@ -68,8 +68,11 @@ module:bundle:self () {
         test)  module:bundle:test:run "$@" ;;
         bench) module:bundle:bench:run "$@" ;;
         fuzz)  module:bundle:fuzz:run "$@" ;;
-        audit) module:bundle:audit:run "$@" ;;
-        *)     core:error:usage "self build|check|lint|test|bench|fuzz|audit"; return ;;
+        audit)   module:bundle:audit:run "$@" ;;
+        install) module:bundle:install "$@" ;;
+        update)  module:bundle:update "$@" ;;
+        remove)  module:bundle:remove "$@" ;;
+        *)       core:error:usage "self build|check|lint|test|bench|fuzz|audit|install|update|remove"; return ;;
     esac
 
 }

@@ -1,7 +1,7 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as validate from "engine-validate";
-import type { Catalogue, Define, Endpoint, Facts, Item, Many, Method, Operation, Options, Part } from "./arch.ts";
+import type { Catalogue, Define, Endpoint, Facts, FileRule, Item, Many, Method, Operation, Options, Part } from "./arch.ts";
 
 const methods: readonly Method[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const literal = /^[A-Za-z0-9\-._~!$&'()*+,;=:@%/]*$/;
@@ -13,9 +13,9 @@ const declared = new WeakMap<object, Options>();
 const shapes = new WeakMap<object, readonly Part[]>();
 const listed = new WeakMap<object, readonly validate.Field[]>();
 
-function wrong ( reason: string, message: string ): error.Fault {
+function wrong ( reason: string, message: string ): exception.Fault {
 
-    return error.fault("internal", reason, { message });
+    return exception.fault("internal", reason, { message });
 
 }
 function scanned ( path: string ): Part[] | string {
@@ -105,6 +105,20 @@ function route ( method: Method ): Define {
 
 }
 
+export function file ( rule: FileRule = {} ): validate.Schema<Blob> {
+
+    const kinds = rule.accept ?? [];
+
+    return validate.custom<Blob>(( value ) => {
+
+        if ( typeof Blob === "undefined" || !(value instanceof Blob) || value.size === 0 ) return false;
+        if ( rule.max !== undefined && value.size > rule.max ) return false;
+
+        return kinds.length === 0 || kinds.some(( kind ) => (kind.endsWith("/*") ? value.type.startsWith(kind.slice(0, -1)) : value.type === kind));
+
+    }, "a file of an allowed kind and size");
+
+}
 export const get: Define = route("GET");
 export const post: Define = route("POST");
 export const put: Define = route("PUT");

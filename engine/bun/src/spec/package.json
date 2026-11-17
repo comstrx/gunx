@@ -2,19 +2,25 @@
   "name": "engine-spec",
   "private": true,
   "type": "module",
-  "description": "Spec: screens, features, blocks, conditions and effects, compiled then run",
+  "description": "Spec: surfaces, screens and effects, compiled into an artifact a part boots",
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "engine-api": "workspace:*",
     "engine-auth": "workspace:*",
+    "engine-device": "workspace:*",
     "engine-error": "workspace:*",
     "engine-event": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-json": "workspace:*",
     "engine-list": "workspace:*",
+    "engine-log": "workspace:*",
     "engine-parse": "workspace:*",
+    "engine-seo": "workspace:*",
     "engine-string": "workspace:*",
+    "engine-translate": "workspace:*",
     "engine-validate": "workspace:*",
     "engine-world": "workspace:*"
   }

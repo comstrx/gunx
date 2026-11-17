@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import type * as socket from "engine/socket";
 import * as validate from "engine/validate";
 
@@ -27,9 +27,9 @@ describe("api.wire", () => {
         expect(custom.retries).toEqual({ read: 0, write: 0 });
         expect(custom.timeout).toBe(500);
         expect(api.wire({ headers: { auth: { name: "X-Key" } } }).headers.auth).toEqual({ name: "x-key", prefix: "" });
-        expect(() => api.wire({ headers: { language: "bad header" } })).toThrow(error.Fault);
-        expect(() => api.wire({ envelope: { data: "1bad" } })).toThrow(error.Fault);
-        expect(() => api.wire({ timeout: 1 })).toThrow(error.Fault);
+        expect(() => api.wire({ headers: { language: "bad header" } })).toThrow(exception.Fault);
+        expect(() => api.wire({ envelope: { data: "1bad" } })).toThrow(exception.Fault);
+        expect(() => api.wire({ timeout: 1 })).toThrow(exception.Fault);
         expect(validate.check(api.wireShape, {}).ok).toBe(true);
 
     });

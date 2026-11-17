@@ -1,5 +1,6 @@
 import * as date from "engine-date";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as func from "engine-func";
 import * as json from "engine-json";
 import type * as socket from "engine-socket";
@@ -38,7 +39,7 @@ export function presence ( connection: socket.Connection, name: string, options:
     let held = new Map<string, Member>();
     let live = true;
 
-    if ( !(limit >= 0) ) throw new RangeError("not a count");
+    if ( !(limit >= 0) ) throw exception.misuse("not a count");
 
     const publish = (): void => {
 
@@ -81,7 +82,7 @@ export function presence ( connection: socket.Connection, name: string, options:
         });
     const refresh = (): void => {
 
-        void connection.join(name).then(sync).catch(fail ?? func.noop);
+        void exception.mend(connection.join(name).then(sync), fail ?? func.noop);
 
     };
     const stops = [

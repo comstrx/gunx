@@ -1,11 +1,11 @@
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Bucket, Limiter, Taken } from "./arch.ts";
 import { whole } from "./memory.ts";
 
 function sized ( value: number ): number {
 
-    if ( typeof value !== "number" || Number.isNaN(value) ) throw new RangeError("not a limit");
+    if ( typeof value !== "number" || Number.isNaN(value) ) throw exception.misuse("not a limit");
 
     return Math.max(1, Math.trunc(value));
 
@@ -105,7 +105,7 @@ export function limiter ( limit: number, windowMs: number, size = 10_000 ): Limi
 
             const taken = take(key, cost);
 
-            if ( !taken.allowed ) throw error.fault("too_many_requests", "throttle", { retryAfter: taken.retryAfter });
+            if ( !taken.allowed ) throw exception.fault("too_many_requests", "throttle", { retryAfter: taken.retryAfter });
 
             return taken;
 

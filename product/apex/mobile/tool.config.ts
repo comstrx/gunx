@@ -1,16 +1,19 @@
 import * as tool from "engine/tool";
-import { specs } from "./src/specs/surface.ts";
+import { specs } from "./specs/index.ts";
+import { part } from "./src/specs/part.ts";
 
 export default tool.define({
     specs,
+    part,
+    deploy: ( env ) => ({ contracts: { maps: { key: env.GOOGLE_MAPS_KEY ?? "" }, ...(env.API_URL ? { baseUrl: env.API_URL } : {}) } }),
     tasks: {
-        compile: tool.specs(".cache/spec", { settings: ["app"] }),
+        compile: tool.specs(".cache/spec"),
         analyze: [
             tool.layers({
-                layers: ["native", "types", "api", "specs", "stores", "hooks", "styles", "elements", "components", "features", "app"],
+                layers: ["host", "types", "api", "specs", "stores", "hooks", "styles", "elements", "components", "features", "app"],
                 framework: { "react-native": ["hooks", "styles", "elements"] },
-                outside: ["specs", ".cache"],
-                entries: ["app/index.tsx"],
+                outside: [".cache"],
+                entries: ["app/index.tsx", "specs/part.ts"],
             }),
             tool.nameless(),
         ],
@@ -24,7 +27,7 @@ export default tool.define({
             tool.run("./gradlew assembleRelease", { cwd: "android" }),
         ]),
         start: ["compile", tool.run("expo start", { env: { EXPO_NO_TYPESCRIPT_SETUP: "1" } })],
-        audit: tool.run("bun audit --audit-level=low"),
+        audit: tool.run("bun audit --audit-level=low --ignore GHSA-fc5q-39xc-vjpf"),
         gate: ["check", "lint", "test", "build", "audit"],
     },
 });

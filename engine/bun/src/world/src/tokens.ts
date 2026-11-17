@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Sheet, Tokens } from "./arch.ts";
 
 const unsafe = /[^a-zA-Z0-9-]/g;
@@ -129,7 +130,7 @@ export function named ( key: string, prefix = "" ): string {
     const known = held.get(prefix)?.get(key);
 
     if ( known !== undefined ) return known;
-    if ( typeof key !== "string" || key === "" || typeof prefix !== "string" ) throw new RangeError("not a token");
+    if ( typeof key !== "string" || key === "" || typeof prefix !== "string" ) throw exception.misuse("not a token");
 
     const made = `--${prefix === "" ? "" : `${cleaned(prefix)}-`}${cleaned(key)}`;
     const names = held.get(prefix) ?? new Map<string, string>();
@@ -153,7 +154,7 @@ export function valued ( value: string | number ): string {
 
     const made = typeof value === "number" ? (Number.isFinite(value) ? String(value) : undefined) : typeof value === "string" ? scanned(value) : undefined;
 
-    if ( made === undefined ) throw new RangeError("not a token");
+    if ( made === undefined ) throw exception.misuse("not a token");
 
     return made;
 
@@ -170,8 +171,8 @@ export function variables ( values: Tokens, prefix = "" ): string[] {
 }
 export function block ( selector: string, lines: readonly string[], indent = "    " ): string {
 
-    if ( !sound(selector) ) throw new RangeError("not a selector");
-    if ( typeof indent !== "string" || !blank.test(indent) ) throw new RangeError("not an indent");
+    if ( !sound(selector) ) throw exception.misuse("not a selector");
+    if ( typeof indent !== "string" || !blank.test(indent) ) throw exception.misuse("not an indent");
 
     return `${selector} {\n${lines.map(( line ) => `${indent}${line}`).join("\n")}\n}`;
 
@@ -183,13 +184,13 @@ export function css ( given: Sheet ): string {
 
     if ( dark ) {
 
-        if ( !sound(darkSelector) || !sound(lightSelector) ) throw new RangeError("not a selector");
+        if ( !sound(darkSelector) || !sound(lightSelector) ) throw exception.misuse("not a selector");
 
         const lines = variables(dark, prefix);
         const scope = selector.trimStart().charCodeAt(0) === 64 ? ":root" : selector;
         const calm = each(scope, `:not(${lightSelector.trim()})`);
 
-        if ( calm === "" ) throw new RangeError("not a selector");
+        if ( calm === "" ) throw exception.misuse("not a selector");
 
         parts.push(`@media (prefers-color-scheme: dark) {\n    ${calm} {\n${lines.map(( line ) => `        ${line}`).join("\n")}\n    }\n}`);
         parts.push(block(each(scope, darkSelector.trim()), lines));

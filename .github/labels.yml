@@ -2,13 +2,13 @@
   color: 'DEA584'
   description: The Rust engine (engine/rust)
 
-- name: python
-  color: '3572A5'
-  description: The Python engine (engine/python)
-
 - name: go
   color: '00ADD8'
   description: The Go engine (engine/go)
+
+- name: python
+  color: '3572A5'
+  description: The Python engine (engine/python)
 
 - name: bun
   color: 'F9F1E1'
@@ -38,7 +38,7 @@
   color: 'C5DEF5'
   description: The operating contract (tutor/)
 
-- name: global
+- name: root
   color: 'BFDADC'
   description: Root governance, shared by every part
 

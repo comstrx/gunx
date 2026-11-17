@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as number from "engine-number";
 import type { Decimal, Factor, Input, Money, Rounding, Whole, Wire } from "./arch.ts";
@@ -21,7 +22,7 @@ function code ( currency: string ): string {
 
     const found = coded(currency);
 
-    if ( !found ) throw new RangeError(`not a currency code: ${String(currency).slice(0, longest)}`);
+    if ( !found ) throw exception.misuse(`not a currency code: ${String(currency).slice(0, longest)}`);
 
     return found;
 
@@ -35,7 +36,7 @@ function counted ( value: Input ): Factor {
 
     const found = factor(value);
 
-    if ( !found ) throw new RangeError(`not an amount: ${String(value).slice(0, longest)}`);
+    if ( !found ) throw exception.misuse(`not an amount: ${String(value).slice(0, longest)}`);
 
     return found;
 
@@ -44,7 +45,7 @@ function weighed ( ratio: number ): Factor {
 
     const found = ratio >= 0 ? factor(ratio) : undefined;
 
-    if ( !found ) throw new RangeError("not a ratio to allocate by");
+    if ( !found ) throw exception.misuse("not a ratio to allocate by");
 
     return found;
 
@@ -56,7 +57,7 @@ function made ( minor: Whole, currency: string ): Money {
 }
 function same ( a: Money, b: Money ): string {
 
-    if ( a.currency !== b.currency ) throw new RangeError(`currency mismatch: ${a.currency} and ${b.currency}`);
+    if ( a.currency !== b.currency ) throw exception.misuse(`currency mismatch: ${a.currency} and ${b.currency}`);
 
     return a.currency;
 
@@ -123,15 +124,7 @@ export function parse ( text: unknown, fallback?: string, rounding: Rounding = "
 
     if ( !found || !upper || (lead !== undefined && trail !== undefined && lead !== trail) ) return undefined;
 
-    try {
-
-        return of(found[2] ?? "", upper, rounding);
-
-    } catch {
-
-        return undefined;
-
-    }
+    return exception.probe(() => of(found[2] ?? "", upper, rounding));
 
 }
 export function is ( value: unknown ): value is Money {
@@ -219,7 +212,7 @@ export function allocate ( value: Money, ratios: readonly number[] ): Money[] {
     const whole = Math.abs(value.minor);
     const sign = value.minor < 0 ? -1 : 1;
 
-    if ( weight <= 0 ) throw new RangeError("no weight to allocate by");
+    if ( weight <= 0 ) throw exception.misuse("no weight to allocate by");
 
     const narrow = typeof weight === "number" && Number.isSafeInteger(whole * weight);
     const shares = narrow ? shared(whole, weights.map(Number), weight) : sharedWide(BigInt(whole), weights.map(BigInt), BigInt(weight));
@@ -229,7 +222,7 @@ export function allocate ( value: Money, ratios: readonly number[] ): Money[] {
 }
 export function split ( value: Money, count: number ): Money[] {
 
-    if ( !Number.isSafeInteger(count) || count < 1 ) throw new RangeError(`not a count of parts: ${count}`);
+    if ( !Number.isSafeInteger(count) || count < 1 ) throw exception.misuse(`not a count of parts: ${count}`);
 
     const whole = Math.abs(value.minor);
     const sign = value.minor < 0 ? -1 : 1;
@@ -244,11 +237,11 @@ export function total ( values: readonly Money[], currency?: string ): Money {
     const upper = currency === undefined ? values[0]?.currency : code(currency);
     let whole = 0;
 
-    if ( upper === undefined ) throw new RangeError("no currency for an empty total");
+    if ( upper === undefined ) throw exception.misuse("no currency for an empty total");
 
     for ( const value of values ) {
 
-        if ( value.currency !== upper ) throw new RangeError(`currency mismatch: ${upper} and ${value.currency}`);
+        if ( value.currency !== upper ) throw exception.misuse(`currency mismatch: ${upper} and ${value.currency}`);
 
         whole = safe(whole + value.minor);
 
@@ -299,7 +292,7 @@ export function convert ( value: Money, currency: string, rate: Input, rounding:
     const upper = code(currency);
     const found = counted(rate);
 
-    if ( found.units <= 0 ) throw new RangeError(`not a rate: ${String(rate).slice(0, longest)}`);
+    if ( found.units <= 0 ) throw exception.misuse(`not a rate: ${String(rate).slice(0, longest)}`);
 
     const shift = digits(upper) - digits(value.currency) - found.scale;
     const raw = product(value.minor, found.units);
@@ -338,17 +331,17 @@ export function fromJson ( value: unknown ): Money | undefined {
     if ( amount !== undefined && typeof amount !== "string" && typeof amount !== "number" ) return undefined;
     if ( count !== undefined && typeof count !== "number" ) return undefined;
 
-    try {
+    return exception.rescue(() => {
 
         const told = amount === undefined ? undefined : of(amount, upper);
         const kept = count === undefined ? told : made(count, upper);
 
         return told && kept && told.minor !== kept.minor ? undefined : kept;
 
-    } catch {
+    }, () => {
 
         return undefined;
 
-    }
+    });
 
 }

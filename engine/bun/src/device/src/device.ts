@@ -1,13 +1,14 @@
-import * as adapter from "engine-adapter";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Adapter, Capability, Combo, Device, Full, Hotkey, Key, Options } from "./arch.ts";
 import { combos, matches } from "./keys.ts";
 import { port } from "./port.ts";
+import { capabilities, fill } from "./shape.ts";
 
 const openable: readonly string[] = ["http", "https", "mailto", "tel", "sms", "geo"];
 const longest = 8192;
 const schemed = /^([a-z][a-z0-9+.-]*):/i;
 const idle = (): void => undefined;
+const made = new WeakMap<Adapter, Device>();
 const absent: Omit<Full, "info" | "watch"> = {
     state: () => "unsupported",
     ask: async () => "unsupported",
@@ -22,19 +23,20 @@ const absent: Omit<Full, "info" | "watch"> = {
     haptic: () => false,
     open: async () => false,
     reload: () => false,
-    pick: async () => [],
-    media: async () => undefined,
+    capture: async () => undefined,
     keys: () => idle,
     battery: async () => undefined,
     awake: async () => undefined,
+    shield: async () => undefined,
     badge: async () => false,
+    links: () => idle,
 };
 
 function calm<A extends unknown[], R> ( run: ( ...given: A ) => Promise<R> | R, otherwise: R ): ( ...given: A ) => Promise<R> {
 
     return async ( ...given ) => {
 
-        const found: R | undefined = await adapter.probeAsync<R>(() => run(...given));
+        const found: R | undefined = await exception.probeAsync<R>(() => run(...given));
 
         return found ?? otherwise;
 
@@ -43,7 +45,7 @@ function calm<A extends unknown[], R> ( run: ( ...given: A ) => Promise<R> | R, 
 }
 function still<A extends unknown[], R> ( run: ( ...given: A ) => R, otherwise: R ): ( ...given: A ) => R {
 
-    return ( ...given ) => adapter.probe(() => run(...given)) ?? otherwise;
+    return ( ...given ) => exception.probe(() => run(...given)) ?? otherwise;
 
 }
 function printable ( text: string ): boolean {
@@ -60,6 +62,39 @@ function printable ( text: string ): boolean {
 
 }
 
+function unsafe ( path: string ): boolean {
+
+    for ( let at = 0; at < path.length; at += 1 ) {
+
+        const code = path.charCodeAt(at);
+
+        if ( code < 32 || code === 92 || code === 127 ) return true;
+
+    }
+
+    return false;
+
+}
+
+export function pathOf ( link: string ): string | undefined {
+
+    if ( typeof link !== "string" || link.length > 2048 ) return undefined;
+
+    const cut = link.indexOf("://");
+    const scheme = cut === -1 ? "" : link.slice(0, cut).toLowerCase();
+
+    if ( !/^[a-z][a-z0-9+.-]*$/.test(scheme) ) return undefined;
+
+    const rest = link.slice(cut + 3);
+    const web = scheme === "http" || scheme === "https";
+    const from = web ? rest.search(/[/?#]/) : 0;
+    const tail = from === -1 ? "" : rest.slice(from);
+    const end = tail.indexOf("#");
+    const path = `/${(end === -1 ? tail : tail.slice(0, end)).replace(/^\/+/, "")}`;
+
+    return unsafe(path) || path.includes("//") || path.split(/[/?]/).includes("..") ? undefined : path;
+
+}
 export function targetOf ( text: string, schemes: readonly string[] = openable ): string | undefined {
 
     const trimmed = typeof text === "string" ? text.trim() : "";
@@ -73,8 +108,22 @@ export function targetOf ( text: string, schemes: readonly string[] = openable )
 }
 export function create ( given: Adapter = port.get(), options: Options = {} ): Device {
 
-    const capable = adapter.capabilities(given).filter(( name ): name is Capability => name !== "info" && name !== "watch");
-    const filled = adapter.fill<Full>(given, { ...absent, info: given.info, watch: given.watch });
+    const shared = options.schemes === undefined;
+    const known = shared ? made.get(given) : undefined;
+
+    if ( known ) return known;
+
+    const unit = built(given, options);
+
+    if ( shared ) made.set(given, unit);
+
+    return unit;
+
+}
+function built ( given: Adapter, options: Options ): Device {
+
+    const capable = capabilities(given).filter(( name ): name is Capability => name !== "info" && name !== "watch");
+    const filled = fill<Full>(given, { ...absent, info: given.info, watch: given.watch });
     const state = calm(filled.state, "unsupported");
     const ask = calm(filled.ask, "unsupported");
     const open = calm(filled.open, false);
@@ -121,12 +170,13 @@ export function create ( given: Adapter = port.get(), options: Options = {} ): D
 
         },
         reload: still(filled.reload, false),
-        pick: async ( wanted ) => (await adapter.probeAsync(() => filled.pick(wanted))) ?? [],
-        media: calm(filled.media, undefined),
+        capture: calm(filled.capture, undefined),
         keys,
         battery: calm(filled.battery, undefined),
         awake: calm(filled.awake, undefined),
+        shield: calm(filled.shield, undefined),
         badge: calm(filled.badge, false),
+        links: still(filled.links, idle),
         hotkeys,
         is: ( platform ) => filled.info().platform === platform,
         can: ( capability ) => capable.includes(capability),
@@ -138,7 +188,7 @@ export function create ( given: Adapter = port.get(), options: Options = {} ): D
 
             if ( grant === "granted" ) return;
 
-            throw error.fault(grant === "unsupported" ? "unavailable" : "forbidden", `device.${permission}.${grant}`, { message: `${permission}: ${grant}`, errors: { [permission]: [grant] } });
+            throw exception.fault(grant === "unsupported" ? "unavailable" : "forbidden", `device.${permission}.${grant}`, { message: `${permission}: ${grant}`, errors: { [permission]: [grant] } });
 
         },
         hotkey: ( text, handler, hotkey ) => hotkeys({ [text]: handler }, hotkey),

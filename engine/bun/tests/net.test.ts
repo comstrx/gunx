@@ -1,5 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as net from "engine/net";
 
 function fake ( handler: ( url: string, init: { method: string; headers: Record<string, string>; body?: unknown } ) => Response | Promise<Response> ): net.Fetcher {
@@ -31,7 +31,7 @@ function told ( given: unknown ): string {
 
     } catch ( failure ) {
 
-        if ( error.is(failure) ) return `${failure.code}/${failure.reason}`;
+        if ( exception.is(failure) && failure.reason !== "misuse" ) return `${failure.code}/${failure.reason}`;
 
         return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
 
@@ -97,7 +97,7 @@ describe("net", () => {
 
         const failed = await net.request("https://a.io/fail", { fetcher }).catch(( caught: unknown ) => caught);
 
-        expect(error.isFault(failed) && failed.code === "validation" && failed.field("email") === "taken" && failed.retryAfter === 7 && failed.requestId === "srv-1").toBe(true);
+        expect(exception.isFault(failed) && failed.code === "validation" && failed.field("email") === "taken" && failed.retryAfter === 7 && failed.requestId === "srv-1").toBe(true);
         await expect(net.request("https://a.io/big", { fetcher, maxBytes: 50 })).rejects.toMatchObject({ code: "too_large" });
         expect((await net.request("https://a.io/text", { fetcher })).body).toBe("plain");
         await expect(net.request("https://a.io/slow", { fetcher, timeout: 20 })).rejects.toMatchObject({ code: "timeout" });
@@ -250,7 +250,7 @@ describe("net", () => {
         expect(await guarded("https://api.example/landed", init).then(() => "returned", told)).toBe("forbidden/net.redirect");
         expect([allow("https://x.example/"), allow("https://example/"), allow("https://x.y.example:8443/"), allow("http://x.example/"), allow("https://api.example:443/"), allow("https://API.example/path?q#h"), allow(""), allow("nope")]).toEqual([true, false, false, false, true, true, false, false]);
 
-        for ( const origin of ["https://a.example/x", "https://a.example?x", "https://u@a.example", "https://*", "file:///x", "https://a.*.example", "https://a.example#h", "not an origin", ""] ) expect([origin, told(() => net.policy({ origins: [origin] }))]).toEqual([origin, "RangeError: not an origin"]);
+        for ( const origin of ["https://a.example/x", "https://a.example?x", "https://u@a.example", "https://*", "file:///x", "https://a.*.example", "https://a.example#h", "not an origin", ""] ) expect([origin, told(() => net.policy({ origins: [origin] }))]).toEqual([origin, "Fault: not an origin"]);
 
         expect(told(() => net.policy({ origins: ["https://a.example/", "https://*.b.example", "http://localhost:3000"] }))).toBe("ok");
         expect([net.policy({ origins: [], allowLoopback: true })("http://127.0.0.1:9/x"), net.policy({ origins: [], allowLoopback: true })("https://[::1]/"), net.policy({ origins: [], allowLoopback: true })("ws://localhost/"), net.policy({ origins: [] })("http://localhost/")]).toEqual([true, true, false, false]);
@@ -288,11 +288,11 @@ describe("net", () => {
 
         const failed = await net.request("https://a.example/envelope", { fetcher, requestId: "mine" }).catch(( caught: unknown ) => caught);
 
-        expect(error.is(failed) ? [failed.status, failed.requestId, failed.message] : []).toEqual([403, "srv-9", "nope"]);
+        expect(exception.is(failed) ? [failed.status, failed.requestId, failed.message] : []).toEqual([403, "srv-9", "nope"]);
 
-        const custom = await net.request("https://a.example/badhtml", { fetcher, failure: ( status, body ) => error.fault("conflict", "custom", { status, message: String(body).slice(0, 4) }) }).catch(( caught: unknown ) => caught);
+        const custom = await net.request("https://a.example/badhtml", { fetcher, failure: ( status, body ) => exception.fault("conflict", "custom", { status, message: String(body).slice(0, 4) }) }).catch(( caught: unknown ) => caught);
 
-        expect(error.is(custom) ? [custom.code, custom.reason, custom.message, custom.requestId !== undefined] : []).toEqual(["conflict", "custom", "<h1>", true]);
+        expect(exception.is(custom) ? [custom.code, custom.reason, custom.message, custom.requestId !== undefined] : []).toEqual(["conflict", "custom", "<h1>", true]);
         expect((await net.request("https://a.example/plain", { fetcher })).headers).toEqual({ "x-mixed": "Case" });
         expect(Object.getPrototypeOf((await net.request("https://a.example/plain", { fetcher })).headers)).toBeNull();
         expect([await ask("x", { fetcher: undefined, method: "GET" }).then(() => "sent").catch(() => "x"), await ask("echo", { requestId: "bad\nid" }), await ask("echo", { headers: { "bad name": "v" } }), await ask("echo", { headers: { ok: "line\r\nbreak" } }), await ask("echo", { headers: { ok: "tab\tis fine" } }).then(( out ) => out.slice(0, 1))]).toEqual(["sent", "internal/net.header", "internal/net.header", "internal/net.header", "{"]);
@@ -333,12 +333,12 @@ describe("net", () => {
         expect([net.retryAfter("0"), net.retryAfter("120"), net.retryAfter(" 7 "), net.retryAfter("1234567890"), net.retryAfter("9999999999999999"), net.retryAfter("-1"), net.retryAfter("7.5"), net.retryAfter("x"), net.retryAfter(""), net.retryAfter(null), net.retryAfter("x".repeat(70))]).toEqual([0, 120, 7, 1234567890, undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
         expect([net.retryAfter("Wed, 21 Oct 2015 07:28:00 GMT", Date.UTC(2015, 9, 21, 7, 27, 30)), net.retryAfter("Wed, 21 Oct 2015 07:28:00 GMT", Date.UTC(2015, 9, 21, 7, 28, 30)), net.retryAfter("2015-10-21T07:28:00Z", Date.UTC(2015, 9, 21, 7, 27, 0)), net.retryAfter("2015-10-21T07:28:00.400Z", Date.UTC(2015, 9, 21, 7, 27, 59, 900))]).toEqual([30, 0, 60, 1]);
 
-        for ( const name of ["default src", "default-src;", "x/y", "", "1x", "default-src\n"] ) expect([name, told(() => net.contentSecurityPolicy({ [name]: ["'self'"] }))]).toEqual([name, "RangeError: not a directive"]);
-        for ( const source of ["a;b", "a,b", "a b", "", "a\nb", "a\u0001"] ) expect([source, told(() => net.contentSecurityPolicy({ "img-src": [source] }))]).toEqual([source, "RangeError: not a source"]);
+        for ( const name of ["default src", "default-src;", "x/y", "", "1x", "default-src\n"] ) expect([name, told(() => net.contentSecurityPolicy({ [name]: ["'self'"] }))]).toEqual([name, "Fault: not a directive"]);
+        for ( const source of ["a;b", "a,b", "a b", "", "a\nb", "a\u0001"] ) expect([source, told(() => net.contentSecurityPolicy({ "img-src": [source] }))]).toEqual([source, "Fault: not a source"]);
 
         expect(net.contentSecurityPolicy({ "img-src": [], sandbox: true, "x-off": false, "y-off": undefined, "script-src": "'self' https://cdn.example  'nonce-abc'" })).toBe("img-src 'none'; sandbox; script-src 'self' https://cdn.example 'nonce-abc'");
         expect(net.contentSecurityPolicy({})).toBe("");
-        expect([told(() => net.securityHeaders({ hsts: { maxAge: -1 } })), told(() => net.securityHeaders({ hsts: { maxAge: 1.5 } })), told(() => net.securityHeaders({ referrer: "a\nb" })), told(() => net.securityHeaders({ permissions: "x\u007f" }))]).toEqual(["RangeError: not a duration", "RangeError: not a duration", "RangeError: not a header", "RangeError: not a header"]);
+        expect([told(() => net.securityHeaders({ hsts: { maxAge: -1 } })), told(() => net.securityHeaders({ hsts: { maxAge: 1.5 } })), told(() => net.securityHeaders({ referrer: "a\nb" })), told(() => net.securityHeaders({ permissions: "x\u007f" }))]).toEqual(["Fault: not a duration", "Fault: not a duration", "Fault: not a header", "Fault: not a header"]);
         expect(net.securityHeaders({ hsts: { maxAge: 0, subdomains: false, preload: true } })["strict-transport-security"]).toBe("max-age=0; preload");
         expect(net.securityHeaders()["strict-transport-security"]).toBe("max-age=63072000; includeSubDomains");
         expect(net.securityHeaders({ hsts: true })["strict-transport-security"]).toBe("max-age=63072000; includeSubDomains");
@@ -409,7 +409,7 @@ describe("net", () => {
         controller.abort(new Error("leaving"));
         expect(await aborted).toBe(" timeout/net.aborted");
         expect(await collect({ fetcher: async () => sse(""), signal: AbortSignal.abort() })).toBe(" timeout/net.aborted");
-        expect(await Promise.all([net.events("https://a.example/sse", { idle: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { retry: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { maxBytes: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { reconnect: Number.NaN }).next().then(() => "ok", told), net.events("javascript:x").next().then(() => "ok", told)])).toEqual(["RangeError: not a duration", "RangeError: not a duration", "RangeError: not a size", "RangeError: not a count", "forbidden/net.scheme"]);
+        expect(await Promise.all([net.events("https://a.example/sse", { idle: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { retry: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { maxBytes: Number.NaN }).next().then(() => "ok", told), net.events("https://a.example/sse", { reconnect: Number.NaN }).next().then(() => "ok", told), net.events("javascript:x").next().then(() => "ok", told)])).toEqual(["Fault: not a duration", "Fault: not a duration", "Fault: not a size", "Fault: not a count", "forbidden/net.scheme"]);
         expect(net.parseEvents("data: a\r\ndata: b\r\n\r\nid: 9\n\ndata:x\n\n")).toEqual([{ id: undefined, event: "message", data: "a\nb", json: undefined }, { id: "9", event: "message", data: "x", json: undefined }]);
         expect([net.parseEvents("﻿data: bom\n\n")[0]?.data, net.parseEvents("data: tail"), net.parseEvents("data: tail\n"), net.parseEvents("event: ping\n\n"), net.parseEvents("id: a\u0000b\ndata: z\n\n")[0]?.id, net.parseEvents(": only a comment\n\n"), net.parseEvents("data\n\n")[0]?.data, net.parseEvents("data:  two spaces\n\n")[0]?.data, net.parseEvents("")]).toEqual(["bom", [], [], [], undefined, [], "", " two spaces", []]);
         expect(net.parseEvents("data: 1\rdata: 2\r\r")).toEqual([{ id: undefined, event: "message", data: "1\n2", json: undefined }]);
@@ -422,7 +422,7 @@ describe("net", () => {
 
         setTimeout(() => controller.abort(new Error("leaving")), 15);
         expect(await net.poll(async () => { turns += 1; return turns; }, { every: ( attempt ) => attempt * 2, until: ( value ) => value >= 3 })).toBe(3);
-        expect([await net.poll(async () => 1, { every: 5, until: () => false, timeout: 12 }).then(() => "done", told), await net.poll(async () => 1, { every: 50, until: () => false, signal: controller.signal }).then(() => "done", told), await net.poll(async () => 1, { every: 1, until: () => false, limit: 0 }).then(() => "done", told), await net.poll(async () => 1, { every: 1, until: () => false, limit: 2 }).then(() => "done", told), await net.poll(() => { throw new Error("work broke"); }).then(() => "done", told), await net.poll(async () => 1, { every: Number.NaN }).then(() => "done", told), await net.poll(async () => 1, { limit: Number.NaN }).then(() => "done", told), await net.poll(async () => 1, { signal: AbortSignal.abort() }).then(() => "done", told)]).toEqual(["timeout/net.timeout", "timeout/net.aborted", "timeout/net.exhausted", "timeout/net.exhausted", "Error: work broke", "RangeError: not a duration", "RangeError: not a count", "timeout/net.aborted"]);
+        expect([await net.poll(async () => 1, { every: 5, until: () => false, timeout: 12 }).then(() => "done", told), await net.poll(async () => 1, { every: 50, until: () => false, signal: controller.signal }).then(() => "done", told), await net.poll(async () => 1, { every: 1, until: () => false, limit: 0 }).then(() => "done", told), await net.poll(async () => 1, { every: 1, until: () => false, limit: 2 }).then(() => "done", told), await net.poll(() => { throw new Error("work broke"); }).then(() => "done", told), await net.poll(async () => 1, { every: Number.NaN }).then(() => "done", told), await net.poll(async () => 1, { limit: Number.NaN }).then(() => "done", told), await net.poll(async () => 1, { signal: AbortSignal.abort() }).then(() => "done", told)]).toEqual(["timeout/net.timeout", "timeout/net.aborted", "timeout/net.exhausted", "timeout/net.exhausted", "Error: work broke", "Fault: not a duration", "Fault: not a count", "timeout/net.aborted"]);
 
         const signals: boolean[] = [];
 
@@ -439,7 +439,7 @@ describe("net", () => {
     });
     it("readBytes trusts a declared length only to refuse early, and signals time out and combine", async () => {
 
-        expect([await net.readBytes(new Response("abc", { headers: { "content-length": "999999999" } }), 10).then(() => "read", told), [...(await net.readBytes(new Response("abc", { headers: { "content-length": "nope" } }), 10))], await net.readBytes(new Response("abc"), Number.NaN).then(() => "read", told), await net.readBytes({ arrayBuffer: async () => new Uint8Array(20).buffer }, 10).then(() => "read", told), (await net.readBytes({ arrayBuffer: async () => new Uint8Array(3).buffer }, 10)).length]).toEqual(["too_large/net.body", [97, 98, 99], "RangeError: not a size", "too_large/net.body", 3]);
+        expect([await net.readBytes(new Response("abc", { headers: { "content-length": "999999999" } }), 10).then(() => "read", told), [...(await net.readBytes(new Response("abc", { headers: { "content-length": "nope" } }), 10))], await net.readBytes(new Response("abc"), Number.NaN).then(() => "read", told), await net.readBytes({ arrayBuffer: async () => new Uint8Array(20).buffer }, 10).then(() => "read", told), (await net.readBytes({ arrayBuffer: async () => new Uint8Array(3).buffer }, 10)).length]).toEqual(["too_large/net.body", [97, 98, 99], "Fault: not a size", "too_large/net.body", 3]);
 
         const chunked = new ReadableStream<Uint8Array>({ start ( controller ) {
 
@@ -456,10 +456,10 @@ describe("net", () => {
 
         controller.abort(new Error("leaving"));
         expect(await hanging.then(() => "read", told)).toBe("timeout/event.aborted");
-        expect([told(() => net.timeoutSignal(Number.NaN)), net.timeoutSignal(Number.POSITIVE_INFINITY).aborted, net.timeoutSignal(-5).aborted]).toEqual(["RangeError: not a duration", false, false]);
+        expect([told(() => net.timeoutSignal(Number.NaN)), net.timeoutSignal(Number.POSITIVE_INFINITY).aborted, net.timeoutSignal(-5).aborted]).toEqual(["Fault: not a duration", false, false]);
         expect(net.anySignal().aborted).toBe(false);
         expect(net.anySignal(AbortSignal.abort(), undefined).aborted).toBe(true);
-        expect([net.joinUrl("https://a.io/base/", "x", "y/z"), net.joinUrl("https://a.io/base?q=1#h", "/p/"), net.joinUrl("", "a"), net.joinUrl("/", ""), told(() => net.joinUrl("https://a.io", "..")), told(() => net.joinUrl("https://a.io", "a/./b")), told(() => net.joinUrl("https://a.io", "a\\b")), net.joinUrl("https://a.io", "a.b", "c..d")]).toEqual(["https://a.io/base/x/y/z", "https://a.io/base/p?q=1#h", "/a", "", "RangeError: not a path segment", "RangeError: not a path segment", "RangeError: not a path segment", "https://a.io/a.b/c..d"]);
+        expect([net.joinUrl("https://a.io/base/", "x", "y/z"), net.joinUrl("https://a.io/base?q=1#h", "/p/"), net.joinUrl("", "a"), net.joinUrl("/", ""), told(() => net.joinUrl("https://a.io", "..")), told(() => net.joinUrl("https://a.io", "a/./b")), told(() => net.joinUrl("https://a.io", "a\\b")), net.joinUrl("https://a.io", "a.b", "c..d")]).toEqual(["https://a.io/base/x/y/z", "https://a.io/base/p?q=1#h", "/a", "", "Fault: not a path segment", "Fault: not a path segment", "Fault: not a path segment", "https://a.io/a.b/c..d"]);
         expect([net.withQuery("/x", { a: undefined, b: null, c: ["1", "2"], __proto__: "p" } as unknown as Parameters<typeof net.withQuery>[1]), net.withQuery("/x?a=1&a=2", { a: "3" }), net.withQuery("/x?keep=1", {}), net.stripQuery("https://a.io/p?x#y"), net.stripQuery("plain")]).toEqual(["/x?c=1&c=2", "/x?a=3", "/x?keep=1", "https://a.io/p", "plain"]);
         expect([net.isOrigin("HTTPS://A.IO"), net.isOrigin("https://a.io:443"), net.isOrigin("https://a.io:8443"), net.originOf("blob:https://a.io/x"), net.originOf("x"), net.hostname("https://[2001:DB8::1]/")]).toEqual([true, false, true, "https://a.io", undefined, "[2001:db8::1]"]);
 
@@ -489,7 +489,7 @@ describe("net", () => {
         await guarded("https://api.example/a", { method: "PUT", headers: {}, body: "payload", signal: new AbortController().signal });
         await guarded("https://api.example/a", { method: "HEAD", headers: {}, signal: new AbortController().signal });
         expect(seen).toEqual(["PUT https://api.example/a", "GET https://api.example/c", "HEAD https://api.example/a", "HEAD https://api.example/c"]);
-        for ( const piece of ["%2e%2e", "%2E%2E", ".%2e", "%2e.", "%2e", "a/%2e%2e/b", "%2e%2e/admin", "..", ".", "a/../b"] ) expect([piece, told(() => net.joinUrl("https://a.io/v1/users", piece))]).toEqual([piece, "RangeError: not a path segment"]);
+        for ( const piece of ["%2e%2e", "%2E%2E", ".%2e", "%2e.", "%2e", "a/%2e%2e/b", "%2e%2e/admin", "..", ".", "a/../b"] ) expect([piece, told(() => net.joinUrl("https://a.io/v1/users", piece))]).toEqual([piece, "Fault: not a path segment"]);
 
         expect([net.joinUrl("https://a.io/v1", "%252e%252e"), new URL(net.joinUrl("https://a.io/v1", "%252e%252e")).pathname, net.joinUrl("https://a.io/v1", "a.b", "%2ex", "x%2e")]).toEqual(["https://a.io/v1/%252e%252e", "/v1/%252e%252e", "https://a.io/v1/a.b/%2ex/x%2e"]);
         expect([net.forwardedFor("203.0.113.9, 10.0.0.1", 0), net.forwardedFor("203.0.113.9, 10.0.0.1", -1), net.forwardedFor("203.0.113.9, 10.0.0.1", 1.5), net.forwardedFor("203.0.113.9, 10.0.0.1", 3)]).toEqual([undefined, undefined, undefined, undefined]);

@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import { sep } from "node:path";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as stage from "engine/test";
 import * as fc from "fast-check";
 
@@ -124,7 +124,7 @@ describe("fuzz test", () => {
             fc.assert(fc.property(fc.array(piece, { maxLength: 6 }), ( parts ) => {
 
                 const name = parts.join("/");
-                const made = error.attemptSync(() => temp.file(name));
+                const made = exception.attemptSync(() => temp.file(name));
 
                 if ( made.ok ) expect(made.value.startsWith(`${temp.path}${sep}`) && !made.value.includes("\u0000")).toBe(true);
                 else expect(made.fault.reason).toBe("test.path");

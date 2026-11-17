@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, test as it } from "bun:test";
 import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server";
+import { generateMetadata, generateStaticParams } from "../src/app/[[...path]]/page.tsx";
 import { Nav } from "../src/app/nav.tsx";
 import { Screen } from "../src/app/screen.tsx";
 import { toneOf } from "../src/features/hello/hooks/use-hello.ts";
-import { answer, ask } from "../src/specs/runtime.ts";
+import { host } from "../src/specs/app.ts";
 import { faults } from "../src/stores/preferences.ts";
 
 beforeEach(() => {
@@ -22,8 +23,8 @@ describe("screen", () => {
 
         const markup = await new Response(stream).text();
 
-        expect(markup).toStartWith('<title>أهلاً · أكمي</title><div data-ui="block" data-direction="column" data-gap="md" data-align="center" data-justify="center" data-padding="md" data-surface="plain" data-width="auto" data-height="screen"');
-        expect(markup).toContain('class="flex min-w-0 flex-col gap-4 items-center justify-center p-5 grow flex-nowrap"');
+        expect(markup).toStartWith('<title>أهلاً · أكمي</title><div data-ui="reveal" class="contents *:transition-[opacity,translate] *:duration-[var(--motion-base)] *:ease-[var(--ease-standard)] data-[leaving]:*:translate-y-1 data-[leaving]:*:opacity-0"><div data-ui="block" data-direction="column" data-gap="lg" data-align="center" data-justify="center" data-padding="md" data-surface="plain" data-width="auto" data-height="screen"');
+        expect(markup).toContain('class="flex min-w-0 flex-col gap-6 items-center justify-center p-5 grow flex-nowrap"');
         expect(markup).toContain('<section aria-labelledby');
         expect(markup).toContain("جارٍ تحضير التحية");
         expect(markup).toEndWith("></dialog>");
@@ -38,7 +39,7 @@ describe("screen", () => {
         expect(closed).toContain('<dialog role="alertdialog" aria-labelledby="');
         expect(closed).not.toContain(">نعم</span>");
 
-        const asked = ask("hello.refresh");
+        const asked = host.app.ask("hello.refresh");
         const open = renderToStaticMarkup(<Screen path="/" />);
 
         expect(open).toContain(">تأكيد</p>");
@@ -46,7 +47,7 @@ describe("screen", () => {
         expect(open).toContain(">لا</span>");
         expect(open).toContain('data-look="danger"');
         expect(open).toContain(">نعم</span>");
-        answer(false);
+        host.app.answer(false);
         expect(await asked).toBe(false);
         expect(renderToStaticMarkup(<Screen path="/" />)).not.toContain(">نعم</span>");
 
@@ -67,6 +68,16 @@ describe("screen", () => {
         expect(toneOf({ tone: "warm" })).toBe("warm");
         expect(toneOf({ tone: "loud" })).toBe("plain");
         expect(toneOf({})).toBe("plain");
+
+    });
+    it("the export carries a page for every path a reached surface owns, and a path the entry does not own is never indexed", async () => {
+
+        const paths = (await generateStaticParams()).map(( params ) => `/${(params.path ?? []).join("/")}`).sort();
+        const owned = await generateMetadata({ params: Promise.resolve({ path: ["about"] }) });
+        const foreign = await generateMetadata({ params: Promise.resolve({ path: ["offers"] }) });
+
+        expect(paths).toEqual(["/", "/about", "/account", "/device", "/enroll", "/login", "/offers", "/stock", "/storage"]);
+        expect([host.app.paths(), typeof owned.description, foreign]).toEqual([["/", "/about", "/storage", "/device"], "string", { title: null, robots: { index: false, follow: false } }]);
 
     });
 

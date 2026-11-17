@@ -1,5 +1,5 @@
 import type * as cache from "engine-cache";
-import type * as error from "engine-error";
+import type * as exception from "engine-exception";
 import type * as state from "engine-state";
 
 export type Mode = "all" | "any";
@@ -15,7 +15,7 @@ export type SessionOptions = {
     now?: (() => number) | undefined;
     sync?: boolean | undefined;
     version?: number | undefined;
-    fail?: (( fault: error.Fault ) => void) | undefined;
+    fail?: (( fault: exception.Fault ) => void) | undefined;
 };
 export type SessionMoves<U> = { begin: ( tokens: Tokens, user: U ) => void; end: () => void; renewed: ( tokens: Tokens ) => void; update: ( user: U ) => void };
 export type Session<U> = {

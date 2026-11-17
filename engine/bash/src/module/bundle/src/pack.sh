@@ -69,6 +69,8 @@ module:bundle:pack:sources () {
 
         relative="${file#"${root}/${source}/"}"
 
+        [[ "${relative}" != "${LAW_FIRST}" ]] || continue
+
         [[ "${relative}" == *.sh && "${relative}" != *[!a-z0-9_/.-]* && "${relative}" != *..* ]] \
             || { core:error:fail "Invalid source name: ${relative}"; return; }
 
@@ -115,6 +117,11 @@ module:bundle:pack:data () {
         case "${file}" in
             *.toml)
                 core:parse:toml table "${root}/${file}" || return
+
+                for key in "${!PACK_STAMPS[@]}"; do
+                    table["${key}"]="${PACK_STAMPS[${key}]}"
+                done
+
                 mapfile -t keys < <(printf '%s\n' "${!table[@]}" | LC_ALL=C sort)
 
                 printf 'bundle:manifest () {\n\n    local -n _manifest="%s"\n\n    _manifest=(\n' "\${1}"
@@ -202,7 +209,7 @@ module:bundle:pack:entry () {
     local entry="${1}" line=""
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
-        [[ "${line}" == '#!'* || "${line}" == 'source '* || "${line}" == 'set '* ]] || printf '%s\n' "${line}"
+        [[ "${line}" == '#!'* || "${line}" == 'source '* || "${line}" == 'set '* || "${line}" == 'module:bundle:bash:ensure '* ]] || printf '%s\n' "${line}"
     done < "${entry}"
 
 }
@@ -219,8 +226,13 @@ module:bundle:pack:create () {
     staging="$(mktemp "${output}.XXXXXXXX")" || { core:error:fail "Cannot stage bundle: ${output}"; return; }
 
     (
-        printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'TOOL_BUNDLED=true' "TOOL_BUILD=${mode}"
-        printf 'TOOL_ROOT="%s"\nTOOL_ENGINE=""\nTOOL_SOURCE=""\nTOOL_BIN="%s"\n\n' "\${PWD}" "\${BASH_SOURCE[0]}"
+        printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail'
+
+        core:fs:file:read "${root}/${source}/module/bundle/src/bash.sh" || exit
+        printf "\nmodule:bundle:bash:ensure '%s' \"%s\" \"%s\"\n\n" "$(config:meta:msrv)" "\${BASH_SOURCE[0]}" "\$@"
+
+        printf '%s\n' 'TOOL_BUNDLED=true' "TOOL_BUILD=${mode}"
+        printf 'TOOL_ROOT=""\nTOOL_ENGINE=""\nTOOL_SOURCE=""\nTOOL_BIN="%s"\n\n' "\${BASH_SOURCE[0]}"
         printf '%s\n' 'declare -gA LOAD_STATE=() LOAD_INDEX=()' 'declare -g LOAD_PATH=""'
 
         module:bundle:pack:sources "${root}" "${source}" "${entry}" "${mode}" || exit

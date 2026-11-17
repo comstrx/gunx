@@ -1,5 +1,6 @@
 import { describe, expect, test as it, jest } from "bun:test";
-import * as error from "engine/error";
+import type * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as validate from "engine/validate";
 
 function errorsOf ( schema: validate.Schema, given: unknown, reason?: string ): error.Errors | undefined {
@@ -29,7 +30,7 @@ function refusal ( make: () => unknown ): unknown[] | undefined {
 
     } catch ( failure ) {
 
-        return failure instanceof error.Fault ? [failure.code, failure.reason, failure.message, failure.errors] : ["thrown", String(failure)];
+        return failure instanceof exception.Fault ? [failure.code, failure.reason, failure.message, failure.errors] : ["thrown", String(failure)];
 
     }
 
@@ -95,7 +96,7 @@ describe("validate", () => {
         const missing = validate.check(signup, {});
 
         expect(!missing.ok && missing.fault.errors.email).toEqual(["required"]);
-        expect(() => validate.assert(signup, {})).toThrow(error.Fault);
+        expect(() => validate.assert(signup, {})).toThrow(exception.Fault);
         expect(validate.assert(validate.number(), 1)).toBe(1);
         expect(validate.issuesOf([])).toEqual({});
 
@@ -515,7 +516,7 @@ describe("validate", () => {
         expect(["abcdefg1", "abcdefgh", "12345678", "a1", `a1${"x".repeat(127)}`, " abcdef1 ", "كلمةسرية1"].map(( given ) => read(validate.password(), given))).toEqual(["abcdefg1", { _: ["letters_and_digits"] }, { _: ["letters_and_digits"] }, { _: ["min_length:8"] }, { _: ["max_length:128"] }, " abcdef1 ", "كلمةسرية1"]);
         expect(["ab1", "abc1", "abcdef1"].map(( given ) => read(validate.password(4, 6), given))).toEqual([{ _: ["min_length:4"] }, "abc1", { _: ["max_length:6"] }]);
         expect(["١٢٣٤٥٦", " 12 34 56 ", "12345", "abcdef"].map(( given ) => read(validate.otp(), given))).toEqual(["123456", "123456", { _: ["format"] }, { _: ["format"] }]);
-        expect([0, 13, 1.5, Number.NaN].map(( length ) => refusal(() => validate.otp(length)))).toEqual(Array(4).fill(["thrown", "RangeError: not an otp length"]));
+        expect([0, 13, 1.5, Number.NaN].map(( length ) => refusal(() => validate.otp(length)))).toEqual(Array(4).fill(["bad_request", "misuse", "not an otp length", {}]));
         expect([read(validate.otp(4), "1234"), validate.field(validate.otp(4))]).toEqual(["1234", { name: "", kind: "string", required: true, format: "otp", min: 4, max: 4 }]);
         expect([" egp ", "XXX", "eg", "EGPP"].map(( given ) => read(validate.currency(), given))).toEqual(["EGP", "XXX", { _: ["format"] }, { _: ["format"] }]);
         expect(["ar_eg", "en-us", " EN ", "arabic"].map(( given ) => read(validate.locale(), given))).toEqual(["ar-EG", "en-US", "en", { _: ["format"] }]);
@@ -543,7 +544,7 @@ describe("validate", () => {
         const free = await validate.checkAsync(taken, "bob");
         const held = await validate.checkAsync(taken, "ann", "signup");
         const fault = failed.ok ? undefined : failed.fault;
-        const wire = JSON.stringify([fault, fault && error.toJson(fault), fault?.message, String(fault)]);
+        const wire = JSON.stringify([fault, fault && exception.toJson(fault), fault?.message, String(fault)]);
 
         expect(errorsOf(nested, { a: [{ b: "x" }, { b: 1 }] })).toEqual({ "a.1.b": ["type:string"] });
         expect([errorsOf(validate.string().check(validate.refine(() => false)), "x"), errorsOf(validate.string().check(validate.refine(() => false, "")), "x"), errorsOf(validate.custom(() => false), "x"), errorsOf(validate.string().check(validate.minLength(2), validate.minLength(2)), "x")]).toEqual([{ _: ["invalid"] }, { _: ["invalid"] }, { _: ["invalid"] }, { _: ["min_length:2"] }]);
@@ -560,7 +561,7 @@ describe("validate", () => {
         const phone = validate.format("phone");
         const otp = validate.format("otp", 4);
 
-        expect([phone === validate.format("phone"), otp === validate.format("otp", 4), otp === validate.format("otp", 6), refusal(() => validate.format(""))]).toEqual([true, true, false, ["thrown", "RangeError: not a format"]]);
+        expect([phone === validate.format("phone"), otp === validate.format("otp", 4), otp === validate.format("otp", 6), refusal(() => validate.format(""))]).toEqual([true, true, false, ["bad_request", "misuse", "not a format", {}]]);
 
     });
     it("the door's number, text and collection checks answer by the same codes", () => {

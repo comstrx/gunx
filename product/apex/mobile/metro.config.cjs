@@ -7,7 +7,7 @@ const engine = realpathSync(resolve(root, "node_modules/engine/../../"));
 const hosts = new Set(["react", "react-dom", "react-native", "react-native-web", "expo", "expo-status-bar", "react-native-screens", "react-native-safe-area-context", "@expo/metro-runtime"]);
 const config = getDefaultConfig(root);
 const compiledSpec = resolve(root, ".cache/spec/current.json");
-const catalogs = new Set(existsSync(compiledSpec) ? JSON.parse(readFileSync(compiledSpec, "utf8")).surface.world ?? [] : ["countries", "currencies", "languages", "emoji"]);
+const catalogs = new Set(existsSync(compiledSpec) ? JSON.parse(readFileSync(compiledSpec, "utf8")).index.flatMap(( listed ) => listed.settings.world) : ["countries", "currencies", "languages", "emoji"]);
 const catalogFiles = { "countries.json": "countries", "currencies.json": "currencies", "languages.json": "languages", "emojis.json": "emoji" };
 const zodLocales = /^\.\.\/locales\/index\.c?js$/;
 
@@ -24,7 +24,7 @@ config.resolver.resolveRequest = ( context, moduleName, platform ) => {
     const file = moduleName.split("/").pop();
     const catalog = moduleName.includes("/data/") && context.originModulePath.includes("/world/") ? catalogFiles[file] : undefined;
 
-    if ( catalog && !catalogs.has(catalog) ) return { type: "sourceFile", filePath: resolve(root, "src/native/unavailable.json") };
+    if ( catalog && !catalogs.has(catalog) ) return { type: "sourceFile", filePath: resolve(root, "src/host/unavailable.json") };
 
     return context.resolveRequest(context, moduleName, platform);
 

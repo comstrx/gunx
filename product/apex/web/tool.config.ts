@@ -1,22 +1,25 @@
 import * as tool from "engine/tool";
-import { specs } from "./src/specs/surface.ts";
-import { sheet } from "./src/styles/sheet.ts";
+import { specs } from "./specs/index.ts";
+import { sheet } from "./src/app/sheet.ts";
+import { part } from "./src/specs/part.ts";
 
 export default tool.define({
     specs,
+    part,
+    deploy: ( env ) => ({ contracts: { maps: { key: env.GOOGLE_MAPS_KEY ?? "" }, ...(env.API_URL ? { baseUrl: env.API_URL } : {}) } }),
     tasks: {
         compile: [
             tool.specs(".cache/spec"),
             tool.fonts("public/fonts", { css: ".cache/styles/fonts.css" }),
             tool.emit(".cache/styles/theme.css", sheet),
-            tool.script("src/native/appearance.ts", "public/appearance.js"),
+            tool.call("engine/world", "paint", "public/appearance.js"),
         ],
         analyze: [
             tool.layers({
-                layers: ["native", "types", "api", "specs", "stores", "hooks", "styles", "elements", "components", "features", "app"],
+                layers: ["types", "api", "specs", "stores", "hooks", "styles", "elements", "components", "features", "app"],
                 framework: { next: ["app"] },
-                outside: ["specs", ".cache"],
-                entries: ["app/**/{layout,page,not-found}.tsx", "app/{robots,sitemap}.ts", "native/appearance.ts", "styles/sheet.ts"],
+                outside: [".cache"],
+                entries: ["app/**/{layout,page,not-found}.tsx", "app/{robots,sitemap}.ts", "app/sheet.ts", "specs/part.ts"],
             }),
             tool.nameless(),
         ],

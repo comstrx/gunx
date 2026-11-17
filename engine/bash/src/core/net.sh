@@ -208,7 +208,7 @@ core:net:reason () {
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
         [[ -z "${line}" ]] || last="${line}"
-    done < "${file}"
+    done < <(tr -d '\0' < "${file}")
 
     last="${last#curl: }"
     last="${last//"${url}"/"$(core:net:host "${url}")"}"
@@ -222,7 +222,7 @@ core:net:excerpt () {
 
     [[ -f "${file}" ]] || { core:log:print "no body"; return 0; }
 
-    text="$(head -c 200 -- "${file}" | tr -s '\r\n\t' '   ')" || text=""
+    text="$(head -c 200 -- "${file}" | tr -d '\0' | tr -s '\r\n\t' '   ')" || text=""
     text="${text//"${url}"/"$(core:net:host "${url}")"}"
 
     core:log:print "${text:-no body}"

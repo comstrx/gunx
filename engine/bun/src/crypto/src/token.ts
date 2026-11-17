@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as string from "engine-string";
 import type { Claims, SignOptions, VerifyOptions } from "./arch.ts";
@@ -15,14 +16,14 @@ function seconds ( now: number | undefined ): number {
 
     if ( Number.isFinite(at) ) return at;
 
-    throw new RangeError("not a time");
+    throw exception.misuse("not a time");
 
 }
 function ahead ( value: number ): number {
 
     if ( Number.isFinite(value) ) return Math.max(0, Math.trunc(value));
 
-    throw new RangeError("not a duration");
+    throw exception.misuse("not a duration");
 
 }
 function listed ( value: string | readonly string[] | undefined ): readonly string[] {
@@ -88,7 +89,7 @@ export async function signToken ( claims: Claims, secret: string | Uint8Array, o
 
     const payload = `${header}.${string.base64url(json.stringify(body))}`;
 
-    if ( !sound(body) || payload.length + 44 > longest ) throw new RangeError("not a claim");
+    if ( !sound(body) || payload.length + 44 > longest ) throw exception.misuse("not a claim");
 
     return `${payload}.${string.base64url(await mac(secret, payload))}`;
 

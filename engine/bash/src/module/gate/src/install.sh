@@ -1,16 +1,3 @@
-declare -ga GATE_CARGO=( cargo-nextest cargo-deny cargo-vet cargo-udeps cargo-hack cargo-semver-checks cargo-fuzz )
-
-module:gate:install:runtime () {
-
-    local manager="" tool=""
-
-    manager="$(core:pkg:manager)" || return
-
-    while IFS= read -r tool; do
-        core:install:command "${tool}" "$(config:packages:name "${manager}" "${tool}")" || return
-    done < <(config:packages:runtime)
-
-}
 module:gate:install:rust () {
 
     local tool=""

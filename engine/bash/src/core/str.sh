@@ -35,7 +35,11 @@ core:str:pad () {
 
     local text="${1-}" width="${2:-0}"
 
-    printf '%-*s\n' "${width}" "${text}"
+    [[ "${width}" =~ ^[0-9]+$ ]] && (( ${#width} < 6 )) || width=0
+
+    (( ${#text} >= 10#${width} )) || printf -v text '%s%*s' "${text}" "$(( 10#${width} - ${#text} ))" ''
+
+    core:log:print "${text}"
 
 }
 core:str:contains () {

@@ -1,6 +1,6 @@
 import { expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as socket from "engine/socket";
 
 it("cancellation during a provider send is observed before arming the timeout", async () => {
@@ -50,7 +50,7 @@ it("a supplied tuple protocol owns wire keys, controls and failures without rese
 
         },
         kind: ( frame ) => frame.event === "p" ? "ping" : frame.event === "q" ? "quiet" : frame.event === "!" ? "error" : undefined,
-        fault: ( frame ) => error.fault("conflict", String(frame.data)),
+        fault: ( frame ) => exception.fault("conflict", String(frame.data)),
         identity: () => undefined,
     };
     const made = socket.open({ url: "wss://example.test", protocol, factory: () => wire, heartbeat: 0, reconnect: false });
@@ -93,7 +93,7 @@ it("inbound string and binary payloads share UTF-8 bounds, including lone surrog
 
     const wire: socket.Socket = { readyState: 1, onopen: null, onclose: null, onmessage: null, onerror: null, close: () => undefined, send: () => undefined };
     const seen: unknown[] = [];
-    const protocol: socket.Protocol = { encode: ( frame ) => String(frame.data), decode: ( text ) => ({ event: "data", data: text }), kind: () => undefined, fault: () => error.fault("internal"), identity: () => undefined };
+    const protocol: socket.Protocol = { encode: ( frame ) => String(frame.data), decode: ( text ) => ({ event: "data", data: text }), kind: () => undefined, fault: () => exception.fault("internal"), identity: () => undefined };
     const made = socket.open({ url: "wss://example.test", protocol, factory: () => wire, heartbeat: 0, reconnect: false, maxFrame: 2 });
 
     made.on("data", ( value ) => { seen.push(value); });

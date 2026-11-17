@@ -1,9 +1,13 @@
-export type { Binding, Block, BlockOptions, Catalogue, Compiled, CompiledFeature, CompiledScreen, Confirm, Context, Edge, Effect, Feature, FeatureOptions, Flow, Handler, Hooks, Issue, Manifest, Matched, MenuItem, Mounted, Named, Navigate, Operation, Options, Platform, Port, PortKind, Queue, Readable, Reference, Roles, RolesOptions, Rulebook, Runtime, RuntimeOptions, Scalar, Screen, ScreenOptions, Surface, SurfaceOptions, Test, Translate, Trigger, Value, Visibility, When } from "./arch.ts";
-export { namespaces } from "./arch.ts";
+export { boot } from "./app.ts";
+export type { App, AppOptions, Artifact, Asked, Binding, Block, BlockOptions, Brand, Build, Built, Carried, Carry, Catalogue, Compiled, CompiledFeature, CompiledScreen, Config, Confirm, Context, Contracts, Deploy, Doors, Edge, Effect, Effects, Feature, FeatureOptions, Feeder, Flow, Found, Groups, Handing, Handler, Head, Hooks, Host, Issue, Kind, Labels, Listed, Loaders, Manifest, Matched, MenuItem, Messages, Meta, Mounted, Moved, Moves, Navigate, Operation, Options, Part, PartOptions, Piece, Plan, PlanOptions, Platform, Popup, Port, PortKind, Public, Queue, Reactions, Readable, Reference, Rulebook, Runtime, RuntimeOptions, Scalar, Schema, Screen, ScreenOptions, Settings, Settled, Spec, SpecOptions, Surface, SurfaceOptions, Table, Test, Transfer, Translate, Trigger, Value, Visibility, When, Wording } from "./arch.ts";
+export { namespaces, version } from "./arch.ts";
+export { build } from "./build.ts";
 export { compile, explain, nearest } from "./compile.ts";
 export { revive, screenOf, serialize } from "./compiled.ts";
-export { all, any, block, branch, built, call, can, check, clear, confirm, data, disable, emit, enable, feature, form, fromDevice, fromEvent, fromFlow, fromSignal, hide, isBuilt, navigate, not, param, query, queued, read, refresh, screen, set, setting, show, signal, step, surface, text, trigger, user, when, write } from "./define.ts";
-export { roles } from "./roles.ts";
+export { after, all, any, block, branch, built, call, can, check, clear, close, confirm, data, debounce, disable, emit, enable, feature, form, from, fromDevice, fromEvent, fromFlow, fromSignal, hide, isBuilt, kind, navigate, not, open, param, plan, query, queued, read, refresh, screen, set, setting, show, signal, step, text, toggle, transfer, trigger, user, when, write } from "./define.ts";
+export { head, publish } from "./head.ts";
+export { isPart, part, settle } from "./part.ts";
 export { featuresOf, match, menuOf, runtime, titleOf } from "./runtime.ts";
-export { blockShapeOf, catalogShape, effectShape, featureShapeOf, platformShape, screenShapeOf, surfaceShape, whenShape } from "./shapes.ts";
+export { blockShapeOf, catalogShape, effectShape, featureShapeOf, planShape, platformShape, screenShapeOf, whenShape } from "./shapes.ts";
+export { define, isSpec, isSurface, locate, surface } from "./tree.ts";
 export { empty, evaluate, isReference, pathsOf, read as readPath, referencePath, resolve, resolveAll } from "./when.ts";

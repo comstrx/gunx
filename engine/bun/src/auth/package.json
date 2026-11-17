@@ -12,6 +12,7 @@
     "engine-crypto": "workspace:*",
     "engine-date": "workspace:*",
     "engine-error": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-json": "workspace:*",
     "engine-state": "workspace:*"
   }

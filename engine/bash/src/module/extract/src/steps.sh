@@ -1,33 +1,13 @@
-declare -ga EXTRACT_RESULTS=()
-
 module:extract:session () {
 
     local name="${1}" tree=""
 
-    tree="${TOOL_TEMP}/sync/${name//\//-}"
+    tree="${TOOL_TEMP}/sync/${name}"
 
     rm -rf -- "${tree}"
     core:fs:dir:new "${tree}" 755 || return
 
     @print "${tree}"
-
-}
-module:extract:tag () {
-
-    local name="${1}" root="" wanted=""
-
-    root="$(core:git:root "${TOOL_ENGINE}")" || return
-
-    if [[ "${name}" == product/* ]]; then wanted=inherit
-    else wanted="$(config:targets:get "${name}" tag)" || return
-    fi
-
-    [[ "${wanted}" != inherit ]] || { core:git:release "${root}" || true; return 0; }
-
-    core:validate:tag "${wanted}" || core:validate:semver "${wanted}" \
-        || { @err "${name}: tag must be inherit or a semver: ${wanted}"; return; }
-
-    @print "${wanted}"
 
 }
 module:extract:timeout () {
@@ -39,144 +19,266 @@ module:extract:timeout () {
     core:proc:seconds "${seconds}" --timeout
 
 }
-module:extract:prove () {
+module:extract:tag () {
 
-    local tree="${1}" name="${2}"
+    local name="${1}" tag=""
 
-    module:extract:verify "${tree}" "$(module:extract:kind "${name}")" "${name}" || return
+    tag="$(core:cli:value --tag)" || tag="$(config:targets:get "${name}" tag)" || return
 
-    ! core:cli:flag --gates || module:extract:gate "${tree}" "${name}" || return
+    [[ -z "${tag}" ]] || core:git:named "${tag}" || { @err "${name}: not a tag name: ${tag}"; return; }
+
+    @print "${tag}"
 
 }
-module:extract:build () {
+module:extract:pushes () {
 
-    local name="${1:-}" tree=""
+    core:cli:flag --push || core:cli:given --tag || core:cli:flag --release
 
-    [[ -n "${name}" ]] || { core:error:usage "NAME is required"; return; }
+}
+module:extract:notes () {
 
-    tree="$(module:extract:session "${name}")" || return
+    local file="${1}/CHANGELOG.md" tag="${2}" line="" inside=0
 
-    module:extract:prepare "${name}" "${tree}" || return
+    [[ -f "${file}" ]] || return 0
 
-    @print "${tree}"
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+
+        if [[ "${line}" == '## '* ]]; then
+
+            (( inside == 0 )) || break
+            [[ "${line}" != "## ${tag}" && "${line}" != "## ${tag} "* ]] || inside=1
+
+            continue
+
+        fi
+
+        (( inside == 0 )) || @print "${line}"
+
+    done < "${file}"
 
 }
 module:extract:extract () {
 
-    local name="${1:-}" into="" tree=""
+    local name="${1:-}" into=""
 
-    [[ -n "${name}" ]] || { core:error:usage "extract NAME [--into DIR] [--gates] [--timeout S]"; return; }
+    (( $# <= 1 )) || { core:error:usage "extract takes one target, or none for every target of [deps]"; return; }
 
-    into="$(core:cli:value --into)" || into=""
+    ! core:cli:flag --gates || ! core:cli:flag --no-gates || { core:error:usage "--gates and --no-gates do not meet"; return; }
+    ! core:cli:flag --clean || ! core:cli:flag --no-clean || { core:error:usage "--clean and --no-clean do not meet"; return; }
 
-    tree="$(module:extract:build "${name}")" || return
+    module:extract:open || return
 
-    if [[ -n "${into}" ]]; then
-        core:fs:tree:replace "${into}" "${tree}" || return
-        tree="$(cd -- "${into}" && pwd -P)" || return
+    ! core:cli:flag --no-clean || TOOL_KEEP=true
+
+    into="$(core:cli:value --to)" || into=""
+
+    [[ -n "${name}" ]] || { module:extract:all "${into}"; return; }
+
+    module:extract:one "${name}" "${into}" || { @err "extract of ${name} failed at ${EXTRACT_STAGE}"; return; }
+
+    @succ "${name}: ${EXTRACT_DONE}"
+
+}
+module:extract:one () {
+
+    local name="${1}" into="${2:-}" root="${TOOL_ROOT}" tree="" kind="" repository="" remote="" branch="" release="" latest="" message="" identity="" state="" result="" push=false
+
+    EXTRACT_STAGE=extract EXTRACT_DONE=""
+
+    kind="$(config:targets:get "${name}" type)" || return
+    tree="$(module:extract:session "${name}")" || return
+
+    ! module:extract:pushes || push=true
+
+    if [[ "${push}" == true ]]; then
+
+        branch="$(core:cli:value --branch)" || branch="$(config:targets:get "${name}" branch)" || return
+        repository="$(module:extract:repository "${name}")" || return
+        remote="$(core:git:url "${repository}")" || return
+        identity="$(core:git:identity "${root}")" || return
+        release="$(module:extract:tag "${name}")" || return
+        message="$(core:cli:value --message)" || message="Track ${release:-$(core:git:head "${root}")}" || return
+
+        [[ -z "${release}" ]] || ! core:git:ref "${remote}" "refs/tags/${release}" >/dev/null \
+            || { @err "${name}: ${repository} already carries the tag ${release}"; return; }
+
+        if core:cli:flag --release; then
+
+            core:gh:hosted "${repository}" >/dev/null || return
+
+            latest="${release}"
+            [[ -n "${latest}" ]] || latest="$(core:git:newest "${remote}")" || { @err "${name}: ${repository} has no tag to release"; return; }
+
+            ! core:gh:released "${repository}" "${latest}" || { @err "${name}: ${repository} already has the release ${latest}"; return; }
+
+        fi
+
+        module:extract:clean "${root}" "${name}" || return
+        core:gh:ensure "${repository}" || return
+
+        state="$(core:git:clone "${remote}" "${branch}" "${tree}")" || return
+        @info "cloned ${repository} on ${branch} (${state})"
+
+        core:git:empty "${tree}" || return
+
     else
-        TOOL_KEEP=true
+
+        core:git:init "${tree}" || return
+
     fi
 
-    module:extract:prove "${tree}" "${name}" || return
+    module:extract:prepare "${name}" "${tree}" || return
+    module:extract:verify "${tree}" "${kind}" "${name}" || return
 
-    @print "${tree}"
+    result=extracted
+
+    if ! core:cli:flag --no-gates; then
+
+        EXTRACT_STAGE=gates
+        result=proved
+
+        if ! module:extract:gate "${tree}" "${name}"; then
+
+            core:cli:flag --force || return 1
+
+            @warn "${name}: the gates failed; going on as --force asks"
+            result="gates failed"
+
+        fi
+
+    fi
+
+    if [[ -n "${into}" ]]; then
+
+        EXTRACT_STAGE=place
+
+        core:git:sync "${tree}" "${into}" || return
+        into="$(cd -- "${into}" && pwd -P)" || return
+
+        @info "placed ${name} into ${into}"
+        result+=", placed"
+
+    fi
+
+    if [[ "${push}" == true ]]; then
+
+        EXTRACT_STAGE=push
+
+        state="$(core:git:commit "${tree}" "${message}" "${identity%%$'\t'*}" "${identity#*$'\t'}" "$(config:paths:cache)")" || return
+
+        if [[ "${state}" == changed || -n "${release}" ]]; then
+
+            [[ -z "${release}" ]] || core:git:tag "${tree}" "${release}" || return
+
+            core:git:push "${tree}" "${remote}" "HEAD:refs/heads/${branch}" || return
+            [[ -z "${release}" ]] || core:git:push "${tree}" "${remote}" "refs/tags/${release}" || return
+
+            @info "pushed ${name} to ${repository} (${branch}) as \"${message}\"${release:+ with tag ${release}}"
+            result+=", pushed"
+
+        else
+
+            @info "${name}: the mirror already matches ${repository} (${branch})"
+            result+=", unchanged"
+
+        fi
+
+    fi
+
+    if [[ -n "${latest}" ]]; then
+
+        EXTRACT_STAGE=release
+
+        core:gh:release "${repository}" "${latest}" "$(module:extract:notes "${tree}" "${latest}")" || return
+
+        @info "released ${latest} at ${repository}"
+        result+=", released"
+
+    fi
+
+    ! core:cli:flag --no-clean || @print "${tree}"
+
+    EXTRACT_STAGE="" EXTRACT_DONE="${result}"
 
 }
-module:extract:place () {
+module:extract:all () {
 
-    local name="${1:-}" target="${2:-}" tree=""
+    local to="${1:-}" name="" need="" blocked="" list="" row="" failed=""
+    local -a names=()
+    local -A fate=()
 
-    [[ -n "${name}" && -n "${target}" ]] || { core:error:usage "place NAME DIR"; return; }
+    module:extract:ready || return
 
-    tree="$(module:extract:build "${name}")" || return
+    list="$(module:extract:order)" || return
+    mapfile -t names <<< "${list}"
 
-    core:fs:tree:replace "${target}" "${tree}" || return
-    target="$(cd -- "${target}" && pwd -P)" || return
+    EXTRACT_RESULTS=()
 
-    module:extract:prove "${target}" "${name}" || return
+    for name in "${names[@]}"; do
 
-    @succ "placed ${name} into ${target}"
+        blocked=""
 
-}
-module:extract:push () {
+        while IFS= read -r need; do
+            [[ -z "${need}" || "${fate[${need}]:-}" == ok ]] || blocked="${need}"
+        done < <(module:extract:needs "${name}")
 
-    local name="${1:-}" root="" tree="" clone="" repository="" remote="" branch="" release="" message="" identity="" state="" dry=false
+        if [[ -n "${blocked}" ]]; then
 
-    [[ -n "${name}" ]] || { core:error:usage "push NAME"; return; }
+            fate["${name}"]=failed
+            failed+="${failed:+, }${name} (waits for ${blocked})"
+            EXTRACT_RESULTS+=( "${name}"$'\t'"skipped: ${blocked} failed" )
 
-    ! core:cli:flag --dry-run || dry=true
+            continue
 
-    root="$(core:git:root "${TOOL_ENGINE}")" || return
-    branch="$(core:cli:value --branch)" || branch=main
-    repository="$(module:extract:repository "${name}")" || return
-    remote="$(module:extract:git:remote "${repository}")" || return
-    identity="$(module:extract:git:identity "${root}")" || return
-    release="$(module:extract:tag "${name}")" || return
-    message="Track ${release:-$(core:git:head "${root}")}" || return
+        fi
 
-    module:extract:clean "${root}" "${name}" "${dry}" || return
+        if module:extract:one "${name}" "${to:+${to}/${name}}"; then
 
-    tree="$(module:extract:build "${name}")" || return
-    clone="$(core:fs:temp:dir)" || return
+            fate["${name}"]=ok
+            EXTRACT_RESULTS+=( "${name}"$'\t'"${EXTRACT_DONE}" )
 
-    state="$(module:extract:git:checkout "${remote}" "${branch}" "${clone}" "${repository}" "$([[ "${dry}" == true ]] && @print false || @print true)")" || return
-    @info "cloned ${repository} on ${branch} (${state})"
+        else
 
-    core:fs:tree:replace "${clone}" "${tree}" || return
-    module:extract:prove "${clone}" "${name}" || return
+            fate["${name}"]=failed
+            failed+="${failed:+, }${name} (${EXTRACT_STAGE})"
+            EXTRACT_RESULTS+=( "${name}"$'\t'"failed at ${EXTRACT_STAGE}" )
 
-    state="$(module:extract:git:commit "${clone}" "${message}" "${identity%%$'\t'*}" "${identity#*$'\t'}")" || return
-    [[ -z "${release}" ]] || module:extract:git:tag "${clone}" "${release}" || return
+        fi
 
-    [[ "${dry}" == false ]] || {
-        EXTRACT_RESULTS+=( "${name}"$'\t'dry-run )
-        @print "dry run: ${name} → ${repository} (${branch}) \"${message}\"${release:+ +${release}} ${state}, verified, not pushed"
-        return 0
-    }
-    [[ "${state}" == changed || -n "${release}" ]] || {
-        EXTRACT_RESULTS+=( "${name}"$'\t'unchanged )
-        @info "${name}: the mirror already matches ${repository} (${branch})"
-        return 0
-    }
+    done
 
-    module:extract:git:push "${clone}" "${remote}" "HEAD:refs/heads/${branch}" || return
-    [[ -z "${release}" ]] || module:extract:git:push "${clone}" "${remote}" "refs/tags/${release}" || return
+    core:ui:section "Extract"
 
-    EXTRACT_RESULTS+=( "${name}"$'\t'pushed )
-    @succ "pushed ${name} to ${repository} (${branch}) as \"${message}\"${release:+ with tag ${release}}"
+    for row in "${EXTRACT_RESULTS[@]}"; do
+        @print "${row}"
+    done | core:ui:table
+
+    [[ -z "${failed}" ]] || { @err "extract failed: ${failed}"; return; }
 
 }
 module:extract:clean () {
 
-    local root="${1}" name="${2}" dry="${3}" kind="" part="" entry="" path=""
+    local root="${1}" name="${2}" kind="" part="" left="" entry="" path=""
     local -a dirty=()
 
-    kind="$(module:extract:kind "${name}")" || return
-    part="$(module:extract:part "${name}")" || return
+    kind="$(config:targets:get "${name}" type)" || return
+    part="$(config:targets:get "${name}" path)" || return
+    left="$(module:extract:left "${name}")" || return
 
     while IFS= read -r -d '' entry; do
 
         path="${entry:3}"
-        ! module:extract:travels "${kind}" "${part}" "${path}" || dirty+=( "${path}" )
+        ! module:extract:travels "${kind}" "${part}" "${path}" "${left}" || dirty+=( "${path}" )
 
     done < <(core:git:dirty "${root}")
 
-    (( ${#dirty[@]} > 0 )) || return 0
-
-    if [[ "${dry}" == true ]]; then
-        @warn "${name}: ${#dirty[@]} uncommitted files travel (${dirty[*]:0:5}); a real push refuses them"
-        return 0
-    fi
-
-    @err "${name}: ${#dirty[@]} uncommitted files travel (${dirty[*]:0:5}); commit them first, the mirror tracks a commit"
+    (( ${#dirty[@]} == 0 )) \
+        || { @err "${name}: ${#dirty[@]} uncommitted files travel (${dirty[*]:0:5}); commit them first, the mirror tracks a commit"; return; }
 
 }
 module:extract:ready () {
 
-    local root="" name="" part="" missing=""
-
-    root="$(core:git:root "${TOOL_ENGINE}")" || return
+    local root="${TOOL_ROOT}" name="" part="" missing=""
 
     while IFS= read -r name; do
 
@@ -185,48 +287,14 @@ module:extract:ready () {
 
     done < <(config:targets:list)
 
-    [[ -n "$(config:targets:list)" ]] || {
-        @err "No distribution table: no [deps] in ${root}/infra.toml nor in the engine"
-        return
-    }
-
     [[ -z "${missing}" ]] || { @err "Targets without a part under ${root}:${missing}"; return; }
-
-}
-module:extract:all () {
-
-    local name="" self="" failed=0 row=""
-    local -a names=()
-
-    module:extract:ready || return
-    self="$(module:extract:self)" || return
-
-    EXTRACT_RESULTS=()
-
-    while IFS= read -r name; do
-        if [[ "$(config:targets:get "${name}" path)" == "${self}" ]]; then names=( "${name}" "${names[@]}" )
-        else names+=( "${name}" )
-        fi
-    done < <(config:targets:list)
-
-    for name in "${names[@]}"; do
-        module:extract:push "${name}" || { failed=1; EXTRACT_RESULTS+=( "${name}"$'\t'failed ); }
-    done
-
-    core:ui:section "Sync"
-
-    for row in "${EXTRACT_RESULTS[@]}"; do
-        @print "${row}"
-    done | core:ui:table
-
-    (( failed == 0 )) || { @err "At least one target failed; the others above stand as reported"; return; }
 
 }
 module:extract:targets () {
 
-    local root="" target="" part="" state=""
+    local root="${TOOL_ROOT}" target="" part="" state=""
 
-    root="$(core:git:root "${TOOL_ENGINE}")" || return
+    module:extract:open || return
 
     while IFS= read -r target; do
 
@@ -234,8 +302,8 @@ module:extract:targets () {
         state=present
         [[ -d "${root}/${part}" ]] || state=missing
 
-        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${target}" "$(config:targets:get "${target}" type)" "${part}" \
-            "$(module:extract:repository "${target}")" "$(config:targets:get "${target}" tag)" "${state}"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${target}" "$(config:targets:get "${target}" type)" "${part}" "$(module:extract:name "${target}")" \
+            "$(module:extract:repository "${target}" 2>/dev/null || @print -)" "$(config:targets:get "${target}" branch)" "$(config:targets:get "${target}" tag)" "${state}"
 
     done < <(config:targets:list) | core:ui:grid
 

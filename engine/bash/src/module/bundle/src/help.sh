@@ -8,7 +8,7 @@ module:bundle:help:overview () {
 
     done < <(module:bundle:usage:commands)
 
-    core:log:print "${MANIFEST[meta.name]} ${MANIFEST[meta.version]} · ${TOOL_BUILD} build"
+    core:log:print "$(config:meta:name) $(config:meta:version) · ${TOOL_BUILD} build"
     core:log:print 'One Bash bundle for the work, the infrastructure and everything around them.'
 
     core:ui:section Usage

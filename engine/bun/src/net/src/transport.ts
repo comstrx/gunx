@@ -1,7 +1,7 @@
-import * as adapter from "engine-adapter";
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as device from "engine-device";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as func from "engine-func";
 import * as json from "engine-json";
 import * as rand from "engine-rand";
@@ -12,11 +12,11 @@ import { schemeOf, sound, withQuery } from "./url.ts";
 
 const decoder = new TextDecoder();
 
-export const fetcher: adapter.Port<Fetcher> = adapter.port<Fetcher>("net.fetcher", { fallback: adapter.web("net.fetch", ( host ) => host.fetch as Fetcher | undefined) });
+export const fetcher: exception.Slot<Fetcher> = exception.slot<Fetcher>("net.fetcher", { fallback: () => device.host<{ fetch?: Fetcher }>().fetch });
 
-function wrong ( reason: string, message: string ): error.Fault {
+function wrong ( reason: string, message: string ): exception.Fault {
 
-    return error.fault("internal", reason, { message });
+    return exception.fault("internal", reason, { message });
 
 }
 function has ( value: unknown, ...verbs: readonly string[] ): boolean {
@@ -45,18 +45,18 @@ export function address ( url: string ): string {
     const scheme = schemeOf(url);
 
     if ( !sound(url) ) throw wrong("net.address", "an address holds no control characters, backslashes or outer spaces");
-    if ( scheme !== undefined && scheme !== "http" && scheme !== "https" ) throw error.fault("forbidden", "net.scheme", { message: `${scheme}: a call goes over http or https` });
+    if ( scheme !== undefined && scheme !== "http" && scheme !== "https" ) throw exception.fault("forbidden", "net.scheme", { message: `${scheme}: a call goes over http or https` });
 
     return url;
 
 }
-export function gone ( caught: unknown, own: AbortSignal | undefined, limit: AbortSignal, late: string ): error.Fault {
+export function gone ( caught: unknown, own: AbortSignal | undefined, limit: AbortSignal, late: string ): exception.Fault {
 
-    if ( own?.aborted ) return error.fault("timeout", "net.aborted", { cause: own.reason });
-    if ( limit.aborted ) return error.fault("timeout", late, { cause: caught });
-    if ( error.isFault(caught) ) return caught;
+    if ( own?.aborted ) return exception.fault("timeout", "net.aborted", { cause: own.reason });
+    if ( limit.aborted ) return exception.fault("timeout", late, { cause: caught });
+    if ( exception.isFault(caught) ) return caught;
 
-    return error.fault("network", "net.unreachable", { cause: caught, message: error.messageOf(caught) });
+    return exception.fault("network", "net.unreachable", { cause: caught, message: exception.messageOf(caught) });
 
 }
 
@@ -86,9 +86,9 @@ function encoded ( body: unknown, headers: Record<string, string> ): Payload | u
 
 }
 
-export function failure ( status: number, body: unknown, headers: Record<string, string> = {} ): error.Fault {
+export function failure ( status: number, body: unknown, headers: Record<string, string> = {} ): exception.Fault {
 
-    const fault = error.fromEnvelope(body, status);
+    const fault = exception.fromEnvelope(body, status);
     const wait = retryAfterOf(headers["retry-after"]);
 
     return wait === undefined ? fault : fault.with({ retryAfter: wait });
@@ -98,20 +98,24 @@ export async function request<T = unknown> ( url: string, options: RequestOption
 
     if ( options.budget !== undefined ) {
 
-        if ( !(options.budget >= 0) ) throw new RangeError("not a duration");
+        if ( !(options.budget >= 0) ) throw exception.misuse("not a duration");
 
         const scope = event.deadline(options.budget, options.signal);
 
         try {
 
-            return await request<T>(url, { ...options, budget: undefined, signal: scope.signal });
+            return await exception.rescueAsync(async () => {
 
-        } catch ( caught ) {
+                return await request<T>(url, { ...options, budget: undefined, signal: scope.signal });
 
-            if ( options.signal?.aborted ) throw error.fault("timeout", "net.aborted", { cause: options.signal.reason });
-            if ( scope.signal.aborted ) throw error.fault("timeout", "net.budget", { cause: caught });
+            }, ( caught ) => {
 
-            throw caught;
+                if ( options.signal?.aborted ) throw exception.fault("timeout", "net.aborted", { cause: options.signal.reason });
+                if ( scope.signal.aborted ) throw exception.fault("timeout", "net.budget", { cause: caught });
+
+                throw caught;
+
+            });
 
         } finally {
 
@@ -145,44 +149,48 @@ export async function request<T = unknown> ( url: string, options: RequestOption
 
         attempts += 1;
 
-        if ( options.signal?.aborted ) throw error.fault("timeout", "net.aborted", { cause: options.signal.reason });
+        if ( options.signal?.aborted ) throw exception.fault("timeout", "net.aborted", { cause: options.signal.reason });
 
         const limit = event.deadline(timeout, options.signal);
 
         try {
 
-            const response = await event.race(send(target, { method, headers, body, signal: limit.signal, ...(options.redirect === undefined ? {} : { redirect: options.redirect }) }), limit.signal);
-            const replyHeaders: Record<string, string> = Object.create(null);
+            return await exception.rescueAsync(async () => {
 
-            response.headers.forEach(( value, name ) => {
+                const response = await event.race(send(target, { method, headers, body, signal: limit.signal, ...(options.redirect === undefined ? {} : { redirect: options.redirect }) }), limit.signal);
+                const replyHeaders: Record<string, string> = Object.create(null);
 
-                replyHeaders[name.toLowerCase()] = value;
+                response.headers.forEach(( value, name ) => {
+
+                    replyHeaders[name.toLowerCase()] = value;
+
+                });
+
+                const claims = (replyHeaders["content-type"] ?? "").includes("json");
+                const wanted = as === "json" || (as === "auto" && claims);
+                const bytes = method === "HEAD" ? new Uint8Array(0) : await readBytes(response, maxBytes, limit.signal);
+                const text = as === "bytes" && response.ok ? "" : decoder.decode(bytes);
+                const parsed = text !== "" && (wanted || (claims && !response.ok)) ? json.parse(text) : undefined;
+
+                if ( !response.ok ) {
+
+                    const fault = (options.failure ?? failure)(response.status, parsed ?? text, replyHeaders);
+
+                    throw fault.with({ requestId: fault.requestId ?? requestId });
+
+                }
+
+                if ( wanted && parsed === undefined && text !== "" ) throw exception.fault("internal", "net.json", { status: 502, requestId, message: "the reply is not the json it claims to be" });
+
+                const payload = (as === "bytes" ? bytes : wanted && text !== "" ? parsed : as === "json" ? undefined : text) as T;
+
+                return { status: response.status, ok: true, headers: replyHeaders, body: payload, text, ms: date.now() - started, attempts, requestId };
+
+            }, ( caught ) => {
+
+                throw gone(caught, options.signal, limit.signal, "net.timeout");
 
             });
-
-            const claims = (replyHeaders["content-type"] ?? "").includes("json");
-            const wanted = as === "json" || (as === "auto" && claims);
-            const bytes = method === "HEAD" ? new Uint8Array(0) : await readBytes(response, maxBytes, limit.signal);
-            const text = as === "bytes" && response.ok ? "" : decoder.decode(bytes);
-            const parsed = text !== "" && (wanted || (claims && !response.ok)) ? json.parse(text) : undefined;
-
-            if ( !response.ok ) {
-
-                const fault = (options.failure ?? failure)(response.status, parsed ?? text, replyHeaders);
-
-                throw fault.with({ requestId: fault.requestId ?? requestId });
-
-            }
-
-            if ( wanted && parsed === undefined && text !== "" ) throw error.fault("internal", "net.json", { status: 502, requestId, message: "the reply is not the json it claims to be" });
-
-            const payload = (as === "bytes" ? bytes : wanted && text !== "" ? parsed : as === "json" ? undefined : text) as T;
-
-            return { status: response.status, ok: true, headers: replyHeaders, body: payload, text, ms: date.now() - started, attempts, requestId };
-
-        } catch ( caught ) {
-
-            throw gone(caught, options.signal, limit.signal, "net.timeout");
 
         } finally {
 
@@ -190,6 +198,6 @@ export async function request<T = unknown> ( url: string, options: RequestOption
 
         }
 
-    }, { times: Math.max(1, (Math.trunc(retries) || 0) + 1), delay: 200, signal: options.signal, when: ( caught ) => !(error.isFault(caught) && caught.reason === "net.json") && error.retryable(caught) && (options.idempotent ?? bodiless) });
+    }, { times: Math.max(1, (Math.trunc(retries) || 0) + 1), delay: 200, signal: options.signal, when: ( caught ) => !(exception.isFault(caught) && caught.reason === "net.json") && exception.retryable(caught) && (options.idempotent ?? bodiless) });
 
 }

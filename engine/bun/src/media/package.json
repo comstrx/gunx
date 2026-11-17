@@ -1,0 +1,14 @@
+{
+  "name": "engine-media",
+  "private": true,
+  "type": "module",
+  "description": "Media: pick, kinds, image sizing, playback links, a voice, clip or still take",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-device": "workspace:*",
+    "engine-exception": "workspace:*"
+  }
+}

@@ -267,7 +267,7 @@ core:sys:session () {
     [[ -O "${lab}/run" && ! -L "${lab}/run" ]] || { core:error:fail "Not owned by this user: ${lab}/run"; return; }
     core:sys:prune "${lab}/run"
 
-    directory="$(mktemp -d "${lab}/run/${stamp}.XXXX")" || { core:error:fail "Cannot create the session directory"; return; }
+    directory="$(mktemp -d "${lab}/run/${stamp}.XXXXXXXX")" || { core:error:fail "Cannot create the session directory"; return; }
 
     printf '%s\n' "$$" > "${directory}/pid" || { core:error:fail "Cannot mark the session ${directory}"; return; }
 
@@ -283,6 +283,9 @@ core:sys:prune () {
         [[ -d "${directory}" ]] || continue
 
         directory="${directory%/}"
+
+        [[ ! -e "${directory}/keep" ]] || continue
+
         pid="${directory##*/}"
         pid="${pid%.*}"
         pid="${pid##*-}"

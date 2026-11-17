@@ -1,7 +1,7 @@
 export { address } from "./address.ts";
-export type { Bound, Call, Catalogue, Change, Client, ClientOptions, Connect, Define, Delivery, Endpoint, Envelope, Events, Facts, FakeOptions, Fakes, Features, Header, Headers, Info, Live, Many, Member, Meta, Method, Operation, Overrides, Page, Part, Patch, Patched, Paths, Presence, PresenceOptions, PresenceState, Realtime, Recorded, Reply, Route, Routes, Stage, Stub, TransportIssue, Wire } from "./arch.ts";
+export type { Bound, Call, Catalogue, Change, Client, ClientOptions, Connect, Define, Delivery, Endpoint, Envelope, Events, Facts, FakeOptions, Fakes, Features, FileRule, Header, Headers, Info, Live, Many, Member, Meta, Method, Operation, Overrides, Page, Part, Patch, Patched, Paths, Presence, PresenceOptions, PresenceState, Realtime, Recorded, Reply, Route, Routes, Stage, Stub, TransportIssue, Wire } from "./arch.ts";
 export { create } from "./client.ts";
-export { catalogue, del, endpoints, facts, feature, fieldsOf, find, get, idOf, many, paramsOf, partsOf, patch, post, put } from "./contract.ts";
+export { catalogue, del, endpoints, facts, feature, fieldsOf, file, find, get, idOf, many, paramsOf, partsOf, patch, post, put } from "./contract.ts";
 export { envelope, isEnvelope, pageOf, unwrap } from "./envelope.ts";
 export { fakes, sample } from "./fakes.ts";
 export { applyPatch, changeOf, live, liveHouse } from "./live.ts";

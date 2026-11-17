@@ -121,12 +121,18 @@ core:toml:utf8 () {
     local -n _glyph="${1}"
     local code=$(( 16#${2} )) bytes=""
 
-    if (( code < 0x80 )); then printf -v bytes '\\x%02x' "${code}"
-    elif (( code < 0x800 )); then printf -v bytes '\\x%02x' $(( 0xC0 | code >> 6 )) $(( 0x80 | (code & 0x3F) ))
-    elif (( code >= 0xD800 && code <= 0xDFFF )); then core:error:fail "a surrogate is not a character: ${2}"; return
-    elif (( code < 0x10000 )); then printf -v bytes '\\x%02x' $(( 0xE0 | code >> 12 )) $(( 0x80 | (code >> 6 & 0x3F) )) $(( 0x80 | (code & 0x3F) ))
-    elif (( code <= 0x10FFFF )); then printf -v bytes '\\x%02x' $(( 0xF0 | code >> 18 )) $(( 0x80 | (code >> 12 & 0x3F) )) $(( 0x80 | (code >> 6 & 0x3F) )) $(( 0x80 | (code & 0x3F) ))
-    else core:error:fail "beyond unicode: ${2}"; return
+    if (( code < 0x80 )); then
+        printf -v bytes '\\x%02x' "${code}"
+    elif (( code < 0x800 )); then
+        printf -v bytes '\\x%02x' $(( 0xC0 | code >> 6 )) $(( 0x80 | (code & 0x3F) ))
+    elif (( code >= 0xD800 && code <= 0xDFFF )); then
+        core:error:fail "a surrogate is not a character: ${2}"; return
+    elif (( code < 0x10000 )); then
+        printf -v bytes '\\x%02x' $(( 0xE0 | code >> 12 )) $(( 0x80 | (code >> 6 & 0x3F) )) $(( 0x80 | (code & 0x3F) ))
+    elif (( code <= 0x10FFFF )); then
+        printf -v bytes '\\x%02x' $(( 0xF0 | code >> 18 )) $(( 0x80 | (code >> 12 & 0x3F) )) $(( 0x80 | (code >> 6 & 0x3F) )) $(( 0x80 | (code & 0x3F) ))
+    else
+        core:error:fail "beyond unicode: ${2}"; return
     fi
 
     printf -v _glyph '%b' "${bytes}"

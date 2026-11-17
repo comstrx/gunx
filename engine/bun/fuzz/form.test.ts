@@ -1,5 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as form from "engine/form";
 import * as validate from "engine/validate";
 import * as fc from "fast-check";
@@ -61,7 +61,7 @@ function issues ( values: Values ): Set<string> {
 
     const found = validate.check(schema, values);
 
-    return new Set(found.ok ? [] : Object.keys(error.formErrors(found.fault, "invalid")));
+    return new Set(found.ok ? [] : Object.keys(exception.formErrors(found.fault, "invalid")));
 
 }
 function pathOf ( values: Values, at: "name" | "qty" | "address.city" ): unknown {
@@ -333,7 +333,7 @@ describe("fuzz form", () => {
 
                 keys.push(key);
 
-                if ( failing ) throw error.fault("unavailable", "down");
+                if ( failing ) throw exception.fault("unavailable", "down");
 
                 return value.qty;
 

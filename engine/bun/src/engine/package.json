@@ -13,7 +13,6 @@
       "react-native": "./src/runtime.ts",
       "default": "./src/index.ts"
     },
-    "./adapter": "./src/adapter.ts",
     "./api": "./src/api.ts",
     "./auth": "./src/auth.ts",
     "./cache": "./src/cache.ts",
@@ -22,6 +21,7 @@
     "./device": "./src/device.ts",
     "./error": "./src/error.ts",
     "./event": "./src/event.ts",
+    "./exception": "./src/exception.ts",
     "./fake": "./src/fake.ts",
     "./form": "./src/form.ts",
     "./fs": "./src/fs.ts",
@@ -31,6 +31,7 @@
     "./json": "./src/json.ts",
     "./list": "./src/list.ts",
     "./log": "./src/log.ts",
+    "./media": "./src/media.ts",
     "./net": "./src/net.ts",
     "./number": "./src/number.ts",
     "./parse": "./src/parse.ts",
@@ -52,7 +53,6 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "engine-adapter": "workspace:*",
     "engine-api": "workspace:*",
     "engine-auth": "workspace:*",
     "engine-cache": "workspace:*",
@@ -61,6 +61,7 @@
     "engine-device": "workspace:*",
     "engine-error": "workspace:*",
     "engine-event": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-fake": "workspace:*",
     "engine-form": "workspace:*",
     "engine-fs": "workspace:*",
@@ -70,6 +71,7 @@
     "engine-json": "workspace:*",
     "engine-list": "workspace:*",
     "engine-log": "workspace:*",
+    "engine-media": "workspace:*",
     "engine-net": "workspace:*",
     "engine-number": "workspace:*",
     "engine-parse": "workspace:*",

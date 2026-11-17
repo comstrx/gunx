@@ -1,0 +1,6 @@
+export const ar = {
+    hello: { eyebrow: "مرحباً من أكمي" },
+    about: { title: "لوحة إدارة أكمي", body: "من هنا تدير المتجر كله: الطلبات والعملاء والمندوبين." },
+    brand: { name: "أكمي", tagline: "لوحة الإدارة" },
+    screens: { about: { title: "عن اللوحة" }, gear: { title: "الجهاز" }, hello: { title: "أهلاً" }, storage: { title: "التخزين" } },
+} as const;

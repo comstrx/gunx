@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as fake from "engine/fake";
 import * as validate from "engine/validate";
 import * as world from "engine/world";
@@ -144,10 +145,10 @@ describe("fake", () => {
 
         };
 
-        expect([told(() => fake.create("x", "fr" as fake.Locale)), told(() => fake.create("x", { country: "US" as fake.Country })), told(() => fake.create("x", { now: Number.NaN })), told(() => faker.phone("US" as fake.Country))]).toEqual(["RangeError: not a locale", "RangeError: not a country", "RangeError: not a date", "RangeError: not a country"]);
-        expect([told(() => faker.many(-1, () => 1)), told(() => faker.many(2.5, () => 1)), told(() => faker.many(1e9, () => 1)), told(() => faker.many(Number.NaN, () => 1)), told(() => faker.digits(0)), told(() => faker.words(0)), told(() => faker.pickMany([1], 2.5)), told(() => faker.unique(-1, () => 1))]).toEqual(["RangeError: not a count", "RangeError: not a count", "RangeError: not a count", "RangeError: not a count", "ok", "ok", "RangeError: not a count", "RangeError: not a count"]);
-        expect([told(() => faker.past(-1)), told(() => faker.past(0)), told(() => faker.past(Number.NaN)), told(() => faker.future(40_000)), told(() => faker.birthdate(-1)), told(() => faker.birthdate(30, 20)), told(() => faker.birthdate(0, 131)), told(() => faker.image(0)), told(() => faker.image(100, 20_000)), told(() => faker.image(1.5))]).toEqual(["RangeError: not a duration", "RangeError: not a duration", "RangeError: not a duration", "RangeError: not a duration", "RangeError: not an age", "RangeError: not an age", "RangeError: not an age", "RangeError: not a size", "RangeError: not a size", "RangeError: not a size"]);
-        expect([told(() => faker.pick([])), told(() => faker.weighted([{ item: 1, weight: 0 }])), told(() => faker.weighted([])), told(() => faker.file("exe")), told(() => faker.coordinates({ lat: 91, lng: 0 })), told(() => faker.coordinates(undefined, -1)), told(() => faker.coordinates(undefined, 1001)), told(() => faker.matching("(?=a)")), told(() => faker.matching("\\1")), told(() => faker.matching("(a{9999}){9999}")), told(() => faker.unique(5, () => 1))]).toEqual(["RangeError: not a choice", "RangeError: not a choice", "RangeError: not a choice", "RangeError: not a file", "RangeError: not a point", "RangeError: not a point", "RangeError: not a point", "RangeError: not a pattern", "RangeError: not a pattern", "RangeError: not a pattern", "RangeError: not unique"]);
+        expect([told(() => fake.create("x", "fr" as fake.Locale)), told(() => fake.create("x", { country: "US" as fake.Country })), told(() => fake.create("x", { now: Number.NaN })), told(() => faker.phone("US" as fake.Country))]).toEqual(["Fault: not a locale", "Fault: not a country", "Fault: not a date", "Fault: not a country"]);
+        expect([told(() => faker.many(-1, () => 1)), told(() => faker.many(2.5, () => 1)), told(() => faker.many(1e9, () => 1)), told(() => faker.many(Number.NaN, () => 1)), told(() => faker.digits(0)), told(() => faker.words(0)), told(() => faker.pickMany([1], 2.5)), told(() => faker.unique(-1, () => 1))]).toEqual(["Fault: not a count", "Fault: not a count", "Fault: not a count", "Fault: not a count", "ok", "ok", "Fault: not a count", "Fault: not a count"]);
+        expect([told(() => faker.past(-1)), told(() => faker.past(0)), told(() => faker.past(Number.NaN)), told(() => faker.future(40_000)), told(() => faker.birthdate(-1)), told(() => faker.birthdate(30, 20)), told(() => faker.birthdate(0, 131)), told(() => faker.image(0)), told(() => faker.image(100, 20_000)), told(() => faker.image(1.5))]).toEqual(["Fault: not a duration", "Fault: not a duration", "Fault: not a duration", "Fault: not a duration", "Fault: not an age", "Fault: not an age", "Fault: not an age", "Fault: not a size", "Fault: not a size", "Fault: not a size"]);
+        expect([told(() => faker.pick([])), told(() => faker.weighted([{ item: 1, weight: 0 }])), told(() => faker.weighted([])), told(() => faker.file("exe")), told(() => faker.coordinates({ lat: 91, lng: 0 })), told(() => faker.coordinates(undefined, -1)), told(() => faker.coordinates(undefined, 1001)), told(() => faker.matching("(?=a)")), told(() => faker.matching("\\1")), told(() => faker.matching("(a{9999}){9999}")), told(() => faker.unique(5, () => 1))]).toEqual(["Fault: not a choice", "Fault: not a choice", "Fault: not a choice", "Fault: not a file", "Fault: not a point", "Fault: not a point", "Fault: not a point", "Fault: not a pattern", "Fault: not a pattern", "Fault: not a pattern", "Fault: not unique"]);
         expect(faker.weighted([{ item: "a", weight: 0 }, { item: "b", weight: 1 }])).toBe("b");
 
     });
@@ -297,7 +298,7 @@ describe("fake", () => {
 
             if ( pattern.source.includes("\\1") ) {
 
-                expect(() => faker.matching(pattern)).toThrow(new RangeError("not a pattern"));
+                expect(() => faker.matching(pattern)).toThrow(exception.misuse("not a pattern"));
 
                 continue;
 
@@ -361,7 +362,7 @@ describe("fake", () => {
         }
 
         expect(Math.max(...Array.from({ length: 50 }, () => a.matching("a{2,100}").length))).toBeLessThanOrEqual(34);
-        expect([told(() => a.matching("[a-\\uffff]")), told(() => a.matching("[]")), told(() => a.matching("a{5,2}")), told(() => a.matching("a)")), told(() => a.matching("[z-a]"))]).toEqual(Array.from({ length: 5 }, () => "RangeError: not a pattern"));
+        expect([told(() => a.matching("[a-\\uffff]")), told(() => a.matching("[]")), told(() => a.matching("a{5,2}")), told(() => a.matching("a)")), told(() => a.matching("[z-a]"))]).toEqual(Array.from({ length: 5 }, () => "Fault: not a pattern"));
         expect(new Set(Array.from({ length: 40 }, () => a.matching("a|b"))).size).toBe(2);
 
         const either = validate.union([validate.null(), validate.string()]);

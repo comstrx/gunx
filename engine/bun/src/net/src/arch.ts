@@ -1,4 +1,4 @@
-import type * as error from "engine-error";
+import type * as exception from "engine-exception";
 import type * as parse from "engine-parse";
 
 export type Address = { version: 4 | 6; words: readonly number[] };
@@ -36,7 +36,7 @@ export type RequestOptions = {
     idempotent?: boolean | undefined;
     redirect?: Redirect | undefined;
     as?: "auto" | "json" | "text" | "bytes" | undefined;
-    failure?: (( status: number, body: unknown, headers: Record<string, string> ) => error.Fault) | undefined;
+    failure?: (( status: number, body: unknown, headers: Record<string, string> ) => exception.Fault) | undefined;
 };
 export type Reply<T = unknown> = { status: number; ok: boolean; headers: Record<string, string>; body: T; text: string; ms: number; attempts: number; requestId: string };
 export type Policy = { origins: readonly string[]; allowLoopback?: boolean | undefined };

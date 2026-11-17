@@ -1,154 +1,132 @@
-module:extract:flows:files () {
-
-    [[ "${3}" == .github/* ]]
-
-}
 module:extract:flows:action () {
 
-    local root="${1}" self="${2}" name="" spec="" path="" remote="" ref="" sha=""
+    local root="${1}" tool="${2}" name="${3}" path="" remote="" ref="" sha="" label="" repo="" tag="" wanted=""
 
-    while IFS= read -r name; do
+    while IFS=$'\t' read -r label repo tag; do
+        [[ "${repo}" != "${tool}" ]] || wanted="${tag}"
+    done < <(config:targets:deps "${name}")
 
-        [[ "$(config:targets:get "${name}" path)" == "${self}" ]] || continue
+    path="$(core:git:resolve "${tool}" "${root}")" || return
+    remote="$(core:git:url "${path}")" || return
+    ref="$(module:extract:pin "${wanted}" "${remote}")" || return
 
-        spec="$(config:targets:get "${name}" repo)" || return
+    if [[ -n "${ref}" ]]; then sha="$(core:git:ref "${remote}" "refs/tags/${ref}")" || { @err "${path} has no tag ${ref}"; return; }
+    else
 
-    done < <(config:targets:list)
+        ref="$(core:git:default "${remote}")" || return
+        sha="$(core:git:ref "${remote}" "refs/heads/${ref}")" || { @err "${path} has no branch ${ref}"; return; }
 
-    [[ -n "${spec}" ]] || { @err "No target carries ${self}; the workflows of a tool need it as an action"; return; }
+    fi
 
-    path="$(module:extract:git:resolve "${spec}" "${root}")" || return
-    remote="$(module:extract:git:remote "${path}")" || return
-    ref="$(core:git:release "${root}")" || ref=""
+    @print "${path#*/}/${EXTRACT_ACTION}@${sha} # ${ref}"
 
-    sha="$(module:extract:git:ref "${remote}" "${ref:+refs/tags/${ref}}")" || sha=""
+}
+module:extract:flows:paths () {
 
-    [[ -n "${sha}" ]] || sha="$(module:extract:git:ref "${remote}" refs/heads/main)" || sha=""
+    local file="${1}" tree="${2}" line="" path=""
 
-    [[ -n "${sha}" ]] || {
+    while IFS= read -r line; do
 
-        @warn "${path} has no ${ref:-main} yet; the action stays on main unpinned"
-        @print "${path#*/}/src/module/gate/template@main"
+        path="${line#*- }"
 
-        return 0
+        [[ -d "${tree}/${path}" ]] || core:parse:yaml:prune "${file}" "^ *- ${path//./[.]}\$" self || return
 
-    }
-
-    @print "${path#*/}/src/module/gate/template@${sha} # ${ref:-main}"
+    done < <(grep -E "^ *- (${EXTRACT_HOMES})(/[^ ]+)?\$" -- "${file}" | sort -u || true)
 
 }
 module:extract:flows:rewrite () {
 
-    local file="${1}" tree="${2}" action="${3}" self="${4}" line="" wanted=""
+    local file="${1}" tree="${2}" kind="${3}" self="${4}" carried="${5}" alias=""
 
-    core:parse:yaml:erase "${file}" paths || return
-    core:parse:yaml:prune "${file}" '^ *- run: infra sync( |$)' 2 || return
-    module:extract:flows:setups "${file}" "${tree}" || return
+    alias="$(config:meta:alias)" || return
 
-    while IFS= read -r line; do
+    [[ "${kind}" == product ]] || core:parse:yaml:erase "${file}" paths || return
 
-        wanted="${line##*/}"
+    module:extract:flows:paths "${file}" "${tree}" || return
+    core:parse:yaml:prune "${file}" "^ *- run: ${alias} extract( |\$)" 2 || return
 
-        if [[ -f "${tree}/${wanted}" ]]; then core:parse:yaml:sub "${file}" -E "s|(version-file: )engine/[a-z]+/|\\1|" || return
-        else core:parse:yaml:prune "${file}" "version-file: engine/" self || return
-        fi
+    core:parse:yaml:sub "${file}" -E "s/^( *(- )?(run: )?)${alias} /\\1${EXTRACT_SLOTS[0]} /" || return
 
-    done < <(grep -E 'version-file: engine/' -- "${file}" || true)
+    [[ "${carried}" == true ]] || core:parse:yaml:sub "${file}" -E "s|uses: [$]/${self}/${EXTRACT_ACTION}|uses: ${EXTRACT_SLOTS[1]}|" || return
 
-    core:parse:yaml:sub "${file}" -E "s|uses: [$]/${self}/src/module/gate/template|uses: ${action}|" || return
-    module:extract:flows:matrix "${file}" || return
     core:parse:yaml:hollow "${file}" || return
-
-}
-module:extract:flows:setups () {
-
-    local file="${1}" tree="${2}" action="" manifest="" found=0
-    local -A needs=( [astral-sh/setup-uv]=pyproject.toml [actions/setup-go]="go.work go.mod" [cargo-bins/cargo-binstall]=Cargo.toml )
-
-    for action in "${!needs[@]}"; do
-
-        found=0
-
-        for manifest in ${needs[${action}]}; do
-            [[ ! -f "${tree}/${manifest}" ]] || found=1
-        done
-
-        (( found == 1 )) || core:parse:yaml:prune "${file}" "^ *- uses: ${action}@" || return
-
-    done
-
-}
-module:extract:flows:matrix () {
-
-    local file="${1}"
-
-    grep -qE '^ *path:( |$)' -- "${file}" || return 0
-
-    core:parse:yaml:set "${file}" path '[.]'
 
 }
 module:extract:flows:labels () {
 
     local tree="${1}"
 
-    core:parse:yaml:prune "${tree}/.github/labels.yml" '[(](engine|product|tutor)/' || return
-    core:parse:yaml:prune "${tree}/.github/labeler.yml" "'(engine|product|tutor)/" || return
+    core:parse:yaml:prune "${tree}/.github/labels.yml" "[(](${EXTRACT_HOMES})/" || return
+    core:parse:yaml:prune "${tree}/.github/labeler.yml" "'(${EXTRACT_HOMES})/" || return
     core:parse:yaml:hollow "${tree}/.github/labeler.yml" '[a-z][a-z0-9-]*' || return
 
 }
 module:extract:flows:dependabot () {
 
-    local tree="${1}" kind="${2}" part="${3}" root="${4}" file="${1}/.github/dependabot.yml" project="" other=""
+    local tree="${1}" kind="${2}" part="${3}" file="${1}/.github/dependabot.yml" line="" path=""
 
     [[ -f "${file}" ]] || return 0
 
     core:parse:yaml:sub "${file}" -E -e '/^#/d' -e "s|prefix: '[a-z0-9-]+\\(deps\\)'|prefix: deps|" || return
 
-    if [[ "${kind}" != product ]]; then
+    [[ "${kind}" == product ]] \
+        || core:parse:yaml:sub "${file}" -E -e "s|^( *)directory: /${part}\$|\\1directory: /|" -e "s|^( *)directory: /${part}/|\\1directory: /|" \
+        || return
 
-        core:parse:yaml:sub "${file}" -E "s|^( *)directory: /${part}\$|\\1directory: /|" || return
-        core:parse:yaml:prune "${file}" "directory: /(engine|product|tutor)/" || return
+    while IFS= read -r line; do
 
-        return 0
+        path="${line#*directory: /}"
 
-    fi
+        [[ -d "${tree}/${path}" ]] || core:parse:yaml:prune "${file}" "directory: /${path//./[.]}\$" || return
 
-    project="${part#product/}"
-
-    for other in "${root}"/product/*/; do
-
-        other="${other%/}"
-        other="${other##*/}"
-
-        [[ "${other}" == "${project}" ]] || core:parse:yaml:prune "${file}" "directory: /product/${other}/" || return
-
-    done
+    done < <(grep -E "^ *directory: /(${EXTRACT_HOMES})/" -- "${file}" | sort -u || true)
 
 }
 module:extract:flows:apply () {
 
-    local tree="${1}" kind="${2}" part="${3}" root="" action="" file="" self=""
+    local tree="${1}" kind="${2}" part="${3}" name="${4}" file="" self="" carried=false
 
     [[ -d "${tree}/.github" ]] || return 0
 
-    root="$(core:git:root "${TOOL_ENGINE}")" || return
     self="$(module:extract:self)" || return
 
     module:extract:flows:labels "${tree}" || return
-    module:extract:flows:dependabot "${tree}" "${kind}" "${part}" "${root}" || return
+    module:extract:flows:dependabot "${tree}" "${kind}" "${part}" || return
 
-    [[ "${kind}" != product ]] || return 0
-
-    if [[ "${part}" == "${self}" ]]; then action="$/src/module/gate/template"
-    else action="$(module:extract:flows:action "${root}" "${self}")" || return
-    fi
+    [[ "${part}" == "${self}" ]] || ! module:extract:carries "${name}" "${self}" || carried=true
 
     for file in "${tree}"/.github/workflows/*.yml; do
         [[ -f "${file}" ]] || continue
-        module:extract:flows:rewrite "${file}" "${tree}" "${action}" "${self}" || return
+        module:extract:flows:rewrite "${file}" "${tree}" "${kind}" "${self}" "${carried}" || return
     done
 
-    [[ "${action}" == "$/src/module/gate/template" || ! -f "${tree}/.zizmor.yml" ]] \
-        || core:parse:yaml:sub "${tree}/.zizmor.yml" -E "s|^( *)- actions/checkout\$|\\1- ${action%%@*}\\n\\1- actions/checkout|" || return
+    [[ "${carried}" == true || "${part}" == "${self}" || ! -f "${tree}/.zizmor.yml" ]] \
+        || core:parse:yaml:sub "${tree}/.zizmor.yml" -E "s|^( *)- actions/checkout\$|\\1- ${EXTRACT_SLOTS[1]}\\n\\1- actions/checkout|" || return
+
+}
+module:extract:flows:seal () {
+
+    local tree="${1}" part="${2}" name="${3}" root="${TOOL_ROOT}" self="" tool="" command="" action="" file=""
+
+    [[ -d "${tree}/.github" ]] || return 0
+
+    self="$(module:extract:self)" || return
+    tool="$(module:extract:mirror "${self}")" || return
+    command="$(module:extract:name "$(module:extract:row "${self}")")" || return
+
+    if [[ "${part}" == "${self}" ]]; then action="$/${EXTRACT_ACTION}"
+    elif module:extract:carries "${name}" "${self}"; then command="$(module:extract:name "${name}")" || return
+    else action="$(module:extract:flows:action "${root}" "${tool}" "${name}")" || return
+    fi
+
+    [[ ! -f "${tree}/.zizmor.yml" ]] || core:parse:yaml:sub "${tree}/.zizmor.yml" -E "s|${EXTRACT_SLOTS[1]}|${action%%@*}|g" || return
+
+    for file in "${tree}"/.github/workflows/*.yml; do
+
+        [[ -f "${file}" ]] || continue
+
+        core:parse:yaml:sub "${file}" -E -e "s|${EXTRACT_SLOTS[0]}|${command}|g" -e "s|${EXTRACT_SLOTS[1]}|${action}|g" || return
+
+    done
 
 }

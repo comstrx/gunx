@@ -2,32 +2,20 @@ declare -gA TARGETS=()
 
 config:targets:load () {
 
-    local file="" key=""
-    local -A table=()
+    local key=""
 
     TARGETS=()
 
-    if [[ -f "${TOOL_ROOT}/infra.toml" && ( "${TOOL_BUNDLED:-false}" == true || "${TOOL_ROOT}" != "${TOOL_ENGINE}" ) ]]; then
-        core:parse:toml table "${TOOL_ROOT}/infra.toml" || return
-    fi
-
-    for key in "${!table[@]}"; do
-        [[ "${key}" != deps.* ]] || TARGETS["${key#deps.}"]="${table[${key}]}"
+    for key in "${!MANIFEST[@]}"; do
+        [[ "${key}" != deps.* ]] || TARGETS["${key#deps.}"]="${MANIFEST[${key}]}"
     done
-
-    if (( ${#TARGETS[@]} == 0 )); then
-
-        for key in "${!MANIFEST[@]}"; do
-            [[ "${key}" != deps.* ]] || TARGETS["${key#deps.}"]="${MANIFEST[${key}]}"
-        done
-
-    fi
 
     for key in "${!TARGETS[@]}"; do
 
         [[ "${key}" != *.*.* && "${key}" == *.path ]] || continue
 
-        core:fs:path:relative "${TARGETS[${key}]}" || { core:error:fail "[deps] ${key%.path} must name a path inside the root: ${TARGETS[${key}]}"; return; }
+        core:fs:path:relative "${TARGETS[${key}]}" \
+            || { core:error:fail "[deps] ${key%.path} must name a path inside the root: ${TARGETS[${key}]}"; return; }
 
     done
 
@@ -55,11 +43,12 @@ config:targets:get () {
 
     local name="${1:-}" key="${2:-}"
 
-    [[ -n "${TARGETS[${name}]+x}" ]] || { core:error:fail "Unknown target: ${name}; see targets"; return; }
+    [[ -n "${name}" && -n "${TARGETS[${name}]+x}" ]] || { core:error:fail "Unknown target: ${name}; see targets"; return; }
 
     case "${key}" in
-        tag)   core:log:print "${TARGETS[${name}.tag]:-inherit}"; return 0 ;;
-        title) [[ -n "${TARGETS[${name}.title]+x}" ]] || { config:targets:title "${name}"; return; } ;;
+        tag)    core:log:print "${TARGETS[${name}.tag]:-}"; return 0 ;;
+        branch) core:log:print "${TARGETS[${name}.branch]:-$(core:git:trunk "${TOOL_ROOT:-}")}"; return 0 ;;
+        title)  [[ -n "${TARGETS[${name}.title]+x}" ]] || { config:targets:title "${name}"; return; } ;;
     esac
 
     [[ -n "${TARGETS[${name}.${key}]+x}" ]] || { core:error:fail "Target ${name} has no ${key}"; return; }
@@ -77,23 +66,26 @@ config:targets:deps () {
     while (( index < count )); do
 
         printf '%s\t%s\t%s\n' "${TARGETS[${name}.deps.${index}.name]:-}" \
-            "${TARGETS[${name}.deps.${index}.repo]:-}" "${TARGETS[${name}.deps.${index}.tag]:-inherit}"
+            "${TARGETS[${name}.deps.${index}.repo]:-}" "${TARGETS[${name}.deps.${index}.tag]:-}"
 
         index=$(( index + 1 ))
 
     done
 
 }
-config:targets:product () {
+config:targets:engines () {
 
-    local root="${1}" project="${2}" file=""
-    local -A table=()
+    local name="${1}" count=0 index=0
 
-    file="$(config:manifest:file "${root}/product/${project}/infra")" || return
-    core:parse:toml table "${file}" || return
+    count="${TARGETS[${name}.engines]:-0}"
+    core:num:natural "${count}" || return 0
 
-    [[ -n "${table[meta.repo]+x}" ]] || { core:error:fail "product/${project}/infra has no [meta] repo"; return; }
+    while (( index < count )); do
 
-    core:log:print "${table[meta.repo]}"
+        core:log:print "${TARGETS[${name}.engines.${index}]:-}"
+
+        index=$(( index + 1 ))
+
+    done
 
 }

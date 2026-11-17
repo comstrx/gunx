@@ -21,7 +21,7 @@ jobs:
 
     permissions:
       contents: read
-      issues: write # the action creates, renames and deletes the repository labels
+      issues: write # the action creates, renames and deletes labels
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

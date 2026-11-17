@@ -19,6 +19,7 @@ class AppSettings(Settings):
     database_url    : str = "postgresql://engine:engine@127.0.0.1:5432/engine_test"
     database_schema : str = "notify"
     database_ssl    : str = ""
+    cache_url       : str = ""
     amqp_url        : str = ""
     log_level       : str = "warning"
 

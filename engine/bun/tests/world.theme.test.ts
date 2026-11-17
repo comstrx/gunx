@@ -1,5 +1,7 @@
 import { describe, expect, test as it } from "bun:test";
 import * as cache from "engine/cache";
+import * as device from "engine/device";
+import * as exception from "engine/exception";
 import * as world from "engine/world";
 
 const tokens = { light: { surface: "#fff", ink: "#111", radiusMd: 10 }, dark: { surface: "#000", ink: "#eee", radiusMd: 10 } };
@@ -125,7 +127,7 @@ describe("world.theme", () => {
 
         const junk = world.theme({ tokens, system: () => "light", watch: () => () => undefined });
 
-        expect([() => world.theme({ tokens, preference: "blue" as never }), () => world.theme({ tokens: { light: null, dark: {} } as never }), () => world.theme({ tokens: null as never }), () => junk.set("blue" as never), () => junk.variables("blue" as never)].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof RangeError ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused", "refused"]);
+        expect([() => world.theme({ tokens, preference: "blue" as never }), () => world.theme({ tokens: { light: null, dark: {} } as never }), () => world.theme({ tokens: null as never }), () => junk.set("blue" as never), () => junk.variables("blue" as never)].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof exception.Fault ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused", "refused"]);
 
         let saved: unknown = "light";
         let fire: (( value: unknown ) => void) | undefined;
@@ -154,19 +156,24 @@ describe("world.theme", () => {
         expect(made.preference()).toBe("dark");
 
     });
-    it("senses the host's colour scheme through the appearance port when nothing is given", () => {
+    it("senses the colour scheme through the device when no appearance is given", () => {
 
-        const target = globalThis as { matchMedia?: unknown };
         const handlers = new Set<() => void>();
         let dark = true;
+        const unit: device.Adapter = {
+            info: () => ({ ...device.unknownInfo(), scheme: dark ? "dark" : "light" }),
+            watch: ( what, listener ) => {
 
-        target.matchMedia = ( query: string ) => ({
-            get matches () { return dark && query === "(prefers-color-scheme: dark)"; },
-            addEventListener: ( _: string, handler: () => void ) => { handlers.add(handler); },
-            removeEventListener: ( _: string, handler: () => void ) => { handlers.delete(handler); },
-        });
+                const handler = (): void => listener(unit.info());
 
-        try {
+                if ( what === "scheme" ) handlers.add(handler);
+
+                return () => { handlers.delete(handler); };
+
+            },
+        };
+
+        device.port.with(unit, () => {
 
             const made = world.theme({ tokens });
 
@@ -177,11 +184,7 @@ describe("world.theme", () => {
             made.destroy();
             expect(handlers.size).toBe(0);
 
-        } finally {
-
-            delete target.matchMedia;
-
-        }
+        });
 
         const bare = world.theme({ tokens });
 

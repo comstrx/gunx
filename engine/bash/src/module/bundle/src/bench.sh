@@ -1,10 +1,12 @@
 module:bundle:bench:run () {
 
-    local filter="${1:-}" file="" name="" line="" count=0 baseline="" failed=0
+    local filter="${1:-}" file="" name="" line="" member="" last="" out="" baseline="" count=0 failed=0
+    local -a rows=()
 
     [[ "${TOOL_BUNDLED:-false}" != true ]] || { core:error:fail "Benches run from the source checkout"; return; }
 
-    baseline="${TOOL_ROOT}/${MANIFEST[paths.build]}/bench/baseline.tsv"
+    baseline="${TOOL_ENGINE}/${MANIFEST[paths.build]}/bench/baseline.tsv"
+    out="$(core:cli:value --out)" || out="${TOOL_LAB}/bench/report.json"
 
     while IFS= read -r -d '' file; do
         source "${file}" || return
@@ -15,7 +17,13 @@ module:bundle:bench:run () {
         [[ -z "${filter}" || "${name}" == *"${filter}"* ]] || continue
 
         line="$("${name}")" || return
-        core:log:print "${line}"
+        member="$(module:bundle:bench:member "${name}")"
+
+        [[ "${member}" == "${last}" ]] || printf '\n%s\n' "${member}"
+        last="${member}"
+
+        core:log:print "  ${line%%  p25ns=*}"
+        rows+=( "$(module:bundle:bench:row "${name}" "${member}" "${line}")" ) || return
 
         count=$(( count + 1 ))
 
@@ -25,7 +33,57 @@ module:bundle:bench:run () {
     done < <({ module:bundle:expect:discover bench:; module:bundle:cfg:sources bench; } | sort -u)
 
     (( count > 0 )) || { core:error:fail "No benches matched: ${filter}"; return; }
+
+    core:fs:dir:new "$(core:fs:path:parent "${out}")" 755 || return
+    core:fs:file:write "${out}" 644 module:bundle:bench:document "${rows[@]}" || return
+
+    printf '\n'
+    core:log:info "${count} benches; the report is ${out}"
+
     (( failed == 0 )) || { core:error:fail "A bench regressed against ${baseline}"; return; }
+
+}
+module:bundle:bench:member () {
+
+    local name="${1#bench:}" layer="" domain=""
+
+    IFS=: read -r layer domain _ <<< "${name}"
+
+    core:log:print "${layer}:${domain}"
+
+}
+module:bundle:bench:row () {
+
+    local name="${1}" member="${2}" line="${3}" label="" key=""
+    local -a fields=()
+
+    label="${line%% p50=*}"
+    label="${label%"${label##*[! ]}"}"
+
+    fields=( name "$(core:json:string "${name}")" member "$(core:json:string "${member}")" label "$(core:json:string "${label}")" )
+    fields+=( n "$(module:bundle:bench:field "${line}" n)" ) || return
+
+    for key in min p25 p50 p75 p95 p99 max mean; do
+        fields+=( "${key}" "$(module:bundle:bench:field "${line}" "${key}ns")" ) || return
+    done
+
+    core:json:object "${fields[@]}"
+
+}
+module:bundle:bench:document () {
+
+    local row="" comma=""
+
+    printf '{\n  "tool": %s,\n  "version": %s,\n  "bash": %s,\n  "system": %s,\n  "at": %s,\n  "unit": "ns",\n  "benches": [' \
+        "$(core:json:string "$(config:meta:name)")" "$(core:json:string "$(config:meta:version)")" "$(core:json:string "${BASH_VERSION}")" \
+        "$(core:json:string "$(core:sys:kernel)-$(core:sys:arch)")" "$(core:json:string "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+
+    for row in "$@"; do
+        printf '%s\n    %s' "${comma}" "${row}"
+        comma=,
+    done
+
+    printf '\n  ]\n}\n'
 
 }
 module:bundle:bench:samples () {
@@ -94,11 +152,12 @@ module:bundle:bench:report () {
 
     read -r unit divisor <<< "$(module:bundle:bench:unit "${p50}")"
 
-    printf '%-28s p50=%s%s  p95=%s%s  p99=%s%s  min=%s%s  max=%s%s  mean=%s%s  n=%s  p25ns=%s  p50ns=%s  p75ns=%s\n' \
+    printf '%-34s p50=%s%s  p95=%s%s  p99=%s%s  min=%s%s  max=%s%s  mean=%s%s  n=%s  p25ns=%s  p50ns=%s  p75ns=%s  p95ns=%s  p99ns=%s  minns=%s  maxns=%s  meanns=%s\n' \
         "${label}" \
         "$(( p50 / divisor ))" "${unit}" "$(( p95 / divisor ))" "${unit}" "$(( p99 / divisor ))" "${unit}" \
         "$(( sorted[0] / divisor ))" "${unit}" "$(( sorted[count - 1] / divisor ))" "${unit}" \
-        "$(( total / count / divisor ))" "${unit}" "${count}" "${p25}" "${p50}" "${p75}"
+        "$(( total / count / divisor ))" "${unit}" "${count}" "${p25}" "${p50}" "${p75}" "${p95}" "${p99}" \
+        "${sorted[0]}" "${sorted[count - 1]}" "$(( total / count ))"
 
 }
 module:bundle:bench:measure () {

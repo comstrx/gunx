@@ -34,7 +34,7 @@ describe("tool", () => {
         const members = tool.members(resolve(import.meta.dir, ".."));
 
         expect(members.map(( member ) => member.name)).toContain("tool");
-        expect(members.find(( member ) => member.name === "json")?.dependencies).toEqual(["engine-list", "engine-number", "engine-string"]);
+        expect(members.find(( member ) => member.name === "json")?.dependencies).toEqual(["engine-exception", "engine-list", "engine-number", "engine-string"]);
         expect(tool.members(temp.path)).toEqual([]);
         expect(tool.members()).toEqual(members);
         expect(tool.assets()).toBe(tool.assets(resolve(import.meta.dir, "..")));
@@ -46,26 +46,26 @@ describe("tool", () => {
         const temp = stage.tmp();
         const src = join(temp.path, "src");
 
-        for ( const folder of ["api", "stores", "components", "features", "native"] ) mkdirSync(join(src, folder), { recursive: true });
+        for ( const folder of ["api", "stores", "components", "features", "host"] ) mkdirSync(join(src, folder), { recursive: true });
 
         writeFileSync(join(src, "api/index.ts"), 'import * as api from "engine/api";\nimport { x } from "../stores/cart.ts";\nexport const a = 1;\n');
         writeFileSync(join(src, "stores/cart.ts"), 'import * as store from "engine/store";\nimport * as nope from "engine/nope";\nimport { a } from "@/api/index.ts";\nexport const x = 1;\n');
         writeFileSync(join(src, "components/button.tsx"), 'import { x } from "@/stores/cart.ts";\nimport motion from "framer-motion";\nimport { readFileSync } from "node:fs";\nexport const b = 2;\n');
         writeFileSync(join(src, "features/hello.tsx"), 'import { b } from "../components/button.tsx";\nimport { useState } from "react";\nimport { out } from "../../outside.ts";\nexport const c = 3;\n');
-        writeFileSync(join(src, "native/maps.ts"), 'import mapbox from "mapbox-gl";\nexport const m = mapbox;\n');
+        writeFileSync(join(src, "host/maps.ts"), 'import mapbox from "mapbox-gl";\nexport const m = mapbox;\n');
 
         const result = tool.analyze({ root: temp.path, layers: ["api", "stores", "components", "features"], members: ["api", "store"] });
 
         expect(result.files).toBe(5);
         expect(result.issues.map(( issue ) => `${issue.file}:${issue.line} ${issue.message}`)).toEqual([
             "api/index.ts:2 api reaches up into stores: ../stores/cart.ts",
-            "components/button.tsx:2 a third-party import outside native/: framer-motion",
+            "components/button.tsx:2 a third-party import outside host/: framer-motion",
             "components/button.tsx:3 a runtime import in a surface: node:fs",
             "features/hello.tsx:3 an import leaves src: ../../outside.ts",
             "stores/cart.ts:2 unknown engine member: nope",
         ]);
         expect(result.edges["features/hello.tsx"]).toEqual(["components/button.tsx", "outside.ts", "react"]);
-        expect(tool.defineRules({ root: "/x", layers: ["a"] })).toMatchObject({ root: "/x", source: "src", alias: "@/", layers: ["a"], vendor: ["native"], engine: "engine", members: [], framework: {}, outside: [] });
+        expect(tool.defineRules({ root: "/x", layers: ["a"] })).toMatchObject({ root: "/x", source: "src", alias: "@/", layers: ["a"], vendor: ["host"], engine: "engine", members: [], framework: {}, outside: [] });
         expect(tool.analyze({ root: temp.path, layers: ["api", "features"], framework: { next: ["features"] }, outside: ["outside.ts"] }).issues.map(( issue ) => issue.message)).not.toContain("an import leaves src: ../../outside.ts");
         temp.remove();
 

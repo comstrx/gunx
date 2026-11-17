@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as parse from "engine-parse";
 import type { Parts } from "./arch.ts";
@@ -64,7 +65,7 @@ export function parseUrl ( value: string ): Parts | undefined {
 
     if ( !sound(value) ) return undefined;
 
-    try {
+    return exception.rescue(() => {
 
         const url = new URL(value);
 
@@ -79,11 +80,11 @@ export function parseUrl ( value: string ): Parts | undefined {
             origin: url.origin,
         };
 
-    } catch {
+    }, () => {
 
         return undefined;
 
-    }
+    });
 
 }
 export function isEndpoint ( value: string ): boolean {
@@ -133,7 +134,7 @@ export function joinUrl ( base: string, ...segments: readonly string[] ): string
         const piece = trimmed(segment);
 
         if ( piece === "" ) continue;
-        if ( !sound(piece) || piece.split("/").some(dotted) ) throw new RangeError("not a path segment");
+        if ( !sound(piece) || piece.split("/").some(dotted) ) throw exception.misuse("not a path segment");
 
         pieces.push(piece);
 

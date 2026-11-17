@@ -15,7 +15,7 @@ core:list:uniq () {
     local -A seen=()
 
     for item in "$@"; do
-        [[ -n "${seen[${item}]+x}" ]] || { seen["${item}"]=1; core:log:print "${item}"; }
+        [[ -n "${seen[=${item}]+x}" ]] || { seen["=${item}"]=1; core:log:print "${item}"; }
     done
 
     return 0

@@ -1,3 +1,5 @@
+import type * as media from "engine/media";
+import type * as spec from "engine/spec";
 import type { ReactNode } from "react";
 import type { Space } from "@/styles/tokens.ts";
 
@@ -45,7 +47,12 @@ export type TextProps = {
 
 export type LinkProps = { children: ReactNode; href: string; external?: boolean | undefined; look?: "text" | "button" | "solid" | undefined; current?: boolean | undefined; onNavigate?: (( href: string ) => void) | undefined };
 
-export type DialogProps = { children?: ReactNode; open: boolean; kind?: "plain" | "alert" | undefined; label?: string | undefined; labelledBy?: string | undefined; onDismiss?: (() => void) | undefined };
+export type DialogProps = { children?: ReactNode; open: boolean; kind?: "plain" | "alert" | undefined; size?: "sm" | "md" | "lg" | "full" | undefined; label?: string | undefined; labelledBy?: string | undefined; closeLabel?: string | undefined; onDismiss?: (() => void) | undefined };
 
 export type SkeletonProps = { size?: "text" | "title" | "display" | undefined; width?: "third" | "half" | "most" | "full" | undefined };
-export type TitleProps = { text: string };
+export type InputProps = { value: string; onChange: ( value: string ) => void; label: string; kind?: "text" | "email" | "code" | undefined; placeholder?: string | undefined; invalid?: boolean | undefined; disabled?: boolean | undefined };
+export type ImageProps = { src: string; alt: string; ratio?: "wide" | "square" | "avatar" | undefined };
+export type PlayerProps = { file: media.Picked; label: string; captions?: string | undefined };
+export type PreviewProps = { stream: unknown; label: string };
+export type RevealProps = { children?: ReactNode; shown?: boolean | undefined; fresh?: boolean | undefined; fill?: boolean | undefined };
+export type TitleProps = { text: string; meta?: spec.Meta | undefined };

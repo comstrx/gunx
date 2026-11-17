@@ -10,6 +10,7 @@
   "dependencies": {
     "engine-date": "workspace:*",
     "engine-error": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-value": "workspace:*",
     "zod": "catalog:"
   }

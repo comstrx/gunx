@@ -8,12 +8,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "engine-cache": "workspace:*",
     "engine-date": "workspace:*",
-    "engine-error": "workspace:*",
     "engine-event": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-func": "workspace:*",
     "engine-json": "workspace:*",
-    "engine-rand": "workspace:*",
-    "engine-cache": "workspace:*"
+    "engine-rand": "workspace:*"
   }
 }

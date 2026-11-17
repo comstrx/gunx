@@ -1,6 +1,9 @@
 from typing import Any
 
 from engine.auth import Actor
+from engine.broadcast import broadcast
+from engine.error import Fault
+from engine.log import log
 from engine.notify import notify
 
 from ..jobs import Push
@@ -30,7 +33,13 @@ class Inbox(Service[Notices]):
 
     async def read ( self, actor: Actor, key: str ) -> dict[str, Any]:
 
-        return self.resource.one(await self.rows.read(actor.id, key))
+        return await self._tell_(actor.id, "updated", self.resource.one(await self.rows.read(actor.id, key)))
+
+    async def test ( self, actor: Actor ) -> dict[str, Any]:
+
+        notice = await self.rows.write(actor.id, actor.tenant, "Test notice", "Realtime delivery works.", kind="test")
+
+        return await self._tell_(actor.id, "created", self.resource.one(notice))
 
     async def welcome ( self, user: str, tenant: str | None, who: str ) -> dict[str, Any]:
 
@@ -38,7 +47,7 @@ class Inbox(Service[Notices]):
 
         await Push(notice=notice.id, user=user).dispatch()
 
-        return self.resource.one(notice)
+        return await self._tell_(user, "created", self.resource.one(notice))
 
     async def push ( self, notice: str, user: str ) -> int:
 
@@ -52,3 +61,10 @@ class Inbox(Service[Notices]):
         await notify.push(made)
 
         return len(devices)
+
+    async def _tell_ ( self, user: str, change: str, notice: dict[str, Any] ) -> dict[str, Any]:
+
+        try: await broadcast.publish(f"notifications.{user}", f"notifications.{change}", notice)
+        except Fault as fault: log.warning("notice.unheard", user=user, reason=fault.reason)
+
+        return notice

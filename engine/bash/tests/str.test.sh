@@ -32,3 +32,12 @@ test:core:str:splits-and-joins () {
     @eq "$(core:str:join ,)" ''
 
 }
+test:core:str:pads-by-characters () {
+
+    @eq "$(core:str:pad ab 5)|" 'ab   |'
+    @eq "$(core:str:pad abcdef 3)|" 'abcdef|'
+    @eq "$(core:str:pad 'نص' 5)|" 'نص   |'
+    @eq "$(core:str:pad ab width)|" 'ab|'
+    @eq "$(core:str:pad ab 99999999)|" 'ab|'
+
+}

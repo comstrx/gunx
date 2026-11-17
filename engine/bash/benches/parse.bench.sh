@@ -4,9 +4,9 @@ bench:core:parse:toml () {
     local -A table=()
 
     file="$(core:fs:temp:file)" || return
-    cat "${TOOL_ENGINE}/infra.toml" > "${file}"
+    cat "${TOOL_ENGINE}/bash.toml" > "${file}"
 
-    @measure 'core:parse:toml infra.toml' 30 20 core:parse:toml table "${file}"
+    @measure 'core:parse:toml bash.toml' 30 20 core:parse:toml table "${file}"
 
 }
 bench:core:parse:env () {

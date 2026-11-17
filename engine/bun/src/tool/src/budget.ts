@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import type { Bounded, Budget, Limits, Measured, Size, Step } from "./arch.ts";
 import { byText, counted, viewIn } from "./core.ts";
@@ -28,7 +28,7 @@ function limitOf ( given: Size | undefined, name: string ): number | undefined {
     const unit = units[found?.[2]?.toLowerCase() ?? ""];
     const value = typeof given === "number" ? given : found && unit !== undefined ? Math.round(Number(found[1]) * unit) : Number.NaN;
 
-    if ( !Number.isFinite(value) || value < 0 ) throw error.fault("internal", "tool.budget", { message: `${name}: a size is bytes or text such as 800 kB, 3.5 MB or 1 MiB` });
+    if ( !Number.isFinite(value) || value < 0 ) throw exception.fault("internal", "tool.budget", { message: `${name}: a size is bytes or text such as 800 kB, 3.5 MB or 1 MiB` });
 
     return value;
 
@@ -39,12 +39,12 @@ function ruleOf ( name: string, given: Budget ): Bounded {
     const files = shaped.files;
     const patterns = typeof files === "string" ? [files] : Array.isArray(files) ? [...files] as unknown[] : [];
 
-    if ( !/^[\w.-]+$/.test(name) ) throw error.fault("internal", "tool.budget", { message: `${name}: a budget's name is a word, such as js or bundle` });
-    if ( !json.isRecord(shaped) || patterns.length === 0 || !patterns.every(( pattern ) => typeof pattern === "string" && pattern.trim() !== "") ) throw error.fault("internal", "tool.budget", { message: `${name}: a budget measures a glob or a list of them, such as dist/**/*.js` });
+    if ( !/^[\w.-]+$/.test(name) ) throw exception.fault("internal", "tool.budget", { message: `${name}: a budget's name is a word, such as js or bundle` });
+    if ( !json.isRecord(shaped) || patterns.length === 0 || !patterns.every(( pattern ) => typeof pattern === "string" && pattern.trim() !== "") ) throw exception.fault("internal", "tool.budget", { message: `${name}: a budget measures a glob or a list of them, such as dist/**/*.js` });
 
-    for ( const key of Object.keys(shaped) ) if ( key !== "files" && !known.includes(key) ) throw error.fault("internal", "tool.budget", { message: `${name}.${key}: a budget limits ${known.join(", ")}` });
+    for ( const key of Object.keys(shaped) ) if ( key !== "files" && !known.includes(key) ) throw exception.fault("internal", "tool.budget", { message: `${name}.${key}: a budget limits ${known.join(", ")}` });
 
-    if ( shaped.lines !== undefined && !(Number.isInteger(shaped.lines) && shaped.lines > 0) ) throw error.fault("internal", "tool.budget", { message: `${name}.lines: the most lines a file may hold, a whole number` });
+    if ( shaped.lines !== undefined && !(Number.isInteger(shaped.lines) && shaped.lines > 0) ) throw exception.fault("internal", "tool.budget", { message: `${name}.lines: the most lines a file may hold, a whole number` });
 
     return { name, patterns: patterns as string[], total: limitOf(shaped.total, `${name}.total`), each: limitOf(shaped.each, `${name}.each`), gzip: limitOf(shaped.gzip, `${name}.gzip`), lines: shaped.lines };
 
@@ -86,7 +86,7 @@ export function measure ( root: string, files: string | readonly string[], gzip 
 }
 export function budget ( budgets: Readonly<Record<string, Budget>> ): Step {
 
-    if ( !json.isRecord(budgets) || Object.keys(budgets).length === 0 ) throw error.fault("internal", "tool.budget", { message: "a budget names what it measures, such as { js: \"dist/**/*.js\" }" });
+    if ( !json.isRecord(budgets) || Object.keys(budgets).length === 0 ) throw exception.fault("internal", "tool.budget", { message: "a budget names what it measures, such as { js: \"dist/**/*.js\" }" });
 
     const rules = Object.entries(budgets).map(([name, given]) => ruleOf(name, given));
 

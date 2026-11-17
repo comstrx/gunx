@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import type { Address, Asked, Crumb, Known, Placed, Rating, Site, Sold, Thing, Viewed, Written } from "./arch.ts";
 import { cleaned, located, shaped, stamped } from "./metadata.ts";
@@ -13,14 +14,14 @@ function priced ( value: string | number ): string {
 
     const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
 
-    if ( !amount.test(text) ) throw new RangeError("not a price");
+    if ( !amount.test(text) ) throw exception.misuse("not a price");
 
     return text;
 
 }
 function coined ( code: string ): string {
 
-    if ( typeof code !== "string" || !coin.test(code) ) throw new RangeError("not a currency");
+    if ( typeof code !== "string" || !coin.test(code) ) throw exception.misuse("not a currency");
 
     return code.toUpperCase();
 

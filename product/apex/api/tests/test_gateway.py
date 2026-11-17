@@ -46,7 +46,7 @@ async def test_the_gateway_opens_only_its_doors_and_signs_the_actor ( apps: tupl
 
             doors = await client.get("/api/doors")
 
-            assert len(doors.data()) == 11 and doors.data()[0]["path"] == "/api/sessions/code"
+            assert len(doors.data()) == 15 and doors.data()[0]["path"] == "/api/sessions/code"
 
             gathered = await client.get("/api/openapi.json")
 

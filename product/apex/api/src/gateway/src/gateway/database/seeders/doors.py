@@ -22,11 +22,18 @@ def rows () -> list[Door]:
         door("POST", "/api/sessions/refresh", "iam", "/sessions/refresh", Audience.PUBLIC, policy="refresh"),
         door("DELETE", "/api/sessions", "iam", "/sessions", Audience.ADMIN),
         door("GET", "/api/me", "iam", "/me", Audience.ADMIN),
+        door("PUT", "/api/me/avatar", "iam", "/me/avatar", Audience.ADMIN, policy="start"),
+        door("DELETE", "/api/me/avatar", "iam", "/me/avatar", Audience.ADMIN),
+        door("GET", "/api/users/<user>/avatar", "iam", "/users/<user>/avatar", Audience.PUBLIC),
         door("GET", "/api/hello", "hello", "/hello", Audience.PUBLIC),
         door("GET", "/api/hello/me", "hello", "/hello/me", Audience.ADMIN, scope="hello.read"),
         door("GET", "/api/hello/<name>", "hello", "/hello/<name>", Audience.PUBLIC),
         door("POST", "/api/devices", "notify", "/devices", Audience.ADMIN, scope="devices.write", policy="start"),
         door("GET", "/api/notifications", "notify", "/notifications", Audience.ADMIN, scope="notifications.read"),
+        door(
+            "POST", "/api/notifications/test", "notify", "/notifications/test", Audience.ADMIN,
+            scope="notifications.read", policy="start",
+        ),
         door(
             "POST", "/api/notifications/<notice>/read", "notify", "/notifications/<notice>/read", Audience.ADMIN,
             scope="notifications.read",

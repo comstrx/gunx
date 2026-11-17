@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Env, Layer, Spy, Stack, Temp } from "./arch.ts";
 
 const unsafe = /[^A-Za-z0-9._-]/g;
@@ -33,7 +33,7 @@ function inside ( root: string, name: string ): string {
 
     const made = typeof name === "string" && !name.includes("\0") ? resolve(root, name) : root;
 
-    if ( !made.startsWith(`${root}${sep}`) ) throw error.fault("internal", "test.path", { message: `${String(name).slice(0, 120)}: not a file inside the folder` });
+    if ( !made.startsWith(`${root}${sep}`) ) throw exception.fault("internal", "test.path", { message: `${String(name).slice(0, 120)}: not a file inside the folder` });
 
     return made;
 
@@ -47,7 +47,7 @@ function place ( key: string, value: unknown, held: PropertyDescriptor | undefin
 
     if ( held && !held.configurable ) {
 
-        if ( !Reflect.set(globalThis, key, value) ) throw error.fault("internal", "test.global", { message: `${key}: the global is not writable` });
+        if ( !Reflect.set(globalThis, key, value) ) throw exception.fault("internal", "test.global", { message: `${key}: the global is not writable` });
 
         return;
 
@@ -81,7 +81,7 @@ export function env ( values: Record<string, string | undefined> ): Env {
 
         const value = values[key];
 
-        if ( !variable.test(key) || (value !== undefined && typeof value !== "string") ) throw error.fault("internal", "test.env", { message: `${key.slice(0, 120)}: not an environment variable` });
+        if ( !variable.test(key) || (value !== undefined && typeof value !== "string") ) throw exception.fault("internal", "test.env", { message: `${key.slice(0, 120)}: not an environment variable` });
 
     }
 
@@ -157,11 +157,11 @@ export function globals ( patch: Record<string, unknown> ): () => void {
 
     for ( const key of keys ) {
 
-        if ( sealed(Object.getOwnPropertyDescriptor(globalThis, key)) ) throw error.fault("internal", "test.global", { message: `${key}: the global is sealed` });
+        if ( sealed(Object.getOwnPropertyDescriptor(globalThis, key)) ) throw exception.fault("internal", "test.global", { message: `${key}: the global is sealed` });
 
     }
 
-    try {
+    exception.rescue(() => {
 
         for ( const key of keys ) {
 
@@ -176,13 +176,13 @@ export function globals ( patch: Record<string, unknown> ): () => void {
 
         }
 
-    } catch ( caught ) {
+    }, ( caught ) => {
 
         undo();
 
         throw caught;
 
-    }
+    });
 
     return undo;
 
@@ -193,7 +193,7 @@ export function spy<A extends unknown[], R> ( implementation: ( ...args: A ) => 
 
         made.calls.push(args);
 
-        try {
+        return exception.rescue(() => {
 
             const result = implementation.apply(this, args);
 
@@ -201,13 +201,13 @@ export function spy<A extends unknown[], R> ( implementation: ( ...args: A ) => 
 
             return result;
 
-        } catch ( caught ) {
+        }, ( caught ) => {
 
             made.failures.push(caught);
 
             throw caught;
 
-        }
+        });
 
     } as Spy<A, R>;
 

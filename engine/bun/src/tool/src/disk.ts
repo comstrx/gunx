@@ -1,7 +1,7 @@
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, parse, resolve, sep } from "node:path";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as fs from "engine-fs";
 import type { Kinded } from "./arch.ts";
 import { byText, isMissing } from "./core.ts";
@@ -18,8 +18,8 @@ function guarded ( path: string ): string {
     const full = typeof path === "string" && path !== "" && !path.includes("\u0000") ? resolve(path) : "";
     const here = process.cwd();
 
-    if ( full === "" ) throw error.fault("validation", "fs.path", { message: "not a path" });
-    if ( full === parse(full).root || here === full || here.startsWith(full.endsWith(sep) ? full : `${full}${sep}`) ) throw error.fault("forbidden", "fs.root", { message: full });
+    if ( full === "" ) throw exception.fault("validation", "fs.path", { message: "not a path" });
+    if ( full === parse(full).root || here === full || here.startsWith(full.endsWith(sep) ? full : `${full}${sep}`) ) throw exception.fault("forbidden", "fs.root", { message: full });
 
     return full;
 
@@ -50,19 +50,19 @@ export function nodeDisk (): fs.Disk {
         },
         stat: async ( path ) => {
 
-            try {
+            return await exception.rescueAsync(async () => {
 
                 const found = await stat(path);
 
                 return { size: found.size, modified: found.mtimeMs, kind: kindOf(found) };
 
-            } catch ( caught ) {
+            }, ( caught ) => {
 
                 if ( isMissing(caught) ) return undefined;
 
                 throw caught;
 
-            }
+            });
 
         },
         mkdir: async ( path ) => {

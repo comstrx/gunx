@@ -1,7 +1,7 @@
 import * as cache from "engine-cache";
 import * as date from "engine-date";
-import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as func from "engine-func";
 import * as json from "engine-json";
 import * as rand from "engine-rand";
@@ -81,9 +81,9 @@ function revive ( job: Job, now: number ): void {
     Object.assign(job, { status: "pending", attempts: job.status === "dead" ? 0 : job.attempts, available: now, error: undefined, code: undefined });
 
 }
-function halted ( signal: AbortSignal ): error.Fault {
+function halted ( signal: AbortSignal ): exception.Fault {
 
-    return error.fault("timeout", "queue.aborted", { cause: signal.reason });
+    return exception.fault("timeout", "queue.aborted", { cause: signal.reason });
 
 }
 
@@ -96,7 +96,7 @@ export function create ( options: Options ): Outbox {
     const timeout = span(options.timeout, 30_000, true);
     const lease = timeout === Number.POSITIVE_INFINITY ? 300_000 : timeout + grace;
     const pause = options.backoff ?? backoff({ delay: options.delay, factor: options.factor, max: 300_000 });
-    const again = options.when ?? (( fault: error.Fault ) => error.transient(fault));
+    const again = options.when ?? (( fault: exception.Fault ) => exception.transient(fault));
     const raw = options.store ?? cache.memory();
     const store = cache.typed<unknown>(raw);
     const lane = func.lane(1);
@@ -105,7 +105,7 @@ export function create ( options: Options ): Outbox {
     const lifetime = new AbortController();
     const open = (): void => {
 
-        if ( closed ) throw error.fault("gone", "queue.closed");
+        if ( closed ) throw exception.fault("gone", "queue.closed");
 
     };
     let listening: (() => void) | undefined;
@@ -211,44 +211,44 @@ export function create ( options: Options ): Outbox {
         return value;
 
     }, settling);
-    const judged = ( job: Job, fault: error.Fault | undefined, state: Flight ): Ended => {
+    const judged = ( job: Job, fault: exception.Fault | undefined, state: Flight ): Ended => {
 
         if ( !fault ) return { job, fault, end: "done", wait: 0 };
         if ( state.signal?.aborted ) return { job, fault, end: "free", wait: 0 };
 
         const attempts = job.attempts + 1;
 
-        try {
+        return exception.rescue(() => {
 
             const dead = attempts >= retries || !again(fault, job);
 
             return { job, fault, end: dead ? "dead" : "fail", wait: dead ? 0 : Math.max(clean(pause(attempts)), clean((fault.retryAfter ?? 0) * 1000)) };
 
-        } catch ( cause ) {
+        }, ( cause ) => {
 
             state.failures.push(cause);
 
             return { job, fault, end: attempts >= retries ? "dead" : "fail", wait: clean(options.delay ?? 1000) };
 
-        }
+        });
 
     };
     const run = async ( job: Job, state: Flight ): Promise<Ended> => {
 
         const made = timeout === Number.POSITIVE_INFINITY ? event.abortable(state.signal) : event.deadline(timeout, state.signal);
-        let fault: error.Fault | undefined;
-
         flights.set(job.id, made);
 
         try {
 
-            if ( made.signal.aborted ) throw halted(made.signal);
+            const ended = await exception.attempt(async () => {
 
-            await event.race((async () => perform(job, made.signal))(), made.signal);
+                if ( made.signal.aborted ) throw halted(made.signal);
 
-        } catch ( caught ) {
+                await event.race((async () => perform(job, made.signal))(), made.signal);
 
-            fault = error.of(caught);
+            });
+
+            return judged(job, ended.ok ? undefined : ended.fault, state);
 
         } finally {
 
@@ -256,8 +256,6 @@ export function create ( options: Options ): Outbox {
             flights.delete(job.id);
 
         }
-
-        return judged(job, fault, state);
 
     };
     const apply = ( jobs: Job[], ended: Ended, state: Flight, now: number ): boolean => {
@@ -298,7 +296,7 @@ export function create ( options: Options ): Outbox {
 
             if ( stale && job.attempts >= retries ) {
 
-                const lost = error.fault("timeout", "queue.abandoned");
+                const lost = exception.fault("timeout", "queue.abandoned");
 
                 Object.assign(job, { status: "dead", error: lost.message, code: lost.code });
                 changed = true;
@@ -331,18 +329,18 @@ export function create ( options: Options ): Outbox {
         const state: Flight = { signal, seen: new Set(), tally: { done: 0, failed: 0 }, failures: [], blocked: false };
         const worker = async ( first: Job | undefined ): Promise<void> => {
 
-            try {
+            await exception.rescueAsync(async () => {
 
                 let job = first ?? await step(state, undefined);
 
                 while ( job ) job = await step(state, await run(job, state));
 
-            } catch ( cause ) {
+            }, async ( cause ) => {
 
                 state.failures.push(cause);
                 state.blocked = true;
 
-            }
+            });
 
         };
 
@@ -362,7 +360,7 @@ export function create ( options: Options ): Outbox {
         load: read,
         push: ( type, payload, given = {} ) => raised(mutate(( jobs ) => {
 
-            if ( typeof type !== "string" || type === "" ) throw error.fault("internal", "queue.type");
+            if ( typeof type !== "string" || type === "" ) throw exception.fault("internal", "queue.type");
 
             const now = date.now();
             const key = given.key || undefined;
@@ -378,7 +376,7 @@ export function create ( options: Options ): Outbox {
 
             }
 
-            if ( jobs.filter(( job ) => job.owner === owner && job.status !== "done" && job.status !== "dead").length >= keep ) throw error.fault("too_many_requests", "queue.full");
+            if ( jobs.filter(( job ) => job.owner === owner && job.status !== "done" && job.status !== "dead").length >= keep ) throw exception.fault("too_many_requests", "queue.full");
 
             const job: Job<typeof payload> = { id: rand.ulid(), type, payload, owner, key, status: "pending", attempts: 0, at: now, available: now + wait, error: undefined, code: undefined };
 
@@ -389,7 +387,7 @@ export function create ( options: Options ): Outbox {
         })),
         flush: ( signal ) => {
 
-            if ( closed ) return Promise.reject(error.fault("gone", "queue.closed"));
+            if ( closed ) return Promise.reject(exception.fault("gone", "queue.closed"));
             if ( flight ) return signal ? event.race(flight, signal) : flight;
 
             const active = event.abortable(signal, lifetime.signal);
@@ -468,7 +466,7 @@ export function create ( options: Options ): Outbox {
             if ( at === -1 ) return [false, false];
 
             jobs.splice(at, 1);
-            flights.get(id)?.abort(error.fault("gone", "queue.dropped"));
+            flights.get(id)?.abort(exception.fault("gone", "queue.dropped"));
 
             return [true, true];
 
@@ -487,7 +485,7 @@ export function create ( options: Options ): Outbox {
             const before = jobs.length;
 
             for ( let index = before - 1; index >= 0; index -= 1 ) if ( jobs[index]?.owner === owner ) jobs.splice(index, 1);
-            for ( const made of flights.values() ) made.abort(error.fault("gone", "queue.dropped"));
+            for ( const made of flights.values() ) made.abort(exception.fault("gone", "queue.dropped"));
 
             return [undefined, jobs.length < before];
 
@@ -498,17 +496,17 @@ export function create ( options: Options ): Outbox {
 
             const stop = changes.on("change", listener);
 
-            try {
+            exception.rescue(() => {
 
                 listen();
 
-            } catch ( caught ) {
+            }, ( caught ) => {
 
                 stop();
 
                 throw caught;
 
-            }
+            });
 
             return () => {
 

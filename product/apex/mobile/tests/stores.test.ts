@@ -3,7 +3,7 @@ import * as cache from "engine/cache";
 import * as state from "engine/state";
 import { faults, preferences } from "../src/stores/preferences.ts";
 
-const box = cache.open({ kind: "local", prefix: "app" });
+const box = cache.open({ kind: "local", prefix: "acme.admin" });
 const key = state.keyOf("preferences");
 
 beforeEach(async () => {
@@ -17,27 +17,27 @@ describe("stores", () => {
 
     it("preferences survive a reload through the local storage box", async () => {
 
-        const first = preferences.create();
+        const first = preferences().create();
 
         await first.hydrate();
         first.getState().setLocale("en");
         await first.flush();
-        expect(await box.get(key)).toEqual({ version: 1, state: { locale: "en" } });
+        expect(await box.get(key)).toEqual({ version: 1, state: { locale: "en", chosen: true } });
 
-        const reloaded = preferences.create();
+        const reloaded = preferences().create();
 
         await reloaded.hydrate();
         expect([reloaded.getState().locale, reloaded.getState().kept]).toEqual(["en", true]);
         reloaded.getState().toggleLocale();
         await reloaded.flush();
-        expect([reloaded.getState().locale, await box.get(key), faults.get()]).toEqual(["ar", { version: 1, state: { locale: "ar" } }, undefined]);
+        expect([reloaded.getState().locale, await box.get(key), faults.get()]).toEqual(["ar", { version: 1, state: { locale: "ar", chosen: true } }, undefined]);
 
     });
     it("a newer saved version freezes the preferences: the page keeps working, nothing is written over it, and the fault is raised once", async () => {
 
         await box.set(key, { version: 9, state: { locale: "en" } });
 
-        const held = preferences.create();
+        const held = preferences().create();
 
         await held.hydrate();
         held.getState().setLocale("en");

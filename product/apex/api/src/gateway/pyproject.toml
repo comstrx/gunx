@@ -7,6 +7,8 @@ license = "Apache-2.0"
 dependencies = [
     "api-contract",
     "engine-auth",
+    "engine-broadcast",
+    "engine-cache",
     "engine-config",
     "engine-database",
     "engine-error",
@@ -18,6 +20,7 @@ dependencies = [
     "engine-metric",
     "engine-net",
     "engine-queue",
+    "engine-socket",
     "engine-token",
     "engine-translate",
     "engine-validate",

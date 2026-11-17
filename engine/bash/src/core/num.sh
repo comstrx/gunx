@@ -37,7 +37,11 @@ core:num:percent () {
 
     local part="${1:-}" whole="${2:-}"
 
-    if ! core:num:is "${part}" || ! core:num:is "${whole}"; then core:error:fail "A percent takes two integers: ${part} ${whole}"; return; fi
+    if ! core:num:is "${part}" || ! core:num:is "${whole}"; then
+        core:error:fail "A percent takes two integers: ${part} ${whole}"
+        return
+    fi
+
     (( whole != 0 )) || { core:log:print 0; return 0; }
 
     core:log:print $(( part * 100 / whole ))
@@ -48,8 +52,11 @@ core:num:max () {
     local best="${1:-}" item=""
 
     for item in "$@"; do
+
         core:num:is "${item}" || { core:error:fail "Not an integer: ${item}"; return; }
+
         (( item <= best )) || best="${item}"
+
     done
 
     core:log:print "${best}"
@@ -60,8 +67,11 @@ core:num:min () {
     local best="${1:-}" item=""
 
     for item in "$@"; do
+
         core:num:is "${item}" || { core:error:fail "Not an integer: ${item}"; return; }
+
         (( item >= best )) || best="${item}"
+
     done
 
     core:log:print "${best}"

@@ -1,6 +1,7 @@
 import { describe, expect, test as it, jest } from "bun:test";
 import * as cache from "engine/cache";
-import * as error from "engine/error";
+import type * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as queue from "engine/queue";
 
 function tick ( ms = 0 ): Promise<void> {
@@ -26,7 +27,7 @@ function told ( given: unknown ): string {
 
     } catch ( failure ) {
 
-        if ( error.is(failure) ) return `${failure.code}/${failure.reason}`;
+        if ( exception.is(failure) && failure.reason !== "misuse" ) return `${failure.code}/${failure.reason}`;
 
         return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
 
@@ -90,7 +91,7 @@ describe("queue", () => {
 
         const box = queue.create({ owner: "u", retries: 3, delay: 1, perform: async ( job ) => {
 
-            if ( job.type === "forbidden" ) throw error.fault("forbidden");
+            if ( job.type === "forbidden" ) throw exception.fault("forbidden");
             if ( job.type === "flaky" && job.attempts < 2 ) throw new Error("flaky");
 
         } });
@@ -245,7 +246,7 @@ describe("queue", () => {
         const after = await crashed.jobs();
 
         expect(after.map(( job ) => [job.id, job.status, job.attempts, job.code ?? null])).toEqual([["r1", "done", 2, null], ["r2", "dead", 3, "timeout"], ["r3", "running", 1, null]]);
-        expect(after.find(( job ) => job.id === "r2")?.error).toBe(error.fault("timeout", "queue.abandoned").message);
+        expect(after.find(( job ) => job.id === "r2")?.error).toBe(exception.fault("timeout", "queue.abandoned").message);
         expect((await typed.read("outbox"))?.length).toBe(4);
 
     });
@@ -254,7 +255,7 @@ describe("queue", () => {
         const store = cache.memory();
         const mine = queue.create({ store, owner: "u", keep: 4, perform: async ( job ) => {
 
-            if ( job.type === "fail" ) throw error.fault("forbidden", "no");
+            if ( job.type === "fail" ) throw exception.fault("forbidden", "no");
 
         } });
         const theirs = queue.create({ store, owner: "v", keep: 1, perform: async () => undefined });
@@ -310,7 +311,7 @@ describe("queue", () => {
 
             order.push(job.type);
 
-            if ( job.type === "bad" ) throw error.fault("unavailable", "down");
+            if ( job.type === "bad" ) throw exception.fault("unavailable", "down");
 
         } });
 
@@ -342,10 +343,10 @@ describe("queue", () => {
         const codes: error.Code[] = ["bad_request", "conflict", "too_large", "forbidden", "unauthorized", "not_found", "validation"];
         const box = queue.create({ owner: "u", retries: 3, delay: 0, perform: async ( job ) => {
 
-            if ( job.type === "limited" ) throw error.fault("too_many_requests", "slow", { retryAfter: 2 });
-            if ( job.type === "flaky" ) throw error.fault("unavailable", "down");
+            if ( job.type === "limited" ) throw exception.fault("too_many_requests", "slow", { retryAfter: 2 });
+            if ( job.type === "flaky" ) throw exception.fault("unavailable", "down");
 
-            throw error.fault(job.type as error.Code, "x");
+            throw exception.fault(job.type as error.Code, "x");
 
         } });
 
@@ -376,7 +377,7 @@ describe("queue", () => {
         expect(await box.get(flaky.id)).toMatchObject({ id: flaky.id, attempts: 2 });
         expect(await box.get("nope")).toBeUndefined();
 
-        const judge = queue.create({ owner: "u", retries: 3, delay: 250, perform: async () => { throw error.fault("unavailable", "down"); }, when: () => { throw new Error("judge broke"); } });
+        const judge = queue.create({ owner: "u", retries: 3, delay: 250, perform: async () => { throw exception.fault("unavailable", "down"); }, when: () => { throw new Error("judge broke"); } });
 
         await judge.push("j", {});
 
@@ -385,7 +386,7 @@ describe("queue", () => {
         expect(await judge.flush().then(() => "settled", told)).toBe("Error: judge broke");
         expect((await judge.jobs()).map(( job ) => [job.status, job.attempts, job.available - at >= 200])).toEqual([["failed", 1, true]]);
 
-        const paced = queue.create({ owner: "u", retries: 3, perform: async () => { throw error.fault("unavailable", "down"); }, backoff: () => { throw new Error("pace broke"); } });
+        const paced = queue.create({ owner: "u", retries: 3, perform: async () => { throw exception.fault("unavailable", "down"); }, backoff: () => { throw new Error("pace broke"); } });
 
         await paced.push("p", {});
         expect(await paced.flush().then(() => "settled", told)).toBe("Error: pace broke");
@@ -410,14 +411,14 @@ describe("queue", () => {
         expect(await box.jobs()).toEqual([]);
 
         const table: [Partial<queue.Options>, string][] = [
-            [{ retries: 0 }, "RangeError: not a count"],
-            [{ lanes: Number.NaN }, "RangeError: not a count"],
-            [{ keep: -1 }, "RangeError: not a count"],
-            [{ timeout: Number.NaN }, "RangeError: not a duration"],
-            [{ delay: Number.NaN }, "RangeError: not a duration"],
-            [{ delay: Number.POSITIVE_INFINITY }, "RangeError: not a duration"],
-            [{ factor: 0 }, "RangeError: not a factor"],
-            [{ factor: Number.POSITIVE_INFINITY }, "RangeError: not a factor"],
+            [{ retries: 0 }, "Fault: not a count"],
+            [{ lanes: Number.NaN }, "Fault: not a count"],
+            [{ keep: -1 }, "Fault: not a count"],
+            [{ timeout: Number.NaN }, "Fault: not a duration"],
+            [{ delay: Number.NaN }, "Fault: not a duration"],
+            [{ delay: Number.POSITIVE_INFINITY }, "Fault: not a duration"],
+            [{ factor: 0 }, "Fault: not a factor"],
+            [{ factor: Number.POSITIVE_INFINITY }, "Fault: not a factor"],
         ];
 
         for ( const [extra, expected] of table ) expect(told(() => queue.create({ owner: "u", perform: async () => undefined, ...extra }))).toBe(expected);
@@ -427,22 +428,22 @@ describe("queue", () => {
         const made = queue.create({ owner: "u", perform: async () => undefined });
 
         expect(await made.push("", {}).then(() => "ok", told)).toBe("internal/queue.type");
-        expect(await made.push("t", {}, { delay: Number.NaN }).then(() => "ok", told)).toBe("RangeError: not a duration");
-        expect(await made.push("t", {}, { delay: Number.POSITIVE_INFINITY }).then(() => "ok", told)).toBe("RangeError: not a duration");
+        expect(await made.push("t", {}, { delay: Number.NaN }).then(() => "ok", told)).toBe("Fault: not a duration");
+        expect(await made.push("t", {}, { delay: Number.POSITIVE_INFINITY }).then(() => "ok", told)).toBe("Fault: not a duration");
         expect((await made.push("t", {}, { delay: -5 })).available).toBeLessThanOrEqual(Date.now());
         expect((await made.push("t", {}, { key: "" })).key).toBeUndefined();
         expect((await made.push("t", { n: 2 }, { key: "k" })).id).toBe((await made.push("t", { n: 3 }, { key: "k" })).id);
         expect((await made.push("other", { n: 4 }, { key: "k" })).id).not.toBe((await made.push("t", { n: 5 }, { key: "k" })).id);
         expect((await made.jobs()).map(( job ) => [job.type, job.payload])).toEqual([["t", {}], ["t", {}], ["t", { n: 5 }], ["other", { n: 4 }]]);
 
-        for ( const [options, expected] of [[{ jitter: 2 }, "RangeError: not a ratio"], [{ jitter: -0.1 }, "RangeError: not a ratio"], [{ factor: 0 }, "RangeError: not a factor"], [{ delay: Number.NaN }, "RangeError: not a duration"], [{ delay: Number.POSITIVE_INFINITY }, "RangeError: not a duration"], [{ max: Number.NaN }, "RangeError: not a duration"]] as const ) expect(told(() => queue.backoff(options))).toBe(expected);
+        for ( const [options, expected] of [[{ jitter: 2 }, "Fault: not a ratio"], [{ jitter: -0.1 }, "Fault: not a ratio"], [{ factor: 0 }, "Fault: not a factor"], [{ delay: Number.NaN }, "Fault: not a duration"], [{ delay: Number.POSITIVE_INFINITY }, "Fault: not a duration"], [{ max: Number.NaN }, "Fault: not a duration"]] as const ) expect(told(() => queue.backoff(options))).toBe(expected);
 
         const capped = queue.backoff({ delay: 1000, factor: 10, max: Number.POSITIVE_INFINITY });
 
         expect([capped(1), capped(3), capped(400), capped(Number.NaN), capped(0), capped(-3)]).toEqual([1000, 100_000, 86_400_000, 1000, 1000, 1000]);
         expect(queue.backoff({ delay: 0, factor: 10 })(400)).toBe(0);
         expect(queue.backoff({ delay: 100, factor: 1 })(50)).toBe(100);
-        expect(told(() => queue.schedule(made, { every: 0.5 }))).toBe("RangeError: not a duration");
+        expect(told(() => queue.schedule(made, { every: 0.5 }))).toBe("Fault: not a duration");
 
     });
     it("a schedule flushes on its interval, hands flush errors to fail, and stops cleanly; a throwing onChange reaches fail or the caller", async () => {
@@ -470,13 +471,11 @@ describe("queue", () => {
             expect(flushes).toEqual([]);
             online = true;
             jest.advanceTimersByTime(100);
-            await Promise.resolve();
-            await Promise.resolve();
+            for ( let turn = 0; turn < 4; turn += 1 ) await Promise.resolve();
             expect([flushes, results]).toEqual([["flush"], [1]]);
             broken = true;
             jest.advanceTimersByTime(100);
-            await Promise.resolve();
-            await Promise.resolve();
+            for ( let turn = 0; turn < 4; turn += 1 ) await Promise.resolve();
             expect(failures).toEqual(["Error: store down"]);
             stop();
             jest.advanceTimersByTime(1000);

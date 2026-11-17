@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as list from "engine-list";
 import * as string from "engine-string";
 import * as translate from "engine-translate";
@@ -186,7 +187,7 @@ export function chosen<T> ( items: readonly T[], codeOf: ( item: T ) => string, 
 
     }
 
-    if ( strangers.length ) throw new RangeError(`unknown ${what}: ${strangers.join(", ")}`);
+    if ( strangers.length ) throw exception.misuse(`unknown ${what}: ${strangers.join(", ")}`);
 
     return out;
 
@@ -218,17 +219,7 @@ export function defineCountries ( codes?: readonly string[] ): Countries {
 
         if ( known ) return known;
 
-        let collator: Intl.Collator;
-
-        try {
-
-            collator = new Intl.Collator(tag, { sensitivity: "base" });
-
-        } catch {
-
-            collator = new Intl.Collator("en", { sensitivity: "base" });
-
-        }
+        const collator = exception.rescue(() => new Intl.Collator(tag, { sensitivity: "base" }), () => new Intl.Collator("en", { sensitivity: "base" }));
 
         const names = new Map(all.map(( country ) => [country, nameIn(country.name, tag, country.code)]));
         const made = { collator, sorted: [...all].sort(( a, b ) => collator.compare(names.get(a) ?? a.code, names.get(b) ?? b.code)) };

@@ -2,6 +2,8 @@ module:bundle:boot:root () {
 
     local root=""
 
+    TOOL_ROOT="$(core:git:root "$(pwd -P)")" || return
+
     core:cli:given --root || return 0
     root="$(core:cli:value --root)" || return 0
 
@@ -14,7 +16,28 @@ module:bundle:boot:engine () {
 
     [[ "${TOOL_BUNDLED:-false}" == true ]] || return 0
 
-    TOOL_ENGINE="${INFRA_ENGINE:-${TOOL_ROOT}}"
+    TOOL_ENGINE="${INFRA_ENGINE:-}"
+
+}
+module:bundle:boot:config () {
+
+    local file=""
+
+    if core:cli:given --config; then file="$(core:cli:value --config)" || file=""
+    elif core:cli:flag --no-config; then return 0
+    else file="$(config:manifest:find "${TOOL_ROOT}")" || return 0
+    fi
+
+    config:manifest:merge "${file}"
+
+}
+module:bundle:boot:lab () {
+
+    TOOL_LAB="$(config:paths:lab)" || return
+
+    core:fs:dir:own "${TOOL_LAB}" 700 || return
+
+    TOOL_TEMP="$(core:sys:session "${TOOL_LAB}")" || return
 
 }
 module:bundle:boot:breathe () {
@@ -56,8 +79,6 @@ module:bundle:boot:main () {
 
     local command=""
 
-    (( BASH_VERSINFO[0] >= 5 )) || { printf '%s\n' '[-] Bash 5 or newer required' >&2; return 1; }
-
     set +x
     umask 077
 
@@ -72,13 +93,11 @@ module:bundle:boot:main () {
     module:bundle:boot:engine || return
 
     config:settings:manifest || return
-    config:targets:load || return
 
-    TOOL_LAB="$(config:paths:lab)" || return
+    module:bundle:boot:config || return
+    module:bundle:boot:lab || return
 
-    core:fs:dir:own "${TOOL_LAB}" 700 || return
-
-    TOOL_TEMP="$(core:sys:session "${TOOL_LAB}")" || return
+    ERROR_TOOL="$(config:meta:alias)"
 
     ! core:cli:flag --version || { module:bundle:view:version; return; }
 

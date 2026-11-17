@@ -1,5 +1,5 @@
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import type { Batch, BatchOptions, Counter, Entry, Facts, Held, Level, Logger, Seen, Sink, Timer } from "./arch.ts";
 import { levels, tried } from "./logger.ts";
@@ -241,12 +241,12 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
 
         held = [];
 
-        try {
+        await exception.rescueAsync(async () => {
 
             await send(batch);
             failures = 0;
 
-        } catch ( caught ) {
+        }, ( caught ) => {
 
             if ( closed ) return;
 
@@ -256,7 +256,7 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
 
             if ( onFail ) tried(( lost: readonly Entry[] ) => onFail(caught, lost), batch);
 
-        }
+        });
 
     };
     const landed = (): void => {
@@ -291,7 +291,7 @@ export function batchSink ( send: ( entries: readonly Entry[] ) => Promise<void>
     };
     const sink = (( entry: Entry ) => {
 
-        if ( closed ) throw error.fault("unavailable", "log.closed");
+        if ( closed ) throw exception.fault("unavailable", "log.closed");
 
         held.push(entry);
 

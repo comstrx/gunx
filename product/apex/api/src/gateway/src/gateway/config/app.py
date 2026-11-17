@@ -22,6 +22,7 @@ class AppSettings(Settings):
     iam_url      : str = "http://127.0.0.1:8101"
     hello_url    : str = "http://127.0.0.1:8102"
     notify_url   : str = "http://127.0.0.1:8103"
+    cache_url    : str = ""
     origins      : list[str] = field(default_factory=list)
     log_level    : str = "warning"
 

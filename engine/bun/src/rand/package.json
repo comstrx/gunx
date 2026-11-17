@@ -8,7 +8,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "engine-adapter": "workspace:*",
+    "engine-device": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-list": "workspace:*",
     "engine-number": "workspace:*",
     "engine-string": "workspace:*"

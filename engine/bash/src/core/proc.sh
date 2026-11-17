@@ -5,7 +5,10 @@ core:proc:seconds () {
 
     local value="${1:-}" name="${2:-value}"
 
-    if ! core:num:natural "${value}" || (( value == 0 )); then core:error:fail "${name} must be a positive number of seconds: ${value}"; return; fi
+    if ! core:num:natural "${value}" || (( value == 0 )); then
+        core:error:fail "${name} must be a positive number of seconds: ${value}"
+        return
+    fi
 
     core:log:print "${value}"
 
@@ -82,12 +85,16 @@ core:proc:backoff () {
 
     local base="${1:-0}" attempt="${2:-1}" step=0 delay=0 cap=60000
 
-    if ! core:num:natural "${base}" || ! core:num:natural "${attempt}"; then core:error:fail "Backoff needs seconds and an attempt: ${base} ${attempt}"; return; fi
+    if ! core:num:natural "${base}" || ! core:num:natural "${attempt}"; then
+        core:error:fail "Backoff needs seconds and an attempt: ${base} ${attempt}"
+        return
+    fi
 
     step=$(( attempt > 7 ? 6 : attempt - 1 ))
     (( step >= 0 )) || step=0
 
     delay=$(( base * 1000 * (1 << step) ))
+
     (( delay <= cap )) || delay="${cap}"
     (( delay == 0 )) || delay=$(( delay / 2 + ((RANDOM << 15 | RANDOM) % (delay / 2 + 1)) ))
 
@@ -199,7 +206,11 @@ core:proc:group:stop () {
 
     local group="${1:-}" grace="${2:-${PROC_GRACE}}" waited=0
 
-    if ! core:num:natural "${group}" || (( group <= 1 )); then core:error:fail "Not a process group: ${group}"; return; fi
+    if ! core:num:natural "${group}" || (( group <= 1 )); then
+        core:error:fail "Not a process group: ${group}"
+        return
+    fi
+
     core:num:natural "${grace}" || { core:error:fail "Grace must be a number of seconds: ${grace}"; return; }
 
     kill -TERM -- "-${group}" 2>/dev/null || return 0

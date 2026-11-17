@@ -1,11 +1,11 @@
 import type { MetadataRoute } from "next";
-import { publicOf } from "@/specs/runtime.ts";
+import { host } from "@/specs/app.ts";
 
 export const dynamic = "force-static";
 
 export default function robots (): MetadataRoute.Robots {
 
-    const open = publicOf();
+    const open = host.app.indexing();
 
     if ( !open.indexable || !open.url ) return { rules: { userAgent: "*", disallow: "/" } };
 

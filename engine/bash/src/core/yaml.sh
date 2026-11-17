@@ -13,7 +13,8 @@ core:yaml:prune () {
 
     [[ -f "${file}" ]] || return 0
 
-    core:fs:file:write "${file}" 644 core:yaml:prune:filter "${file}" "${pattern}" "${mode}" || { core:error:fail "Cannot prune ${file}"; return; }
+    core:fs:file:write "${file}" 644 core:yaml:prune:filter "${file}" "${pattern}" "${mode}" \
+        || { core:error:fail "Cannot prune ${file}"; return; }
 
 }
 core:yaml:prune:filter () {
@@ -81,7 +82,9 @@ core:yaml:keys () {
     printf -v pad '%*s' "${depth}" ''
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
+
         [[ "${line}" =~ ^${pad}([A-Za-z_.$-][^:[:space:]]*):[[:space:]]*$ ]] && core:log:print "${BASH_REMATCH[1]}"
+
     done < "${file}"
 
     return 0
@@ -93,19 +96,20 @@ core:yaml:set () {
 
     [[ -f "${file}" ]] || return 0
 
-    core:fs:file:write "${file}" 644 core:yaml:set:filter "${file}" "${key}" "${value}" || { core:error:fail "Cannot set ${key} in ${file}"; return; }
+    core:fs:file:write "${file}" 644 core:yaml:set:filter "${file}" "${key}" "${value}" \
+        || { core:error:fail "Cannot set ${key} in ${file}"; return; }
 
 }
 core:yaml:set:filter () {
 
     local file="${1}" key="${2}" value="${3}"
 
-    awk -v key="${key}" -v value="${value}" '
+    YAML_VALUE="${value}" awk -v key="${key}" '
         function ind ( s ) { match(s, /^ */); return RLENGTH }
         skip && $0 !~ /[^ ]/ { held++; next }
         skip && ind($0) > depth { held = 0; next }
         skip { for ( ; held > 0; held-- ) print ""; skip = 0 }
-        $0 ~ "^ *" key ":( |$)" { depth = ind($0); print substr($0, 1, depth) key ": " value; skip = 1; next }
+        $0 ~ "^ *" key ":( |$)" { depth = ind($0); print substr($0, 1, depth) key ": " ENVIRON["YAML_VALUE"]; skip = 1; next }
         { print }
         END { for ( ; held > 0; held-- ) print "" }
     ' "${file}"

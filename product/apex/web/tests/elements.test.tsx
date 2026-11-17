@@ -55,11 +55,11 @@ describe("elements", () => {
         const closed = renderToStaticMarkup(<Dialog open={false} label="Close account"><Text>{word}</Text></Dialog>);
         const alert = renderToStaticMarkup(<Dialog open kind="alert" labelledBy="t"><Text>{word}</Text></Dialog>);
 
-        expect(closed).toStartWith('<dialog aria-label="Close account" data-ui="dialog" data-kind="plain" class="');
-        expect(closed).toEndWith('backdrop:bg-scrim open:backdrop:transition-opacity open:backdrop:duration-[var(--motion-fast)] starting:open:backdrop:opacity-0"></dialog>');
+        expect(closed).toStartWith('<dialog aria-label="Close account" data-ui="dialog" data-kind="plain" data-size="sm" class="');
+        expect(closed).toEndWith('backdrop:transition-discrete backdrop:duration-[var(--motion-fast)] open:backdrop:opacity-100 starting:open:backdrop:opacity-0 w-[min(28rem,calc(100vw-2rem))]"></dialog>');
         expect(closed).not.toContain(" open=");
         expect(closed).not.toContain("<p");
-        expect(alert).toStartWith('<dialog role="alertdialog" aria-labelledby="t" data-ui="dialog" data-kind="alert" class="');
+        expect(alert).toStartWith('<dialog role="alertdialog" aria-labelledby="t" data-ui="dialog" data-kind="alert" data-size="sm" class="');
         expect(alert).toContain("bg-surface-raised");
         expect(alert).toContain("duration-[var(--motion-fast)]");
         expect(alert).toEndWith(">x</p></dialog>");

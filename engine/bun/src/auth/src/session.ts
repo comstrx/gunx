@@ -1,6 +1,7 @@
 import * as crypto from "engine-crypto";
 import * as date from "engine-date";
-import * as error from "engine-error";
+import type * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as state from "engine-state";
 import type { Renew, Renewing, Session, SessionMoves, SessionOptions, Signed, Tokens } from "./arch.ts";
@@ -17,7 +18,7 @@ function sound ( tokens: unknown ): tokens is Tokens {
 }
 function held ( tokens: Tokens ): Tokens {
 
-    if ( !sound(tokens) ) throw error.fault("internal", "auth.tokens");
+    if ( !sound(tokens) ) throw exception.fault("internal", "auth.tokens");
 
     return { ...withExpiry(tokens) };
 
@@ -42,7 +43,7 @@ export function session<U> ( options: SessionOptions ): Session<U> {
 
     const { name, box, renew, skew = 30_000, now = date.now } = options;
 
-    if ( !Number.isFinite(skew) || skew < 0 ) throw new RangeError("not a duration");
+    if ( !Number.isFinite(skew) || skew < 0 ) throw exception.misuse("not a duration");
 
     let revision = 0;
     let flight: Promise<string | null> | undefined;
@@ -118,27 +119,31 @@ export function session<U> ( options: SessionOptions ): Session<U> {
 
         try {
 
-            const next = await (renew as Renew)(used, controller.signal);
+            return await exception.rescueAsync(async () => {
 
-            if ( moved() ) return current();
+                const next = await (renew as Renew)(used, controller.signal);
 
-            renewing = undefined;
-            kept.getState().renewed(next);
+                if ( moved() ) return current();
 
-            const written = kept.getState().tokens;
+                renewing = undefined;
+                kept.getState().renewed(next);
 
-            await kept.flush();
+                const written = kept.getState().tokens;
 
-            return turn !== revision || kept.getState().tokens !== written ? current() : next.access;
+                await kept.flush();
 
-        } catch ( thrown ) {
+                return turn !== revision || kept.getState().tokens !== written ? current() : next.access;
 
-            const fault = error.of(thrown);
+            }, ( thrown ) => {
 
-            if ( moved() ) return current();
-            if ( final.has(fault.code) ) kept.getState().end();
+                const fault = exception.of(thrown);
 
-            throw fault;
+                if ( moved() ) return current();
+                if ( final.has(fault.code) ) kept.getState().end();
+
+                throw fault;
+
+            });
 
         } finally {
 

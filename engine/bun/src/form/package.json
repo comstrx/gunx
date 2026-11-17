@@ -8,8 +8,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "engine-error": "workspace:*",
     "engine-event": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-json": "workspace:*",
     "engine-list": "workspace:*",
     "engine-rand": "workspace:*",

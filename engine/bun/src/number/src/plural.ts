@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Category } from "./arch.ts";
 
 const rules = new Map<string, Intl.PluralRules>();
@@ -9,17 +10,7 @@ function selected ( locale: string ): Intl.PluralRules {
 
     if ( found !== undefined ) return found;
 
-    let made: Intl.PluralRules;
-
-    try {
-
-        made = new Intl.PluralRules([tag, "en"]);
-
-    } catch {
-
-        made = new Intl.PluralRules("en");
-
-    }
+    const made = exception.rescue(() => new Intl.PluralRules([tag, "en"]), () => new Intl.PluralRules("en"));
 
     if ( rules.size >= 64 ) rules.delete(rules.keys().next().value ?? "");
 

@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Catalog, Emojis, Options, World } from "./arch.ts";
 import { countriesReady, defineCountries, defineKeys, everyCountry, regions as everyRegion, loadCountries, regionName } from "./country.ts";
 import { currenciesReady, defineCurrencies, loadCurrencies } from "./currency.ts";
@@ -26,7 +27,7 @@ export async function load ( ...names: readonly Catalog[] ): Promise<void> {
     const wanted = names.length ? names : catalogs;
     const strangers = wanted.filter(( name ) => !Object.hasOwn(loaders, name));
 
-    if ( strangers.length ) throw new RangeError(`unknown catalog: ${strangers.map(String).join(", ")}`);
+    if ( strangers.length ) throw exception.misuse(`unknown catalog: ${strangers.map(String).join(", ")}`);
 
     await Promise.all(wanted.map(( name ) => loaders[name]()));
 
@@ -41,7 +42,7 @@ export function define ( options: Options = {} ): World {
     const asked = word(options.locale).trim();
     const locale = asked === "" ? "en" : asked;
 
-    if ( !tagged.test(locale) ) throw new RangeError("not a locale");
+    if ( !tagged.test(locale) ) throw exception.misuse("not a locale");
 
     const countries = defineCountries(options.countries);
     const currencies = defineCurrencies(options.currencies);

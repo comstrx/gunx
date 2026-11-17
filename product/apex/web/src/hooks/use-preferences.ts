@@ -12,15 +12,16 @@ export function directionOf ( locale: Locale ): Direction {
 }
 export function usePreferences (): Preferred {
 
-    const locale = bound.useSelect(( state ) => state.locale);
-    const ready = bound.useSelect(( state ) => state.ready);
+    const held = instance();
+    const locale = bound().useSelect(( state ) => state.locale);
+    const ready = bound().useSelect(( state ) => state.ready);
 
     useEffect(() => {
 
-        if ( !instance.getState().ready ) void instance.hydrate();
+        if ( !held.getState().ready ) void held.hydrate();
 
-    }, []);
+    }, [held]);
 
-    return { locale, direction: directionOf(locale), ready, toggleLocale: instance.getState().toggleLocale, setLocale: instance.getState().setLocale };
+    return { locale, direction: directionOf(locale), ready, toggleLocale: held.getState().toggleLocale, setLocale: held.getState().setLocale };
 
 }

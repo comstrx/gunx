@@ -1,6 +1,6 @@
 import { describe, expect, test as it, jest } from "bun:test";
-import * as error from "engine/error";
 import * as event from "engine/event";
+import * as exception from "engine/exception";
 import * as fc from "fast-check";
 
 type Step =
@@ -116,7 +116,7 @@ function said ( cause: unknown ): string {
 }
 function read ( reason: unknown ): unknown {
 
-    return reason instanceof error.Fault ? `${reason.code}/${reason.reason}` : reason;
+    return reason instanceof exception.Fault ? `${reason.code}/${reason.reason}` : reason;
 
 }
 function missed ( fail: event.Fail | undefined, cause: unknown, failures: unknown[] ): void {
@@ -1091,9 +1091,9 @@ describe("fuzz event", () => {
                 const waits = [shop.once("a", Number.NaN), made.wait("a", { timeout: Number.NaN }), cell.until(() => false, Number.NaN)];
                 const caught = await Promise.all(waits.map(( work ) => work.then(() => undefined, ( cause: unknown ) => cause)));
 
-                expect(caught.every(( cause ) => cause instanceof RangeError)).toBe(true);
+                expect(caught.every(( cause ) => cause instanceof exception.Fault)).toBe(true);
                 expect([shop.count(), made.count(), cell.count()]).toEqual([0, 0, 0]);
-                expect(refused(() => event.deadline(Number.NaN))).toBeInstanceOf(RangeError);
+                expect(refused(() => event.deadline(Number.NaN))).toBeInstanceOf(exception.Fault);
 
                 const seen = { calls: 0 };
                 const loop = (): void => {

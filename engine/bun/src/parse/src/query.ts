@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import type { Arrays, Query, QueryInput } from "./arch.ts";
 
@@ -10,28 +11,16 @@ function decode ( text: string ): string {
 
     if ( !spaced.includes("%") ) return spaced;
 
-    try {
+    const read = exception.run(decodeURIComponent, spaced);
 
-        return decodeURIComponent(spaced);
-
-    } catch {
-
-        return spaced;
-
-    }
+    return exception.threw(read) ? spaced : read;
 
 }
 function encode ( text: string ): string {
 
-    try {
+    const made = exception.run(encodeURIComponent, text);
 
-        return encodeURIComponent(text);
-
-    } catch {
-
-        return Array.from(text, ( point ) => (point.length === 1 && point >= "\ud800" && point <= "\udfff" ? lost : encodeURIComponent(point))).join("");
-
-    }
+    return exception.threw(made) ? Array.from(text, ( point ) => (point.length === 1 && point >= "\ud800" && point <= "\udfff" ? lost : encodeURIComponent(point))).join("") : made;
 
 }
 function sendable ( value: unknown ): value is string | number | boolean {

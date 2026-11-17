@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import type * as socket from "engine-socket";
 import type { Change, Entry, Events, Live, Patch, Patched, Realtime, Watcher } from "./arch.ts";
@@ -101,7 +101,7 @@ export function live ( options: Realtime ): Live {
 
     function told ( link: socket.Connection, cause: unknown ): void {
 
-        if ( error.isFault(cause) && (cause.reason === "socket.left" || cause.reason === "socket.closed" || (cause.code === "timeout" && link.status() !== "open")) ) return;
+        if ( exception.isFault(cause) && (cause.reason === "socket.left" || cause.reason === "socket.closed" || (cause.code === "timeout" && link.status() !== "open")) ) return;
 
         options.fail?.(cause);
 
@@ -126,7 +126,7 @@ export function live ( options: Realtime ): Live {
 
         for ( const entry of entries ) entry.off = link.on(entry.event, entry.handler, entry.channel);
         for ( const watcher of watchers ) watcher.off = link.watch(watcher.listener);
-        for ( const channel of rooms.keys() ) void link.join(channel).catch(( cause: unknown ) => told(link, cause));
+        for ( const channel of rooms.keys() ) void exception.mend(link.join(channel), ( cause: unknown ) => told(link, cause));
 
         return link;
 
@@ -154,7 +154,7 @@ export function live ( options: Realtime ): Live {
 
         rooms.set(channel, count + 1);
 
-        if ( count === 0 ) void link.join(channel).catch(( cause: unknown ) => told(link, cause));
+        if ( count === 0 ) void exception.mend(link.join(channel), ( cause: unknown ) => told(link, cause));
 
     }
     function exit ( channel: string ): void {
@@ -172,7 +172,7 @@ export function live ( options: Realtime ): Live {
 
         rooms.delete(channel);
 
-        if ( count === 1 && link ) void link.leave(channel).catch(( cause: unknown ) => told(link, cause));
+        if ( count === 1 && link ) void exception.mend(link.leave(channel), ( cause: unknown ) => told(link, cause));
 
     }
     function channelOf ( feature: string, id?: string | number ): string {

@@ -1,16 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2024",
-    "lib": [
-      "ES2024",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": [
-      "bun"
-    ],
+    "types": ["bun"],
     "jsx": "react-jsx",
     "strict": true,
     "exactOptionalPropertyTypes": true,
@@ -28,26 +22,10 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@native/*": [
-        "./native/src/*"
-      ]
+      "@/*": ["./src/*"],
+      "@host/*": ["./host/src/*"]
     }
   },
-  "include": [
-    "src",
-    "specs",
-    "tool.config.ts",
-    "tests",
-    "native/types"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "native/node_modules",
-    "native/.hutch",
-    "native/build"
-  ]
+  "include": ["src", "specs", "tool.config.ts", "tests", "host/types"],
+  "exclude": ["node_modules", "dist", "host/node_modules", "host/.hutch", "host/build"]
 }

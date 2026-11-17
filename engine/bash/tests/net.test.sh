@@ -100,3 +100,16 @@ test:core:net:names-the-host-only () {
     core:validate:url 'https://example.com/hook?a=b&c=d/e:f'
 
 }
+test:core:net:reads-a-body-with-null-bytes () {
+
+    local file="${TMPDIR}/body" out=""
+
+    printf 'curl: first\0line\ncurl: (7) the last \0reason\n' > "${file}"
+
+    out="$(core:net:reason "${file}" https://example.com/x 2>&1)"
+    @eq "${out}" '(7) the last reason'
+
+    out="$(core:net:excerpt "${file}" https://example.com/x 2>&1)"
+    @absent "${out}" 'ignored null byte'
+
+}

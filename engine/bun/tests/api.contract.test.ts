@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as validate from "engine/validate";
 
 const user = validate.object({ id: validate.number(), name: validate.string() });
@@ -28,8 +28,8 @@ describe("api", () => {
         expect(users.make.feature).toBe("users");
         expect(api.facts(users)).toEqual({ permissions: ["users.read"], auth: true, cache: 0 });
         expect(api.facts({})).toEqual({ permissions: [], auth: true, cache: 0 });
-        expect(() => api.feature("bad", { one: api.get("/x/{id}", validate.object({}), user) })).toThrow(error.Fault);
-        expect(() => api.get("x", validate.object({}), user)).toThrow(error.Fault);
+        expect(() => api.feature("bad", { one: api.get("/x/{id}", validate.object({}), user) })).toThrow(exception.Fault);
+        expect(() => api.get("x", validate.object({}), user)).toThrow(exception.Fault);
         expect(api.patch("/p", validate.object({}), user).method).toBe("PATCH");
         expect(api.isEnvelope({ data: 1, code: "ok" }) && !api.isEnvelope({ data: 1 })).toBe(true);
         expect(api.unwrap({ data: [1], code: "ok", message: "m", meta: { page: 1 } })).toEqual({ data: [1], message: "m", errors: null, code: "ok", reason: null, meta: { page: 1 }, requestId: undefined });
@@ -41,10 +41,10 @@ describe("api", () => {
         const rows = [{ id: 1, name: "Ann" }, { id: 2, name: "Bob" }];
         const server = api.stub({
             "GET /users": ({ query }) => ({ data: rows.filter(( row ) => !query.q || row.name.includes(String(query.q))), message: null, errors: null, code: "ok", reason: null, meta: { page: Number(query.page ?? 1), limit: 10, total: 2, pages: 1 } }),
-            "GET /users/{id}": ({ params }) => rows.find(( row ) => row.id === Number(params.id)) ?? (() => { throw error.fault("not_found", "user.missing"); })(),
+            "GET /users/{id}": ({ params }) => rows.find(( row ) => row.id === Number(params.id)) ?? (() => { throw exception.fault("not_found", "user.missing"); })(),
             "POST /users": ({ body }) => ({ id: 3, name: (body as { name: string }).name }),
             "PUT /users/{id}": () => ({ id: "not-a-number", name: "x" }),
-            "DELETE /users/{id}": () => { throw error.fault("too_many_requests", "throttle", { retryAfter: 9 }); },
+            "DELETE /users/{id}": () => { throw exception.fault("too_many_requests", "throttle", { retryAfter: 9 }); },
         });
         const faults: string[] = [];
         let token: string | undefined = "t0k";
@@ -89,7 +89,7 @@ describe("api", () => {
 
         const refused = await client.call(users.drop, { id: 1 }).catch(( caught: unknown ) => caught);
 
-        expect(error.isFault(refused) && refused.code === "too_many_requests" && refused.retryAfter === 9).toBe(true);
+        expect(exception.isFault(refused) && refused.code === "too_many_requests" && refused.retryAfter === 9).toBe(true);
         expect(faults).toEqual(["not_found", "validation", "validation", "too_many_requests"]);
         client.forget(users.list);
         server.reset();

@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import { awaited, linked } from "./abort.ts";
 import type { Emitter, EmitterOptions, Events, Fail, Held } from "./arch.ts";
 
@@ -17,36 +17,28 @@ function noted ( cause: unknown, failures: unknown[] | undefined ): unknown[] {
 
 export function entered ( depth: number ): number {
 
-    if ( depth >= deepest ) throw error.fault("internal", "event.loop");
+    if ( depth >= deepest ) throw exception.fault("internal", "event.loop");
 
     return depth + 1;
 
 }
 export function tried<A, B> ( work: ( first: A, second: B ) => unknown, first: A, second: B, fail: Fail | undefined, failures: unknown[] | undefined ): unknown[] | undefined {
 
-    try {
+    const out = exception.run(work, first, second);
 
-        const out = work(first, second) as PromiseLike<unknown> | undefined;
+    if ( !exception.threw(out) ) {
 
-        if ( fail && typeof out?.then === "function" ) out.then(undefined, fail);
+        if ( fail && typeof (out as PromiseLike<unknown> | undefined)?.then === "function" ) void exception.mend(out as PromiseLike<unknown>, fail);
 
-    } catch ( cause ) {
-
-        if ( !fail ) return noted(cause, failures);
-
-        try {
-
-            fail(cause);
-
-        } catch ( broken ) {
-
-            return noted(broken, failures);
-
-        }
+        return failures;
 
     }
 
-    return failures;
+    if ( !fail ) return noted(out.caught, failures);
+
+    const broken = exception.run(fail, out.caught);
+
+    return exception.threw(broken) ? noted(broken.caught, failures) : failures;
 
 }
 export function raise ( failures: readonly unknown[] | undefined ): void {

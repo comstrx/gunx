@@ -1,4 +1,4 @@
-import { report } from "@/specs/runtime.ts";
+import { host } from "@/specs/app.ts";
 import { bind } from "@/stores/bind.ts";
 import { faults, instance } from "@/stores/preferences.ts";
 
@@ -13,7 +13,7 @@ export function dismiss (): void {
 }
 export function reload (): Promise<void> {
 
-    return import("engine/device").then(( device ) => (device.create(device.port.get()).reload() ? undefined : instance.reload())).catch(( caught: unknown ) => report(caught, "stale.reload"));
+    return import("@/stores/device.ts").then(( device ) => (device.reload() ? undefined : instance().reload())).catch(( caught: unknown ) => host.app.report(caught, "stale.reload"));
 
 }
 export function useStale (): Stale {

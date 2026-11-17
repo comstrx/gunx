@@ -1,8 +1,8 @@
-import * as adapter from "engine/adapter";
+import * as device from "engine/device";
 import * as world from "engine/world";
 import { useEffect } from "react";
 import { usePreferences } from "@/hooks/use-preferences.ts";
-import { compiled } from "@/specs/runtime.ts";
+import { host } from "@/specs/app.ts";
 import { bind } from "@/stores/bind.ts";
 import { box } from "@/stores/box.ts";
 import { type Palette, palettes } from "@/styles/tokens.ts";
@@ -10,31 +10,90 @@ import type { Direction, Locale } from "@/types/index.ts";
 
 export type Theme = world.ThemeState<Palette> & { locale: Locale; direction: Direction; set: ( preference: world.Preference ) => void; toggle: () => void; cycle: () => void };
 
-export const scheme: world.Theme<Palette> = world.theme({ tokens: palettes(compiled.role.config.themes.brand), box, key: "scheme" });
+const own = "scheme.own";
+const made = host.own(( app ) => {
 
-const bound = bind(scheme);
+    const handed = host.carried().scheme;
+    const told = app.config.settings.scheme;
+    const held = box();
+    const scheme: world.Theme<Palette> = world.theme({ tokens: palettes(app.config.themes.brand), preference: world.isPreference(handed) ? handed : world.isPreference(told) ? told : "system", box: held, key: "scheme" });
 
+    const adopt = (): void => {
+
+        const given = host.carried().scheme;
+
+        if ( world.isPreference(given) ) void held.get<boolean>(own).then(( chosen ) => (chosen === true ? undefined : scheme.hydrate().then(() => scheme.set(given)))).catch(( caught: unknown ) => app.report(caught, "scheme.inherit"));
+
+    };
+
+    adopt();
+    host.active.subscribe(( name ) => {
+
+        if ( name === app.name ) adopt();
+
+    });
+
+    return { scheme, bound: bind(scheme), chose: (): void => void held.set(own, true).catch(( caught: unknown ) => app.report(caught, "scheme.choose")) };
+
+});
+
+export function scheme (): world.Theme<Palette> {
+
+    return made().scheme;
+
+}
 export function useTheme (): Theme {
 
-    const { locale, direction } = usePreferences();
+    const { locale, direction, ready } = usePreferences();
+    const { scheme: held, bound, chose } = made();
     const current = bound.useState();
+    const surface = host.app.id;
 
     useEffect(() => {
 
-        if ( !scheme.getState().ready ) void scheme.hydrate();
+        if ( !held.getState().ready ) void held.hydrate();
 
-    }, []);
+    }, [held]);
     useEffect(() => {
 
-        const root = adapter.host().document?.documentElement;
-        const speak = { lang: locale, dir: direction };
+        const root = device.host().document?.documentElement;
+        const speak = { lang: locale, dir: direction, surface };
 
-        scheme.apply(root, speak);
+        const apply = (): void => {
 
-        return scheme.subscribe(() => scheme.apply(root, speak));
+            if ( !ready || !held.getState().ready ) return;
+            held.apply(root, speak);
 
-    }, [locale, direction]);
+        };
 
-    return { ...current, locale, direction, set: scheme.set, toggle: scheme.toggle, cycle: scheme.cycle };
+        apply();
+
+        return held.subscribe(apply);
+
+    }, [held, locale, direction, ready, surface]);
+
+    return {
+        ...current,
+        locale,
+        direction,
+        set: ( preference ) => {
+
+            chose();
+            held.set(preference);
+
+        },
+        toggle: () => {
+
+            chose();
+            held.toggle();
+
+        },
+        cycle: () => {
+
+            chose();
+            held.cycle();
+
+        },
+    };
 
 }

@@ -45,3 +45,11 @@ test:core:cli:suggests () {
     @eq "$(core:cli:suggest zzz hello)" ''
 
 }
+test:core:cli:takes-an-empty-word () {
+
+    core:cli:parse '' --help
+    @eq "${#CLI_ARGS[@]}" 1
+    @eq "${CLI_ARGS[0]}" ''
+    core:cli:flag --help
+
+}

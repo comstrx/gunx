@@ -1,5 +1,4 @@
-import * as adapter from "engine-adapter";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Ask, Cluster, Geocoder, Group, Mode, Place, Point, Progress, Route, Router, Search, Snapped } from "./arch.ts";
 import { meters, turned } from "./path.ts";
 import { deg, distance, earthRadius, interpolate, isPoint, rad, sure } from "./point.ts";
@@ -10,8 +9,8 @@ const widest = 50;
 const longest = 256;
 const modes: readonly string[] = ["car", "walk", "bike"];
 
-export const geocoder: adapter.Port<Geocoder> = adapter.port<Geocoder>("geo.geocoder");
-export const router: adapter.Port<Router> = adapter.port<Router>("geo.router");
+export const geocoder: exception.Slot<Geocoder> = exception.slot<Geocoder>("geo.geocoder");
+export const router: exception.Slot<Router> = exception.slot<Router>("geo.router");
 
 function placed ( value: unknown ): value is Place {
 
@@ -29,19 +28,19 @@ function routed ( value: Route ): boolean {
 }
 async function asked<T> ( signal: AbortSignal | undefined, call: () => Promise<T> ): Promise<T> {
 
-    if ( signal?.aborted ) throw error.fault("timeout", "geo.aborted");
+    if ( signal?.aborted ) throw exception.fault("timeout", "geo.aborted");
 
-    try {
+    return await exception.rescueAsync(async () => {
 
         return await call();
 
-    } catch ( cause ) {
+    }, ( cause ) => {
 
-        if ( error.isFault(cause) ) throw cause;
+        if ( exception.isFault(cause) ) throw cause;
 
-        throw signal?.aborted ? error.fault("timeout", "geo.aborted", { cause }) : error.fault("unavailable", "geo.refused", { cause });
+        throw signal?.aborted ? exception.fault("timeout", "geo.aborted", { cause }) : exception.fault("unavailable", "geo.refused", { cause });
 
-    }
+    });
 
 }
 
@@ -257,7 +256,7 @@ export async function geocode ( query: string, options: Search = {} ): Promise<P
 
     const found: unknown = await asked(options.signal, () => provider.search(text, { ...options, limit }));
 
-    if ( !Array.isArray(found) ) throw error.fault("unavailable", "geo.refused", { message: "geo: the geocoder did not answer a list" });
+    if ( !Array.isArray(found) ) throw exception.fault("unavailable", "geo.refused", { message: "geo: the geocoder did not answer a list" });
 
     return found.filter(placed).slice(0, limit ?? widest);
 
@@ -277,12 +276,12 @@ export async function route ( from: Point, to: Point, mode: Mode = "car", option
     const start = sure({ lat: from.lat, lng: from.lng });
     const end = sure({ lat: to.lat, lng: to.lng });
 
-    if ( !modes.includes(mode) ) throw new RangeError("not a mode");
+    if ( !modes.includes(mode) ) throw exception.misuse("not a mode");
 
     const found = await asked(options.signal, () => provider.route(start, end, mode, options));
 
     if ( found === undefined || found === null ) return undefined;
-    if ( !routed(found) ) throw error.fault("unavailable", "geo.refused", { message: "geo: the router answered an unsound route" });
+    if ( !routed(found) ) throw exception.fault("unavailable", "geo.refused", { message: "geo: the router answered an unsound route" });
 
     return found;
 

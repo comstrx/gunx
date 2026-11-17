@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 
 function reasonOf ( work: () => unknown ): string | undefined {
 
@@ -10,7 +10,7 @@ function reasonOf ( work: () => unknown ): string | undefined {
 
     } catch ( thrown ) {
 
-        return error.isFault(thrown) ? thrown.reason : "not a fault";
+        return exception.isFault(thrown) ? thrown.reason : "not a fault";
 
     }
 

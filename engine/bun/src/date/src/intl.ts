@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Held } from "./arch.ts";
 
 const tongues: Held<string> = new Map();
@@ -23,15 +24,7 @@ export function tongue ( locale: string ): string {
 
     return held(tongues, locale, () => {
 
-        try {
-
-            return Intl.DateTimeFormat.supportedLocalesOf([locale.replace(/_/g, "-")])[0] ?? "en";
-
-        } catch {
-
-            return "en";
-
-        }
+        return exception.rescue(() => Intl.DateTimeFormat.supportedLocalesOf([locale.replace(/_/g, "-")])[0] ?? "en", () => "en");
 
     });
 

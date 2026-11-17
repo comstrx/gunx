@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Draw } from "./arch.ts";
 
 const loop = 3;
@@ -157,7 +158,7 @@ function compile ( source: string ): Draw | undefined {
 
                 room -= 1;
 
-                if ( room < 0 ) throw new RangeError("not a pattern");
+                if ( room < 0 ) throw exception.misuse("not a pattern");
 
                 out += draw(random);
 

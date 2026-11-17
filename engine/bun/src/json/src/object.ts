@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Dictionary, Kind, StringifyOptions } from "./arch.ts";
 
 const unsafe = new Set(["__proto__", "constructor", "prototype"]);
@@ -69,7 +70,7 @@ export function isIndex ( key: string ): boolean {
 }
 export function parse ( text: string ): unknown {
 
-    try {
+    return exception.rescue(() => {
 
         const first = typeof text === "string" ? text.charCodeAt(0) : 0;
 
@@ -77,11 +78,11 @@ export function parse ( text: string ): unknown {
 
         return poisoned.test(text) ? JSON.parse(text, ( key, value: unknown ) => (key === poison ? undefined : value)) : JSON.parse(text);
 
-    } catch {
+    }, () => {
 
         return undefined;
 
-    }
+    });
 
 }
 function told ( value: object ): unknown {
@@ -117,17 +118,14 @@ function keyed ( value: object, stable: boolean, held: Set<object> ): Dictionary
     return out;
 
 }
+function plainly ( value: unknown, space: number | undefined ): string {
+
+    return JSON.stringify(value, space === undefined ? undefined : ( _key, item: unknown ) => item, space) ?? "null";
+
+}
 function tolerant ( value: unknown, stable: boolean, space: number | undefined ): string {
 
-    try {
-
-        return JSON.stringify(settled(value, stable, new Set()), undefined, space) ?? "null";
-
-    } catch {
-
-        return "null";
-
-    }
+    return exception.rescue(() => JSON.stringify(settled(value, stable, new Set()), undefined, space) ?? "null", () => "null");
 
 }
 export function stringify ( value: unknown, options: StringifyOptions = {} ): string {
@@ -136,15 +134,9 @@ export function stringify ( value: unknown, options: StringifyOptions = {} ): st
 
     if ( options.stable ) return tolerant(value, true, space);
 
-    try {
+    const text = exception.run(plainly, value, space);
 
-        return JSON.stringify(value, space === undefined ? undefined : ( _key, item: unknown ) => item, space) ?? "null";
-
-    } catch {
-
-        return tolerant(value, false, space);
-
-    }
+    return exception.threw(text) ? tolerant(value, false, space) : text;
 
 }
 function copied ( value: unknown, seen: Map<object, unknown> ): unknown {
@@ -204,15 +196,9 @@ export function clone<T> ( value: T ): T {
 
     if ( typeof value !== "object" || value === null ) return value;
 
-    try {
+    const made = exception.run(structuredClone<T>, value);
 
-        return structuredClone(value);
-
-    } catch {
-
-        return copied(value, new Map()) as T;
-
-    }
+    return exception.threw(made) ? copied(value, new Map()) as T : made;
 
 }
 export function pick<T extends object, K extends keyof T> ( value: T, keys: readonly K[] ): Pick<T, K> {

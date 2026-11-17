@@ -1,1 +1,1 @@
-export const features = ["hello"] as const;
+export const features = ["hello", "action", "note", "account", "notices"] as const;

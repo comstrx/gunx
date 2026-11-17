@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as geo from "engine/geo";
 import * as fc from "fast-check";
 
@@ -281,7 +282,7 @@ describe("fuzz geo", () => {
             expect(geo.fromJson(junk)).toBeUndefined();
             expect(geo.link(at).startsWith("https://www.google.com/maps/search/?api=1&query=")).toBe(true);
             expect(geo.link(at, "apple", junk).includes("\n") || geo.link(at, "apple", junk).includes(" ")).toBe(false);
-            expect(() => geo.link({ lat: at.lat, lng: junk as unknown as number })).toThrow(new RangeError("not a point"));
+            expect(() => geo.link({ lat: at.lat, lng: junk as unknown as number })).toThrow(exception.misuse("not a point"));
 
         }), { numRuns: runs });
 

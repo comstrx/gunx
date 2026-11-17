@@ -47,7 +47,7 @@ export const gaps: Readonly<Record<Space, number>> = { none: 0, xs: 4, sm: 8, md
 export const paddings: Readonly<Record<Space, number>> = { none: 0, xs: 8, sm: 12, md: 20, lg: 32, xl: 48 };
 export const radius = { md: 10, lg: 18 } as const;
 export const reading = 672;
-export const motion = { fast: 140 } as const;
+export const motion = { fast: 140, base: 220 } as const;
 
 export function palettes ( brand: string ): Palettes {
 

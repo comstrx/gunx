@@ -1,5 +1,6 @@
 import * as crypto from "engine-crypto";
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as list from "engine-list";
 import type { Box, Envelope, Keep, Options, Place, Storage } from "./arch.ts";
@@ -12,7 +13,7 @@ const noop = (): void => undefined;
 function until ( seconds: number | undefined ): number | undefined {
 
     if ( seconds === undefined || seconds === Number.POSITIVE_INFINITY ) return undefined;
-    if ( typeof seconds !== "number" || Number.isNaN(seconds) ) throw new RangeError("not a ttl");
+    if ( typeof seconds !== "number" || Number.isNaN(seconds) ) throw exception.misuse("not a ttl");
 
     return seconds <= 0 ? 0 : date.now() + seconds * 1000;
 
@@ -129,8 +130,8 @@ export function open ( options: Options = {} ): Box {
         const kept = await read(key, true);
         const next = (typeof kept?.v === "number" ? kept.v : 0) + by;
 
-        if ( kept !== undefined && typeof kept.v !== "number" ) throw new RangeError("not a counter");
-        if ( !Number.isFinite(next) ) throw new RangeError("not a step");
+        if ( kept !== undefined && typeof kept.v !== "number" ) throw exception.misuse("not a counter");
+        if ( !Number.isFinite(next) ) throw exception.misuse("not a step");
 
         await write(key, next, lasting(kept, keep));
 

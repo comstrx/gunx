@@ -3,11 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, sep } from "node:path";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import type * as socket from "engine/socket";
 import * as stage from "engine/test";
 
-const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return error.isFault(caught) ? caught.reason ?? "?" : "?"; } };
+const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return exception.isFault(caught) ? caught.reason ?? "?" : "?"; } };
 const shared = globalThis as Record<string, unknown>;
 
 function frames ( url: string, token: string | undefined ): { socket: WebSocket; seen: socket.Frame[]; ready: Promise<void>; closed: Promise<number> } {
@@ -155,7 +155,7 @@ describe("test.edges", () => {
 
         const started = performance.now();
 
-        await expect(stage.until(() => { throw error.fault("conflict", "x.y"); }, { timeout: 1000 })).rejects.toMatchObject({ reason: "x.y" });
+        await expect(stage.until(() => { throw exception.fault("conflict", "x.y"); }, { timeout: 1000 })).rejects.toMatchObject({ reason: "x.y" });
         expect(performance.now() - started < 500).toBe(true);
         await expect(stage.until(() => new Promise<boolean>(() => undefined), { timeout: 20 })).rejects.toMatchObject({ reason: "test.until" });
         await expect(stage.until(() => false, { timeout: 10, message: "custom" })).rejects.toMatchObject({ message: "custom" });
@@ -185,13 +185,13 @@ describe("test.edges", () => {
     });
     it("the live server gates channels, names a handler's fault, echoes unhandled requests, pongs, routes broadcasts only to members, forgets left channels and closes unauthenticated callers", async () => {
 
-        const server = stage.live({ codec: { encode: api.encodeFrame, decode: api.decodeFrame }, auth: ( token ) => token === "good", gate: ( channel ) => channel !== "secret", onFrame: async ( frame ) => { if ( frame.event === "boom" ) throw error.fault("conflict", "x.taken"); return false; } });
+        const server = stage.live({ codec: { encode: api.encodeFrame, decode: api.decodeFrame }, auth: ( token ) => token === "good", gate: ( channel ) => channel !== "secret", onFrame: async ( frame ) => { if ( frame.event === "boom" ) throw exception.fault("conflict", "x.taken"); return false; } });
         const link = api.connect({ url: server.url, auth: "good", heartbeat: 0, reconnect: false });
 
         try {
 
             await link.connect();
-            expect([await link.join("open").then(() => "ok"), await link.join("secret").then(() => "ok", ( caught: unknown ) => (error.isFault(caught) ? caught.reason : "?")), await link.request("boom", {}).then(() => "ok", ( caught: unknown ) => (error.isFault(caught) ? `${caught.code}/${caught.reason}` : "?")), await link.request("echo", 5)]).toEqual(["ok", "socket.forbidden", "conflict/x.taken", 5]);
+            expect([await link.join("open").then(() => "ok"), await link.join("secret").then(() => "ok", ( caught: unknown ) => (exception.isFault(caught) ? caught.reason : "?")), await link.request("boom", {}).then(() => "ok", ( caught: unknown ) => (exception.isFault(caught) ? `${caught.code}/${caught.reason}` : "?")), await link.request("echo", 5)]).toEqual(["ok", "socket.forbidden", "conflict/x.taken", 5]);
 
             const raw = frames(server.url, "good");
 

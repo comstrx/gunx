@@ -1,5 +1,5 @@
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as value from "engine-value";
 import type { Book, Built, Check, Cross, Loose, Order, Pending, Presence, Raw, Row, RulesRule as Rule, Rules, Schema, Test } from "./arch.ts";
 import { format, stamp } from "./check.ts";
@@ -118,7 +118,7 @@ const makers: ReadonlyMap<string, ( rule: Rule ) => Schema> = new Map<string, ( 
 
 function refuse ( text: string, what: "rule" | "field" = "rule" ): never {
 
-    throw error.fault("internal", "validate.rule", { message: `not a ${what}: ${text}`, errors: { [what]: [text] } });
+    throw exception.fault("internal", "validate.rule", { message: `not a ${what}: ${text}`, errors: { [what]: [text] } });
 
 }
 function split ( given: Rules ): Rule[] {
@@ -249,15 +249,7 @@ function pattern ( rule: Rule ): RegExp {
 
     if ( source === "" || !modeShape.test(mode) ) return refuse(rule.text);
 
-    try {
-
-        return new RegExp(cut?.[1] ?? source, mode);
-
-    } catch {
-
-        return refuse(rule.text);
-
-    }
+    return exception.rescue(() => new RegExp(cut?.[1] ?? source, mode), () => refuse(rule.text));
 
 }
 function matched ( rule: Rule, wanted: boolean ): Test {
@@ -400,17 +392,17 @@ function parses ( given: unknown ): boolean {
 
     if ( typeof given !== "string" ) return false;
 
-    try {
+    return exception.rescue(() => {
 
         JSON.parse(given);
 
         return true;
 
-    } catch {
+    }, () => {
 
         return false;
 
-    }
+    });
 
 }
 function cased ( given: unknown, lower: boolean ): boolean {

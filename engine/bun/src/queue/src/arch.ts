@@ -1,5 +1,5 @@
 import type * as cache from "engine-cache";
-import type * as error from "engine-error";
+import type * as exception from "engine-exception";
 
 export type Backoff = { delay?: number | undefined; factor?: number | undefined; max?: number | undefined; jitter?: number | undefined };
 export type Schedule = {
@@ -37,7 +37,7 @@ export type Options = {
     delay?: number | undefined;
     factor?: number | undefined;
     backoff?: (( attempt: number ) => number) | undefined;
-    when?: (( fault: error.Fault, job: Job ) => boolean) | undefined;
+    when?: (( fault: exception.Fault, job: Job ) => boolean) | undefined;
     timeout?: number | undefined;
     lanes?: number | undefined;
     strict?: boolean | undefined;
@@ -65,5 +65,5 @@ export type Outbox = {
     load: () => Promise<Job[]>;
 };
 export type End = "done" | "free" | "fail" | "dead";
-export type Ended = { job: Job; fault: error.Fault | undefined; end: End; wait: number };
+export type Ended = { job: Job; fault: exception.Fault | undefined; end: End; wait: number };
 export type Flight = { signal: AbortSignal | undefined; seen: Set<string>; tally: Outcome; failures: unknown[]; blocked: boolean };

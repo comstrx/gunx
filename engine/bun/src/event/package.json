@@ -8,6 +8,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "engine-error": "workspace:*"
+    "engine-exception": "workspace:*"
   }
 }

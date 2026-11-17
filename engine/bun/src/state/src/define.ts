@@ -1,5 +1,5 @@
 import type * as cache from "engine-cache";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import type { Defined, Definition, Keeper, Persist, Saved, Setter, State, Verdict } from "./arch.ts";
 import { createStore, type StoreApi } from "./zustand.ts";
@@ -24,15 +24,15 @@ function tag (): string {
     return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 
 }
-function shadow ( name: string, key: string ): error.Fault {
+function shadow ( name: string, key: string ): exception.Fault {
 
-    return error.fault("internal", "state.shadow", { message: `${name}: "${key}" is already a state key` });
+    return exception.fault("internal", "state.shadow", { message: `${name}: "${key}" is already a state key` });
 
 }
 function versionOf ( version: number | undefined ): number {
 
     if ( version === undefined ) return 1;
-    if ( !Number.isSafeInteger(version) || version < 0 ) throw new RangeError("not a version");
+    if ( !Number.isSafeInteger(version) || version < 0 ) throw exception.misuse("not a version");
 
     return version;
 
@@ -84,7 +84,7 @@ function loose<S extends object, A extends object> ( store: StoreApi<State<S, A>
 function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>, definition: Definition<S, A>, persist: Persist<S>, key: string ): Keeper {
 
     const { name, initial } = definition;
-    const { box, migrate, accept, fail, sync = false } = persist;
+    const { box, migrate, accept, fail, seed, sync = false } = persist;
     const version = versionOf(persist.version);
     const keys = persist.keys ?? (Object.keys(initial) as (keyof S & string)[]);
     const wrap: cache.Keep = { exclusive: persist.guard !== "local" };
@@ -97,24 +97,24 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
     let forgetting = false;
     let failed = false;
     let stopped = false;
-    let unreported: error.Fault | undefined;
+    let unreported: exception.Fault | undefined;
     let tail: Promise<void> | undefined;
     let loading: Promise<void> | undefined;
     let unwatch: (() => void) | undefined;
-    const refused = ( cause: unknown ): error.Fault => error.fault("unavailable", "state.refused", { cause });
+    const refused = ( cause: unknown ): exception.Fault => exception.fault("unavailable", "state.refused", { cause });
     const slice = (): Partial<S> => json.pick(store.getState(), keys) as Partial<S>;
-    const report = ( fault: error.Fault ): void => {
+    const report = ( fault: exception.Fault ): void => {
 
-        try {
+        exception.rescue(() => {
 
             if ( fail ) fail(fault);
             else unreported = fault;
 
-        } catch {
+        }, () => {
 
             unreported = fault;
 
-        }
+        });
 
     };
     const mark = ( state: State<S, A>, kept: boolean ): void => {
@@ -122,7 +122,7 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
         if ( state.kept !== kept ) store.setState({ kept } as Partial<State<S, A>>);
 
     };
-    const freeze = ( fault: error.Fault ): void => {
+    const freeze = ( fault: exception.Fault ): void => {
 
         if ( frozen ) return;
 
@@ -141,7 +141,7 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
     const record = ( state: Partial<S> ): Saved<S> => (sync ? { version, state, by: self } : { version, state });
     const read = ( saved: Saved<S>, verdict: "same" | "older" ): Partial<S> | undefined => {
 
-        try {
+        return exception.rescue(() => {
 
             const found: unknown = verdict === "same" ? saved.state : migrate?.(saved.state, saved.version);
 
@@ -153,13 +153,13 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
 
             return accept ? accept(kept) : kept;
 
-        } catch ( cause ) {
+        }, ( cause ) => {
 
-            report(error.fault("internal", "state.saved", { cause }));
+            report(exception.fault("internal", "state.saved", { cause }));
 
             return undefined;
 
-        }
+        });
 
     };
     const dirty = ( state: State<S, A> ): boolean => {
@@ -175,7 +175,7 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
 
         if ( judge(saved, version) !== "newer" ) return false;
 
-        freeze(error.fault("conflict", "state.newer", { message: `${name}: a newer version is saved` }));
+        freeze(exception.fault("conflict", "state.newer", { message: `${name}: a newer version is saved` }));
 
         return true;
 
@@ -207,7 +207,7 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
 
             failed = true;
 
-            if ( error.is(cause) && cause.reason === "cache.unguarded" ) freeze(error.fault("unavailable", "state.unguarded", { cause }));
+            if ( exception.is(cause) && cause.reason === "cache.unguarded" ) freeze(exception.fault("unavailable", "state.unguarded", { cause }));
             else {
 
                 mark(store.getState(), false);
@@ -266,7 +266,7 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
         if ( verdict === "newer" ) {
 
             adopt(undefined);
-            freeze(error.fault("conflict", "state.newer", { message: `${name}: a newer version is saved` }));
+            freeze(exception.fault("conflict", "state.newer", { message: `${name}: a newer version is saved` }));
 
             return saved as Saved<S> | undefined;
 
@@ -277,11 +277,20 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
 
         adopt(found);
 
+        const sown: Partial<S> = {};
+
+        if ( found === undefined && seed !== undefined && touched.size === 0 ) for ( const key of keys ) if ( Object.hasOwn(seed, key) && alike(initial[key], seed[key]) ) sown[key] = seed[key] as S[keyof S & string];
+
+        const given = Object.keys(sown).length > 0 && accept ? accept(sown) : sown;
+        const planted = given !== undefined && Object.keys(given).length > 0;
+
+        if ( planted ) store.setState(given as Partial<State<S, A>>);
+
         const state = slice();
 
         stored = state;
 
-        if ( untouched || (touched.size === 0 && found === undefined) ) return saved as Saved<S> | undefined;
+        if ( untouched || (touched.size === 0 && found === undefined && !planted) ) return saved as Saved<S> | undefined;
 
         return record(state);
 
@@ -292,18 +301,22 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
 
         try {
 
-            await box.update<Saved<S>>(key, settle, wrap);
+            await exception.rescueAsync(async () => {
 
-            if ( !frozen ) mark(store.getState(), true);
+                await box.update<Saved<S>>(key, settle, wrap);
 
-        } catch ( cause ) {
+                if ( !frozen ) mark(store.getState(), true);
 
-            if ( !warm ) adopt(undefined);
+            }, ( cause ) => {
 
-            stored = slice();
+                if ( !warm ) adopt(undefined);
 
-            if ( error.is(cause) && cause.reason === "cache.unguarded" ) freeze(error.fault("unavailable", "state.unguarded", { cause }));
-            else report(refused(cause));
+                stored = slice();
+
+                if ( exception.is(cause) && cause.reason === "cache.unguarded" ) freeze(exception.fault("unavailable", "state.unguarded", { cause }));
+                else report(refused(cause));
+
+            });
 
         } finally {
 
@@ -345,15 +358,15 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
             if ( tail ) await tail;
             if ( stopped ) return;
 
-            try {
+            await exception.rescueAsync(async () => {
 
                 heard(await box.get(key));
 
-            } catch ( cause ) {
+            }, async ( cause ) => {
 
                 report(refused(cause));
 
-            }
+            });
 
         },
         flush: async () => {
@@ -381,11 +394,11 @@ function keep<S extends object, A extends object> ( store: StoreApi<State<S, A>>
 
             try {
 
-                await box.remove(key);
+                await exception.rescueAsync(() => box.remove(key), ( cause ) => {
 
-            } catch ( cause ) {
+                    throw refused(cause);
 
-                throw refused(cause);
+                });
 
             } finally {
 

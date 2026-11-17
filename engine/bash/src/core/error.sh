@@ -1,4 +1,4 @@
-declare -g ERROR_TRAPS=""
+declare -g ERROR_TRAPS="" ERROR_TOOL=""
 
 core:error:fail () {
 
@@ -25,14 +25,20 @@ core:error:raise () {
 }
 core:error:usage () {
 
-    core:error:raise 2 "$*; see ${MANIFEST[meta.name]:-infra} help"
+    core:error:raise 2 "$*; see ${ERROR_TOOL:+${ERROR_TOOL} }help"
 
 }
 core:error:cleanup () {
 
     core:fs:release
 
-    [[ "${TOOL_KEEP:-false}" != true ]] || return 0
+    if [[ "${TOOL_KEEP:-false}" == true ]]; then
+
+        [[ -z "${TOOL_TEMP:-}" || ! -d "${TOOL_TEMP}" ]] || : > "${TOOL_TEMP}/keep"
+
+        return 0
+
+    fi
     [[ -z "${TOOL_TEMP:-}" || ! -d "${TOOL_TEMP}" ]] || rm -rf -- "${TOOL_TEMP}"
 
 }

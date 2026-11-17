@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as validate from "engine/validate";
 
 const user = validate.object({ id: validate.number(), name: validate.string() });
@@ -12,7 +12,7 @@ const users = api.feature("users", {
     make: api.post("/users", validate.object({ name: validate.string() }), user),
 });
 const server = (): api.Stub => api.stub({ "GET /users": () => [{ id: 1, name: "a" }], "GET /users/{id}": ({ params }) => ({ id: Number(params.id), name: "n" }), "GET /users/{id}/brief": ({ params }) => ({ id: Number(params.id), name: "b" }), "GET /deep": () => ({ deep: { x: 1 }, list: [{ y: 1 }] }), "POST /users": () => ({ id: 2, name: "b" }) });
-const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return error.isFault(caught) ? caught.reason ?? "?" : "?"; } };
+const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return exception.isFault(caught) ? caught.reason ?? "?" : "?"; } };
 
 describe("api.edges", () => {
 
@@ -77,7 +77,7 @@ describe("api.edges", () => {
 
         const made = api.stub({ "GET /a": () => 1 });
 
-        made.refuse("GET /a", error.fault("internal", "x.odd", { status: 42 } as never));
+        made.refuse("GET /a", exception.fault("internal", "x.odd", { status: 42 } as never));
         await expect(made.fetcher("https://x/a", { method: "GET", headers: {}, signal: new AbortController().signal })).rejects.toMatchObject({ reason: "x.odd" });
 
         const order = validate.object({ id: validate.int().check(validate.gte(1)), total: validate.int().check(validate.gte(0)) });

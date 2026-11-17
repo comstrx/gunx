@@ -83,11 +83,17 @@ const effect: validate.Schema<Effect> = validate.lazy(() => validate.union([
     validate.strictObject({ check: name, do: upTo(effect, 50), else: validate.optional(upTo(effect, 50)), fields: validate.optional(upTo(filled(128), 100)) }),
     validate.strictObject({ refresh: name }),
     validate.strictObject({ navigate: filled(512), with: withShape }),
+    validate.strictObject({ transfer: filled(256), to: validate.optional(filled(512)), with: withShape, reload: validate.optional(validate.boolean()), carry: validate.optional(upTo(name, 20)), inherit: validate.optional(validate.boolean()) }),
+    validate.strictObject({ open: filled(512), with: withShape, props: validate.optional(validate.record(validate.string(), validate.unknown())) }),
+    validate.strictObject({ close: validate.enum(["top", "all"]) }),
+    validate.strictObject({ toggle: field }),
+    validate.strictObject({ after: validate.int().check(validate.gte(0), validate.lte(600_000)), do: upTo(effect, 50), latest: validate.optional(validate.boolean()) }),
     validate.strictObject({ when, do: upTo(effect, 50), else: validate.optional(upTo(effect, 50)) }),
 ])) as validate.Schema<Effect>;
 const effects = upTo(effect, 50);
 const hooks = validate.strictObject({ load: validate.optional(effects), leave: validate.optional(effects), submit: validate.optional(effects), success: validate.optional(effects), failure: validate.optional(effects), change: validate.optional(effects) });
 const trigger = validate.strictObject({ on: topic, do: effects, when: validate.optional(when) });
+const spoken = validate.record(validate.string().check(validate.maxLength(35)), filled(320));
 const binding = validate.union([
     validate.strictObject({
         read: operation,
@@ -122,13 +128,18 @@ const screenShape = validate.strictObject({
     name,
     path: matching(pathPattern),
     title: validate.record(validate.string().check(validate.maxLength(35)), filled(120)),
+    description: spoken,
+    texts: validate.strictObject({ title: validate.optional(field), description: validate.optional(field) }),
     role: name,
     menu: validate.boolean(),
+    index: validate.boolean(),
     icon: validate.optional(validate.string().check(validate.maxLength(128))),
     auth: validate.boolean(),
+    guest: validate.boolean(),
     access: upTo(grant, 50),
     query: upTo(field, 50),
     signals: upTo(field, 50),
+    settings: validate.record(validate.string(), validate.unknown()),
     features: upTo(featureShape, 100),
     blocks: upTo(blockShape, 100),
     on: hooks,
@@ -143,7 +154,7 @@ export const screenShapeOf: validate.Schema<Screen> = screenShape as validate.Sc
 export const effectShape: validate.Schema<Effect> = effect;
 export const platformShape = validate.enum(["web", "mobile", "desktop"]);
 export const catalogShape = validate.enum(["countries", "currencies", "languages", "emoji"] satisfies readonly world.Catalog[] as [world.Catalog, ...world.Catalog[]]);
-export const surfaceShape = validate.strictObject({
+export const planShape = validate.strictObject({
     name,
     role: name,
     platform: platformShape,
@@ -153,4 +164,6 @@ export const surfaceShape = validate.strictObject({
     address: validate.optional(validate.url()),
     screens: upTo(screenShape, 500),
     signals: upTo(field, 100),
+    on: validate.strictObject({ enter: validate.optional(effects), leave: validate.optional(effects) }),
+    triggers: upTo(trigger, 100),
 });

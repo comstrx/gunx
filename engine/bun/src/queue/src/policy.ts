@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as rand from "engine-rand";
 import type { Backoff, Outbox, Schedule } from "./arch.ts";
 
@@ -6,7 +7,7 @@ export const longest = 86_400_000;
 export function span ( value: number | undefined, fallback: number, endless = false ): number {
 
     if ( value === undefined ) return fallback;
-    if ( Number.isNaN(value) || (!endless && value === Number.POSITIVE_INFINITY) ) throw new RangeError("not a duration");
+    if ( Number.isNaN(value) || (!endless && value === Number.POSITIVE_INFINITY) ) throw exception.misuse("not a duration");
 
     return Math.max(0, value);
 
@@ -14,7 +15,7 @@ export function span ( value: number | undefined, fallback: number, endless = fa
 export function count ( value: number | undefined, fallback: number ): number {
 
     if ( value === undefined ) return fallback;
-    if ( !(value >= 1) ) throw new RangeError("not a count");
+    if ( !(value >= 1) ) throw exception.misuse("not a count");
 
     return Math.trunc(value);
 
@@ -30,8 +31,8 @@ export function backoff ( options: Backoff = {} ): ( attempt: number ) => number
     const delay = span(options.delay, 1000);
     const max = Math.min(span(options.max, 60_000, true), longest);
 
-    if ( !(factor > 0) || factor === Number.POSITIVE_INFINITY ) throw new RangeError("not a factor");
-    if ( !(jitter >= 0 && jitter <= 1) ) throw new RangeError("not a ratio");
+    if ( !(factor > 0) || factor === Number.POSITIVE_INFINITY ) throw exception.misuse("not a factor");
+    if ( !(jitter >= 0 && jitter <= 1) ) throw exception.misuse("not a ratio");
 
     return ( attempt ) => {
 
@@ -49,7 +50,7 @@ export function schedule ( outbox: Pick<Outbox, "flush">, options: Schedule = {}
     const { immediate = true, when, onFlush, fail } = options;
     const every = span(options.every, 15_000);
 
-    if ( every < 1 ) throw new RangeError("not a duration");
+    if ( every < 1 ) throw exception.misuse("not a duration");
 
     let busy = false;
     let live = true;
@@ -57,19 +58,29 @@ export function schedule ( outbox: Pick<Outbox, "flush">, options: Schedule = {}
 
         if ( busy || !live ) return;
 
+        if ( exception.rescue(() => when !== undefined && !when(), ( cause ) => {
+
+            fail?.(cause);
+
+            return true;
+
+        }) ) return;
+
         busy = true;
 
         try {
 
-            if ( when && !when() ) return;
+            await exception.rescueAsync(async () => {
 
-            const result = await outbox.flush();
+                const result = await outbox.flush();
 
-            if ( live ) onFlush?.(result);
+                if ( live ) onFlush?.(result);
 
-        } catch ( cause ) {
+            }, ( cause ) => {
 
-            fail?.(cause);
+                fail?.(cause);
+
+            });
 
         } finally {
 

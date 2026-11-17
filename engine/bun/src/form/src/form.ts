@@ -1,5 +1,5 @@
-import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as list from "engine-list";
 import * as rand from "engine-rand";
@@ -100,7 +100,7 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
         let thrown: { cause: unknown } | undefined;
 
-        if ( depth >= deepest ) throw error.fault("internal", "form.loop", { message: `watchers of ${changed.join(", ")} keep changing the form` });
+        if ( depth >= deepest ) throw exception.fault("internal", "form.loop", { message: `watchers of ${changed.join(", ")} keep changing the form` });
 
         depth += 1;
 
@@ -120,15 +120,15 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
                         called.add(watcher);
 
-                        try {
+                        exception.rescue(() => {
 
                             watcher(held.getState().values, path);
 
-                        } catch ( cause ) {
+                        }, ( cause ) => {
 
                             if ( !thrown ) thrown = { cause };
 
-                        }
+                        });
 
                     }
 
@@ -166,7 +166,7 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
         const found = validate.check(schema, held.getState().values);
 
-        return found.ok ? { ok: true, value: found.value, issues: {} } : { ok: false, value: undefined, issues: error.formErrors(found.fault, fallback) };
+        return found.ok ? { ok: true, value: found.value, issues: {} } : { ok: false, value: undefined, issues: exception.formErrors(found.fault, fallback) };
 
     };
     const probe = ( reveal: readonly string[] | "all" | "touched" ): O | undefined => {
@@ -425,33 +425,37 @@ export function define<V extends object, O, R> ( options: Options<V, O, R> ): Fo
 
         try {
 
-            const result = await event.race(Promise.resolve().then(() => {
+            return await exception.rescueAsync(async () => {
 
-                controller.signal.throwIfAborted();
+                const result = await event.race(Promise.resolve().then(() => {
 
-                return submit(value, using, controller.signal);
+                    controller.signal.throwIfAborted();
 
-            }), controller.signal);
+                    return submit(value, using, controller.signal);
 
-            if ( turn !== run ) return undefined;
+                }), controller.signal);
 
-            key = undefined;
-            sent = undefined;
-            held.setState({ status: "done", result, ...(options.rebase ? { initial: taken } : {}) });
+                if ( turn !== run ) return undefined;
 
-            return result;
+                key = undefined;
+                sent = undefined;
+                held.setState({ status: "done", result, ...(options.rebase ? { initial: taken } : {}) });
 
-        } catch ( thrown ) {
+                return result;
 
-            if ( turn !== run ) return undefined;
+            }, ( thrown ) => {
 
-            const fault = error.of(thrown);
-            const errors = error.formErrors(fault, fallback);
-            const current = held.getState();
+                if ( turn !== run ) return undefined;
 
-            held.setState({ errors: { ...current.errors, ...errors }, served: { ...current.served, ...errors }, status: "failed", fault });
+                const fault = exception.of(thrown);
+                const errors = exception.formErrors(fault, fallback);
+                const current = held.getState();
 
-            return undefined;
+                held.setState({ errors: { ...current.errors, ...errors }, served: { ...current.served, ...errors }, status: "failed", fault });
+
+                return undefined;
+
+            });
 
         } finally {
 

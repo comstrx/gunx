@@ -23,3 +23,9 @@ test:core:list:shuffles () {
     @eq "$(core:list:shuffle)" ''
 
 }
+test:core:list:keeps-an-empty-item () {
+
+    @eq "$(core:list:uniq a '' b '' a | tr '\n' '|')" 'a||b|'
+    @eq "$(core:list:uniq '' | wc -l | tr -d ' ')" 1
+
+}

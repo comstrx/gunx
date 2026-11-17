@@ -1,8 +1,3 @@
-declare -ga GATE_TYPES=( deps check lint test safety audit semver quality security bench fuzz )
-declare -ga GATE_DEFAULT=( deps check lint test safety audit semver quality security )
-declare -ga GATE_RESULTS=()
-declare -g GATE_FUZZ=60
-
 module:gate:run () {
 
     local type=""
@@ -20,7 +15,8 @@ module:gate:kind () {
 
     type="$(core:cli:command)"
 
-    (( $# == 0 )) || { core:error:usage "${type} takes no argument; the directories go in --path"; return; }
+    GATE_KIND="${type}"
+    GATE_REST=( "$@" )
 
     module:gate:each "${type}"
 
@@ -121,6 +117,9 @@ module:gate:one () {
 
         @info "gate ${chain} ${shown}:${type} (${seconds}s)"
 
+        GATE_ARGS=()
+        [[ "${type}" != "${GATE_KIND}" ]] || GATE_ARGS=( "${GATE_REST[@]}" )
+
         status=0
         started="${EPOCHSECONDS}"
 
@@ -206,8 +205,6 @@ module:gate:report () {
 
     local row="" chain="" shown="" type="" state="" seconds=""
 
-    [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] || return 0
-
     {
         printf '| Chain | Path | Gate | Result | Seconds |\n| --- | --- | --- | --- | ---: |\n'
 
@@ -215,7 +212,7 @@ module:gate:report () {
             IFS=$'\t' read -r chain shown type state seconds <<< "${row}"
             printf '| %s | %s | %s | %s | %s |\n' "${chain}" "${shown}" "${type}" "${state}" "${seconds}"
         done
-    } >> "${GITHUB_STEP_SUMMARY}" || @warn "Cannot write the step summary"
+    } | core:gh:summary 2>/dev/null || @warn "Cannot write the step summary"
 
 }
 module:gate:scripts () {

@@ -1,5 +1,5 @@
 import { describe, expect, test as it, jest, spyOn } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as func from "engine/func";
 
 type Outcome<T> = { done: boolean; value?: T | undefined; failure?: unknown };
@@ -139,7 +139,7 @@ describe("func", () => {
 
             attempts += 1;
 
-            if ( attempts < 3 ) throw error.fault("unavailable");
+            if ( attempts < 3 ) throw exception.fault("unavailable");
 
             return "ok";
 
@@ -147,10 +147,10 @@ describe("func", () => {
 
         expect(value).toBe("ok");
         expect(attempts).toBe(3);
-        await expect(func.retry(async () => { throw error.fault("forbidden"); }, { delay: 1 })).rejects.toMatchObject({ code: "forbidden" });
+        await expect(func.retry(async () => { throw exception.fault("forbidden"); }, { delay: 1 })).rejects.toMatchObject({ code: "forbidden" });
 
         attempts = 0;
-        await expect(func.retry(async () => { attempts += 1; throw error.fault("network"); }, { times: 2, delay: 1, jitter: false })).rejects.toMatchObject({ code: "network" });
+        await expect(func.retry(async () => { attempts += 1; throw exception.fault("network"); }, { times: 2, delay: 1, jitter: false })).rejects.toMatchObject({ code: "network" });
         expect(attempts).toBe(2);
 
         const quick = await func.timeout(Promise.resolve(1), 50);
@@ -160,7 +160,7 @@ describe("func", () => {
 
         let aborted = false;
 
-        await expect(func.timeout(( signal ) => new Promise(( _, reject ) => { signal.addEventListener("abort", () => { aborted = true; reject(new Error("x")); }); }), 5)).rejects.toBeInstanceOf(error.Fault);
+        await expect(func.timeout(( signal ) => new Promise(( _, reject ) => { signal.addEventListener("abort", () => { aborted = true; reject(new Error("x")); }); }), 5)).rejects.toBeInstanceOf(exception.Fault);
         expect(aborted).toBe(true);
 
         const gate = func.deferred<number>();
@@ -174,7 +174,7 @@ describe("func", () => {
     it("breaker opens after failures and probes after the cooldown", async () => {
 
         const guard = func.breaker({ failures: 2, cooldown: 30 });
-        const fail = async (): Promise<never> => { throw error.fault("unavailable"); };
+        const fail = async (): Promise<never> => { throw exception.fault("unavailable"); };
 
         await expect(guard.run(fail)).rejects.toMatchObject({ code: "unavailable" });
         expect(guard.state()).toBe("closed");
@@ -335,7 +335,7 @@ describe("func", () => {
 
             calls += 1;
 
-            if ( calls === 1 ) throw error.fault("unavailable");
+            if ( calls === 1 ) throw exception.fault("unavailable");
 
             return value + calls;
 
@@ -393,7 +393,7 @@ describe("func", () => {
         expect(first).not.toBe(other);
         expect(flights).toBe(2);
         gates.get("a")?.resolve("A");
-        gates.get("b")?.reject(error.fault("not_found"));
+        gates.get("b")?.reject(exception.fault("not_found"));
         expect(await first).toBe("A");
         await expect(other).rejects.toMatchObject({ code: "not_found" });
 
@@ -608,14 +608,14 @@ describe("func", () => {
 
                 attempts.push(attempt);
 
-                throw error.fault("unavailable", `try.${attempt}`);
+                throw exception.fault("unavailable", `try.${attempt}`);
 
             };
             const told = ( seconds: number ) => async ( attempt: number ): Promise<never> => {
 
                 attempts.push(attempt);
 
-                throw error.fault("too_many_requests", "slow.down", { retryAfter: seconds });
+                throw exception.fault("too_many_requests", "slow.down", { retryAfter: seconds });
 
             };
             const onRetry = ( failure: unknown, attempt: number, wait: number ): void => {
@@ -635,7 +635,7 @@ describe("func", () => {
             await pass(1);
             expect([attempts, waits, first.done]).toEqual([[1, 2, 3], [4, 10], true]);
             expect(first.failure).toMatchObject({ code: "unavailable", reason: "try.3" });
-            expect(noted.map(( [failure, attempt] ) => [error.isFault(failure) && failure.reason, attempt])).toEqual([["try.1", 1], ["try.2", 2]]);
+            expect(noted.map(( [failure, attempt] ) => [exception.isFault(failure) && failure.reason, attempt])).toEqual([["try.1", 1], ["try.2", 2]]);
 
             for ( const [times, expected] of [[Number.NaN, 3], [undefined, 3], [0, 1], [-2, 1], [2.9, 2], [1, 1]] as const ) {
 
@@ -682,7 +682,7 @@ describe("func", () => {
                 jitter: false,
                 when: ( failure, attempt ) => {
 
-                    asked.push([error.isFault(failure) ? (failure.reason ?? "") : "", attempt]);
+                    asked.push([exception.isFault(failure) ? (failure.reason ?? "") : "", attempt]);
 
                     return attempt < 2;
 
@@ -752,7 +752,7 @@ describe("func", () => {
 
             const healed = watch(func.retry(async ( attempt ) => {
 
-                if ( attempt < 2 ) throw error.fault("network", "blip");
+                if ( attempt < 2 ) throw exception.fault("network", "blip");
 
                 return `ok.${attempt}`;
 
@@ -803,7 +803,7 @@ describe("func", () => {
             await settle();
             expect([quick.value, held[1]?.aborted, jest.getTimerCount()]).toEqual([7, false, 0]);
 
-            const refused = watch(func.timeout(Promise.reject(error.fault("forbidden")), 20));
+            const refused = watch(func.timeout(Promise.reject(exception.fault("forbidden")), 20));
 
             await settle();
             expect(refused.failure).toMatchObject({ code: "forbidden" });
@@ -813,7 +813,7 @@ describe("func", () => {
             const odd = [Number.NaN, -5, 0].map(( ms ) => watch(func.timeout(never, ms)));
 
             await pass(1);
-            expect(odd.map(( outcome ) => error.isFault(outcome.failure) && outcome.failure.code)).toEqual(["timeout", "timeout", "timeout"]);
+            expect(odd.map(( outcome ) => exception.isFault(outcome.failure) && outcome.failure.code)).toEqual(["timeout", "timeout", "timeout"]);
 
             const forever = watch(func.timeout(never, Number.POSITIVE_INFINITY));
             const long = watch(func.timeout(never, 3e9));
@@ -832,7 +832,7 @@ describe("func", () => {
 
             const states: func.BreakerState[] = [];
             const guard = func.breaker({ failures: 2, cooldown: 2500, onChange: ( state ) => { states.push(state); } });
-            const fail = async (): Promise<never> => { throw error.fault("unavailable", "down"); };
+            const fail = async (): Promise<never> => { throw exception.fault("unavailable", "down"); };
             const early = func.deferred<number>();
             const straggler = guard.run(() => early.promise);
             let ran = 0;
@@ -866,7 +866,7 @@ describe("func", () => {
 
             expect(states).toEqual(["open", "half"]);
             expect(await failureOf(guard.run(work))).toMatchObject({ reason: "breaker.open", retryAfter: 1 });
-            trial.reject(error.fault("unavailable", "still.down"));
+            trial.reject(exception.fault("unavailable", "still.down"));
             expect(await failureOf(probe)).toMatchObject({ reason: "still.down" });
             expect([guard.state(), ran, states]).toEqual(["open", 1, ["open", "half", "open"]]);
             jest.advanceTimersByTime(2500);
@@ -877,7 +877,7 @@ describe("func", () => {
             const slow = guard.run(() => late.promise);
 
             guard.reset();
-            late.reject(error.fault("unavailable", "late"));
+            late.reject(exception.fault("unavailable", "late"));
             expect(await failureOf(slow)).toMatchObject({ reason: "late" });
             expect([guard.failures(), states.length]).toEqual([0, 5]);
             await failureOf(guard.run(fail));
@@ -900,12 +900,12 @@ describe("func", () => {
 
         await faked(async () => {
 
-            const fail = async (): Promise<never> => { throw error.fault("unavailable", "down"); };
+            const fail = async (): Promise<never> => { throw exception.fault("unavailable", "down"); };
             const odd = async (): Promise<never> => { throw new Error("plain"); };
             const loose = func.breaker({ failures: Number.NaN, cooldown: Number.NaN });
             const strict = func.breaker({ failures: 0, cooldown: 0 });
             const sealed = func.breaker({ failures: 1, cooldown: Number.POSITIVE_INFINITY });
-            const picky = func.breaker({ failures: 1, cooldown: 10, when: error.isFault });
+            const picky = func.breaker({ failures: 1, cooldown: 10, when: exception.isFault });
 
             for ( let round = 0; round < 4; round += 1 ) await failureOf(loose.run(fail));
 
@@ -925,7 +925,7 @@ describe("func", () => {
 
             const refusal = await failureOf(sealed.run(fail));
 
-            expect(error.isFault(refusal) && [refusal.reason, refusal.retryAfter]).toEqual(["breaker.open", undefined]);
+            expect(exception.isFault(refusal) && [refusal.reason, refusal.retryAfter]).toEqual(["breaker.open", undefined]);
             jest.advanceTimersByTime(2_000_000_000);
             expect(sealed.state()).toBe("open");
             await failureOf(picky.run(odd));
@@ -1051,7 +1051,7 @@ describe("func", () => {
 
         expect(kept).toEqual(started);
         expect(kept).toEqual(Array.from({ length: 3000 }, ( _, at ) => at).filter(( at ) => at % 7 !== 5));
-        expect(results.filter(( result ) => result.status === "rejected" && error.isFault(result.reason) && result.reason.reason === "lane.aborted")).toHaveLength(428);
+        expect(results.filter(( result ) => result.status === "rejected" && exception.isFault(result.reason) && result.reason.reason === "lane.aborted")).toHaveLength(428);
         expect([peak, lane.active(), lane.waiting(), lane.size()]).toEqual([3, 0, 0, 0]);
         expect(await lane.run(async () => "open")).toBe("open");
 
@@ -1068,7 +1068,7 @@ describe("func", () => {
         expect(func.tap(order, ( list ) => { list.push("seen"); })).toBe(order);
         expect(order).toEqual(["seen"]);
         expect([lost.settled, won.settled]).toEqual([false, false]);
-        lost.reject(error.fault("gone"));
+        lost.reject(exception.fault("gone"));
         lost.resolve(3);
         won.resolve(1);
         won.resolve(2);

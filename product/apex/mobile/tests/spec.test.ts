@@ -1,35 +1,44 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as seo from "engine/seo";
-import type * as spec from "engine/spec";
-import { current } from "../specs/index.ts";
-import { roleOf } from "../src/specs/deployment.ts";
-import { answer, ask, compiled, confirmations, labels, live, logger, logs, menu, metadataOf, pathsOf, publicOf, report, screenAt, settingsOf, siteOf, textOf, title, titleOf } from "../src/specs/runtime.ts";
-import { compileRole } from "../src/specs/surface.ts";
+import * as spec from "engine/spec";
+import { specs } from "../specs/index.ts";
+import { host } from "../src/specs/app.ts";
+import { part } from "../src/specs/part.ts";
 import { platform } from "../src/types/platform.ts";
 
-const role = roleOf();
-const name = role.config.contents.name;
-const tagline = role.config.contents.tagline;
-const messages = role.messages as Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
+const { answer, ask, compiled, confirmations, labels, live, logger, logs, menu, report, screenAt, title } = host.app;
+const { current } = specs;
+const role = current.slice(current.lastIndexOf(".") + 1);
+const name = host.app.config.contents.name;
+const tagline = host.app.config.contents.tagline;
+const messages = host.app.messages as unknown as Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>;
+const built = ( deploy: spec.Deploy = {} ): spec.Built<typeof part.defaults> => spec.build(specs, part, deploy).surface(current);
+const textOf = host.app.text;
+const settingsOf = host.app.settings;
+const metadataOf = host.app.meta;
+const titleOf = host.app.heading;
+const pathsOf = host.app.paths;
+const publicOf = host.app.indexing;
 
 describe("spec", () => {
 
     it("the role compiles clean, places the hello feature and wires its topic", () => {
 
         expect(compiled.issues).toEqual([]);
-        expect(compiled.surface.name).toBe(`${platform}-${current}`);
-        expect(compiled.surface.role).toBe(current);
-        expect(compiled.features).toEqual(["hello"]);
+        expect(compiled.surface.name).toBe(`${platform}-${role}`);
+        expect(compiled.surface.role).toBe(role);
+        expect([host.entry, host.names, host.app.name, host.app.id]).toEqual([current, [current, "acme.client", "acme.courier", "acme.vendor"], current, current]);
+        expect(compiled.features).toEqual(["action", "hello", "locate", "note", "probe", "vault"]);
         expect(compiled.kinds).toEqual(["feature", "stack"]);
-        expect(compiled.topics.emitted).toEqual(["hello.greeted"]);
+        expect(compiled.topics.emitted).toEqual(["hello.greeted", "locate.moved"]);
         expect(compiled.topics.consumed).toEqual(["hello.greeted"]);
-        expect(compiled.byName.hello?.blocks[0]?.props).toEqual({ align: "center", justify: "center", padding: "md", height: "screen" });
-        expect(compileRole(current).byName.hello?.features[0]?.manifest?.actions).toEqual(["refresh"]);
+        expect(compiled.byName.hello?.blocks[0]?.props).toEqual({ align: "center", justify: "center", padding: "md", gap: "lg", height: "screen" });
+        expect(built().compiled.byName.hello?.features[0]?.manifest?.actions).toEqual(["refresh"]);
         expect(compiled.byName.hello?.features[0]?.manifest).toBeUndefined();
         expect(screenAt("/")?.screen.name).toBe("hello");
         expect(screenAt("/nope")).toBeUndefined();
-        expect(menu("ar", "/")).toEqual([{ name: "hello", path: "/", title: compiled.byName.hello?.title.ar ?? "", icon: "wave", active: true }]);
+        expect(menu("ar", "/")).toEqual([{ name: "hello", path: "/", title: compiled.byName.hello?.title.ar ?? "", icon: "wave", active: true }, { name: "about", path: "/about", title: compiled.byName.about?.title.ar ?? "", icon: "info", active: false }, { name: "storage", path: "/storage", title: compiled.byName.storage?.title.ar ?? "", icon: "box", active: false }, { name: "gear", path: "/device", title: compiled.byName.gear?.title.ar ?? "", icon: "chip", active: false }]);
         expect(title(compiled.byName.hello as spec.CompiledScreen, "en")).toBe(compiled.byName.hello?.title.en ?? "");
         expect(labels("ar", "hello").refresh).toBe(messages.ar?.hello?.refresh);
         expect(labels("en", "hello").switch).toBe(messages.en?.hello?.switch);
@@ -37,7 +46,7 @@ describe("spec", () => {
         expect(labels("en", "nope")).toEqual({});
         expect(settingsOf("hello", "hello")).toEqual({ tone: "warm" });
         expect(settingsOf("nope", "hello")).toEqual({});
-        expect(compileRole(current).issues).toEqual([]);
+        expect(built().compiled.issues).toEqual([]);
 
     });
     it("the runtime mounts the hello screen, runs its load hook and answers the greeted topic", async () => {
@@ -57,7 +66,7 @@ describe("spec", () => {
 
         expect(live.opens("hello")).toBe(true);
         expect(live.opens("nope")).toBe(false);
-        expect(menu("en", "/nope").map(( item ) => [item.name, item.active])).toEqual([["hello", false]]);
+        expect(menu("en", "/nope").map(( item ) => [item.name, item.active])).toEqual([["hello", false], ["about", false], ["storage", false], ["gear", false]]);
 
     });
     it("a confirmation waits for one answer and a second ask refuses the first", async () => {
@@ -91,31 +100,83 @@ describe("spec", () => {
     it("what the surface says about itself follows the config: no public url means no index", () => {
 
         expect(publicOf()).toEqual({ indexable: false, url: undefined });
-        expect(pathsOf()).toEqual(["/"]);
-        expect(metadataOf(compiled.byName.hello as spec.CompiledScreen, "en")).toEqual({ title: `${compiled.byName.hello?.title.en} · ${name.en}`, description: tagline.en, robots: "noindex, nofollow", canonical: undefined, alternates: [], openGraph: {} });
+        expect(pathsOf()).toEqual(["/", "/about", "/storage", "/device"]);
+        expect(metadataOf(compiled.byName.hello as spec.CompiledScreen, "en")).toEqual({ title: `${compiled.byName.hello?.title.en} · ${name.en}`, description: tagline.en ?? "", robots: "noindex, nofollow", canonical: undefined, alternates: [], openGraph: {} });
         expect(metadataOf(compiled.byName.hello as spec.CompiledScreen, "ar").title).toBe(`${compiled.byName.hello?.title.ar} · ${name.ar}`);
 
-        const site = siteOf("en", { indexable: true, url: "https://www.acme.example/" }) as seo.Site;
+        const site: seo.Site = { name: name.en ?? "", url: "https://www.acme.example/", locale: "en", locales: ["en"], default: "en", hide: true, description: tagline.en ?? "" };
         const page = seo.metadata(site, { title: "Hello", path: "/hello" });
         const hello = compiled.byName.hello as spec.CompiledScreen;
 
         expect([titleOf(hello, "en"), titleOf(hello, "ar"), seo.metadata(site, { title: title(hello, "en"), path: hello.path }).title]).toEqual([metadataOf(hello, "en").title, metadataOf(hello, "ar").title, titleOf(hello, "en")]);
-        expect([siteOf("en"), page.canonical, page.alternates, page.openGraph["og:url"], page.openGraph["og:locale"]]).toEqual([undefined, "https://www.acme.example/hello", [{ locale: "en", href: "https://www.acme.example/hello" }, { locale: "x-default", href: "https://www.acme.example/hello" }], "https://www.acme.example/hello", "en"]);
+        expect([host.app.site("en"), page.canonical, page.alternates, page.openGraph["og:url"], page.openGraph["og:locale"]]).toEqual([undefined, "https://www.acme.example/hello", [{ locale: "en", href: "https://www.acme.example/hello" }, { locale: "x-default", href: "https://www.acme.example/hello" }], "https://www.acme.example/hello", "en"]);
 
     });
     it("a failure is reported once, by name, through the surface logger", () => {
 
         logs.clear();
-        expect(report(error.fault("unavailable", "hello.down"), "hello.refresh")).toBeUndefined();
-        expect([logger.name, logs.entries.map(( entry ) => [entry.level, entry.message])]).toEqual([`${platform}-${current}`, [["error", "hello.refresh"]]]);
+        expect(report(exception.fault("unavailable", "hello.down"), "hello.refresh")).toBeUndefined();
+        expect([logger.name, logs.entries.map(( entry ) => [entry.level, entry.message])]).toEqual([`${platform}-${role}`, [["error", "hello.refresh"]]]);
         logs.clear();
 
     });
     it("a release refuses the lab address and ships only a public https one", () => {
 
-        expect(compiled.address).toBe(role.config.contracts.baseUrl);
-        expect(compileRole(current, { url: "https://api.acme.example/", release: true }).address).toBe("https://api.acme.example");
-        expect(() => compileRole(current, { release: true })).toThrow("a release calls a public https address");
+        expect(host.app.address).toBe(host.app.config.contracts.baseUrl);
+        expect(built({ url: "https://api.acme.example/", release: true }).address).toBe("https://api.acme.example");
+        expect(() => built({ release: true })).toThrow("a release calls a public https address");
+
+    });
+    it("a surface reached by transfer loads on demand, reads what was carried, and its screens flip, wait and describe themselves", async () => {
+
+        const went: string[] = [];
+        const unbind = host.bind({ navigate: ( path ) => { went.push(path); }, carry: () => ({ locale: "en" }) });
+        const courier = await host.ready("acme.courier");
+        const client = await host.ready("acme.client");
+        const offers = client.compiled.byName.offers as spec.CompiledScreen;
+
+        expect([host.index.map(( listed ) => [listed.name, listed.indexable]), client.compiled.surface.on.enter?.length, offers.settings, client.meta(offers, "en").description, client.meta(offers, "en").robots.startsWith("index"), courier.meta(courier.compiled.byName.board as spec.CompiledScreen, "en").robots]).toEqual([[[current, false], ["acme.client", true], ["acme.courier", false], ["acme.vendor", false]], 1, { width: "reading" }, offers.description.en ?? "", true, "noindex, nofollow"]);
+
+        const stops: (() => void)[] = [unbind];
+
+        try {
+
+            await host.transfer("acme.courier");
+
+            const board = await courier.live.mount("board");
+            stops.push(courier.live.handle("ping.press", () => undefined), courier.live.handle("client.press", () => undefined));
+
+            await courier.live.act("ping", "press");
+
+            expect([host.active.getState(), courier.live.get("signals.sent"), courier.live.visible("sent")]).toEqual(["acme.courier", true, true]);
+
+            await courier.live.act("client", "press");
+            await board.unmount();
+
+            const home = await client.live.mount("home");
+            stops.push(client.live.handle("more.press", () => undefined));
+
+            expect([host.active.getState(), host.carried(), client.live.get("signals.from"), client.live.visible("back"), client.live.visible("details"), went]).toEqual(["acme.client", { locale: "en", from: "courier" }, "courier", true, false, ["/", "/"]]);
+
+            await client.live.act("more", "press");
+
+            expect(client.live.visible("details")).toBe(true);
+
+            await client.live.act("more", "press");
+
+            expect([client.live.visible("details"), courier.live.get("signals.sent")]).toEqual([false, true]);
+
+            await home.unmount();
+
+        } finally {
+
+            await host.resume(current);
+
+            for ( const off of stops ) off();
+
+        }
+
+        expect(host.active.getState()).toBe(current);
 
     });
 

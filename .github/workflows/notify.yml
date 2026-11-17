@@ -18,11 +18,9 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - uses: $/engine/bash/src/module/gate/template
+        with:
+          path: .github
 
       - env:
           TRIGGER_STATUS: ${{ github.event.workflow_run.conclusion }}
@@ -30,6 +28,7 @@ jobs:
           TRIGGER_NUMBER: ${{ github.event.workflow_run.run_number }}
           TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
           TRIGGER_BRANCH: ${{ github.event.workflow_run.head_branch }}
+
           TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
           TRIGGER_ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
           TRIGGER_LINK: ${{ github.event.workflow_run.html_url }}
@@ -38,6 +37,7 @@ jobs:
 
           NOTIFY_TELEGRAM_TOKEN: ${{ secrets.NOTIFY_TELEGRAM_TOKEN }}
           NOTIFY_TELEGRAM_CHAT: ${{ secrets.NOTIFY_TELEGRAM_CHAT }}
+
           NOTIFY_SLACK_WEBHOOK_URL: ${{ secrets.NOTIFY_SLACK_WEBHOOK_URL }}
           NOTIFY_DISCORD_WEBHOOK_URL: ${{ secrets.NOTIFY_DISCORD_WEBHOOK_URL }}
           NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
@@ -50,7 +50,7 @@ jobs:
           NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
 
         run: |
-          infra notify \
+          gunx notify \
             --channel telegram \
             --status "${TRIGGER_STATUS}" \
             --title "${GITHUB_REPOSITORY#*/} ${TRIGGER_NAME}" \

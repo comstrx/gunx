@@ -28,7 +28,7 @@ module:notify:event () {
     [[ -z "${link}" ]] || core:validate:url "${link}" || { @err "A link is an https URL: $(core:net:host "${link}")"; return; }
     [[ -z "${seconds}" ]] || core:num:natural "${seconds}" || { @err "Seconds must be a number: ${seconds}"; return; }
 
-    head="${icon} ${title:-${CONFIG[PROJECT]:-${MANIFEST[meta.name]:-run}}} ${status}"
+    head="${icon} ${title:-${CONFIG[PROJECT]:-$(config:meta:name)}} ${status}"
 
     [[ -z "${CONFIG[RELEASE]:-}" ]] || head+=" · ${CONFIG[RELEASE]}"
     [[ -z "${seconds}" ]] || head+=" in $(module:notify:duration "${seconds}")"
@@ -59,6 +59,9 @@ module:notify:story () {
 module:notify:duration () {
 
     local seconds="${1:-0}" text=""
+
+    core:num:natural "${seconds}" && (( ${#seconds} < 16 )) || seconds=0
+    seconds=$(( 10#${seconds} ))
 
     (( seconds < 3600 )) || text+="$(( seconds / 3600 ))h"
     (( seconds < 60 )) || text+="$(( seconds % 3600 / 60 ))m"

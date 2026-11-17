@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import type { Axes, ClassValue, Picked, Plan, Recipe, Rule, Variants } from "./arch.ts";
 
@@ -80,14 +81,14 @@ function pick ( plan: Plan, own: unknown ): number {
 }
 function planned ( axes: Axes ): Plan[] {
 
-    if ( typeof axes !== "object" || axes === null ) throw new RangeError("not a recipe");
+    if ( typeof axes !== "object" || axes === null ) throw exception.misuse("not a recipe");
 
     return Object.keys(axes).map(( name ) => {
 
         const options = axes[name];
         const plan: Plan = { name, index: new Map(), added: [""], fallback: 0 };
 
-        if ( typeof options !== "object" || options === null || name === "className" ) throw new RangeError("not an axis");
+        if ( typeof options !== "object" || options === null || name === "className" ) throw exception.misuse("not an axis");
 
         for ( const option of Object.keys(options) ) {
 
@@ -109,7 +110,7 @@ function ruled ( plans: readonly Plan[], compound: readonly { when: object; add:
 
         const when: (readonly [number, ReadonlySet<number>])[] = [];
 
-        if ( typeof rule !== "object" || rule === null || typeof rule.when !== "object" || rule.when === null ) throw new RangeError("not a recipe");
+        if ( typeof rule !== "object" || rule === null || typeof rule.when !== "object" || rule.when === null ) throw exception.misuse("not a recipe");
 
         const asked = rule.when as Readonly<Record<string, unknown>>;
 
@@ -120,14 +121,14 @@ function ruled ( plans: readonly Plan[], compound: readonly { when: object; add:
             const given = asked[name];
             const wanted = new Set<number>();
 
-            if ( at === undefined || plan === undefined ) throw new RangeError("not an axis");
+            if ( at === undefined || plan === undefined ) throw exception.misuse("not an axis");
             if ( given === undefined ) continue;
 
             for ( const value of Array.isArray(given) ? given : [given] ) {
 
                 const text = worded(value);
 
-                if ( text === undefined ) throw new RangeError("not a choice");
+                if ( text === undefined ) throw exception.misuse("not a choice");
                 if ( !plan.index.has(text) ) {
 
                     plan.index.set(text, plan.added.length);

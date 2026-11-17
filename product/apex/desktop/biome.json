@@ -9,7 +9,7 @@
       "!**/*.d.ts",
       "!dist",
       "!.cache",
-      "!native",
+      "!host",
       "!src/app/index.html"
     ]
   },
@@ -70,7 +70,7 @@
   "overrides": [
     {
       "includes": [
-        "src/native/**"
+        "src/host/**"
       ],
       "linter": {
         "rules": {

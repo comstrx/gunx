@@ -1,4 +1,5 @@
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import type { Budget, Entry, Memo, MemoOptions } from "./arch.ts";
 import { whole } from "./flow.ts";
 
@@ -104,7 +105,7 @@ function guarded<T> ( value: T, forget: () => void ): T {
 
     if ( !(value instanceof Promise) ) return value;
 
-    return value.then(undefined, ( reason: unknown ) => {
+    return exception.mend(value, ( reason ) => {
 
         forget();
 
@@ -215,15 +216,15 @@ export function single<A extends unknown[], T> ( work: ( ...args: A ) => Promise
 
         flights.set(name, flight);
 
-        try {
+        exception.rescue(() => {
 
             resolve(work(...args));
 
-        } catch ( cause ) {
+        }, ( cause ) => {
 
             reject(cause);
 
-        }
+        });
 
         return flight;
 

@@ -1,5 +1,3 @@
-import type * as json from "engine-json";
-
 export type Code = keyof typeof codes;
 export type Errors = Record<string, string[]>;
 export type Detail = {
@@ -17,10 +15,8 @@ export type Envelope = {
     errors: Errors | null;
     code: string;
     reason: string | null;
-    meta: json.Dictionary;
+    meta: Record<string, unknown>;
 };
-export type Result<T> = { ok: true; value: T } | { ok: false; fault: Failure };
-export type Arms<R> = { readonly [K in Code]?: ( fault: Failure ) => R } & { readonly else: ( fault: Failure ) => R };
 export interface Failure extends Error {
     readonly code: Code;
     readonly status: number;
@@ -31,7 +27,7 @@ export interface Failure extends Error {
     is: ( ...many: readonly Code[] ) => boolean;
     field: ( name: string ) => string | undefined;
     with: ( detail: Detail ) => Failure;
-    toJSON: () => json.Dictionary;
+    toJSON: () => Record<string, unknown>;
 }
 
 export const codes = {

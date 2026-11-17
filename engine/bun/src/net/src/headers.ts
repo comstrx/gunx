@@ -1,4 +1,5 @@
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import { fenced, read, shown } from "./address.ts";
 import type { Address, Bag, Directives, Facts, Hsts, Security } from "./arch.ts";
@@ -98,11 +99,11 @@ export function contentSecurityPolicy ( directives: Directives ): string {
     for ( const [name, allowed] of Object.entries(directives) ) {
 
         if ( allowed === undefined || allowed === false ) continue;
-        if ( !/^[a-z][a-z0-9-]*$/i.test(name) ) throw new RangeError("not a directive");
+        if ( !/^[a-z][a-z0-9-]*$/i.test(name) ) throw exception.misuse("not a directive");
 
         const sources = allowed === true ? [] : typeof allowed === "string" ? allowed.split(/\s+/).filter(Boolean) : allowed;
 
-        for ( const source of sources ) if ( source === "" || !plain(source) || /[\s;,]/.test(source) ) throw new RangeError("not a source");
+        for ( const source of sources ) if ( source === "" || !plain(source) || /[\s;,]/.test(source) ) throw exception.misuse("not a source");
 
         out.push(allowed === true ? name : `${name} ${sources.length === 0 ? "'none'" : sources.join(" ")}`);
 
@@ -123,9 +124,9 @@ export function securityHeaders ( options: Security = {} ): Record<string, strin
         "cross-origin-opener-policy": options.opener ?? "same-origin",
     };
 
-    if ( !Number.isInteger(age) || age < 0 ) throw new RangeError("not a duration");
+    if ( !Number.isInteger(age) || age < 0 ) throw exception.misuse("not a duration");
 
-    for ( const value of Object.values(headers) ) if ( !plain(value) ) throw new RangeError("not a header");
+    for ( const value of Object.values(headers) ) if ( !plain(value) ) throw exception.misuse("not a header");
 
     if ( options.hsts !== false ) headers["strict-transport-security"] = `max-age=${age}${hsts.subdomains === false ? "" : "; includeSubDomains"}${hsts.preload === true ? "; preload" : ""}`;
     if ( options.csp ) headers[options.reportOnly === true ? "content-security-policy-report-only" : "content-security-policy"] = contentSecurityPolicy(options.csp);
@@ -135,7 +136,7 @@ export function securityHeaders ( options: Security = {} ): Record<string, strin
 }
 export function facts ( headers: Record<string, string | undefined> | Headers, remote?: string, hops = 0 ): Facts {
 
-    if ( !Number.isInteger(hops) || hops < 0 ) throw new RangeError("not a hop count");
+    if ( !Number.isInteger(hops) || hops < 0 ) throw exception.misuse("not a hop count");
 
     const get = reader(headers);
     const agent = get("user-agent") ?? "";

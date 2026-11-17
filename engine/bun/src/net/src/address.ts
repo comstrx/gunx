@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Address } from "./arch.ts";
 
 const names = [".localhost", ".local", ".internal", ".home.arpa"];
@@ -201,17 +202,17 @@ function settled ( host: string ): Address | string | undefined {
     if ( direct ) return direct;
     if ( dns.test(name) && !name.includes("xn--") ) return name;
 
-    try {
+    return exception.rescue(() => {
 
         const shaped = unwrapped(new URL(`http://${name.includes(":") ? `[${name}]` : name}/`).hostname);
 
         return scan(shaped) ?? (dns.test(shaped) ? shaped : undefined);
 
-    } catch {
+    }, () => {
 
         return undefined;
 
-    }
+    });
 
 }
 function six ( words: readonly number[] ): string {

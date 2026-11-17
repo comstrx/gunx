@@ -1,7 +1,7 @@
-import * as adapter from "engine-adapter";
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as device from "engine-device";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as func from "engine-func";
 import * as rand from "engine-rand";
 import * as string from "engine-string";
@@ -60,7 +60,7 @@ function textOf ( raw: unknown, most: number ): string | undefined {
 function span ( value: number | undefined, fallback: number ): number {
 
     if ( value === undefined ) return fallback;
-    if ( !(value >= 0) ) throw new RangeError("not a duration");
+    if ( !(value >= 0) ) throw exception.misuse("not a duration");
 
     return value;
 
@@ -68,7 +68,7 @@ function span ( value: number | undefined, fallback: number ): number {
 function sized ( value: number | undefined, fallback: number ): number {
 
     if ( value === undefined ) return fallback;
-    if ( !(value >= 0) ) throw new RangeError("not a size");
+    if ( !(value >= 0) ) throw exception.misuse("not a size");
 
     return value;
 
@@ -79,8 +79,8 @@ function planOf ( given: Reconnect | false | undefined, retry?: ( code: number, 
 
     const { factor = 2, limit = 8 } = given ?? {};
 
-    if ( !(factor >= 1) ) throw new RangeError("not a factor");
-    if ( !(limit >= 0) ) throw new RangeError("not a count");
+    if ( !(factor >= 1) ) throw exception.misuse("not a factor");
+    if ( !(limit >= 0) ) throw exception.misuse("not a count");
 
     return { min: span(given?.min, 500), max: span(given?.max, 30_000), factor, limit, steady: span(given?.steady, 5000), when: given?.when ?? retry ?? (( code ) => code !== 1000 && code !== 1008) };
 
@@ -89,7 +89,7 @@ function pause ( plan: Plan, attempts: number ): number {
 
     const base = Math.min(plan.max, plan.min * Math.min(plan.factor ** Math.max(0, attempts - 1), 1e9));
 
-    return Math.min(ceiling, adapter.probe(() => rand.jitter(base, 0.25)) ?? base);
+    return Math.min(ceiling, exception.probe(() => rand.jitter(base, 0.25)) ?? base);
 
 }
 function later ( ms: number, work: () => void ): Timer | undefined {
@@ -97,19 +97,19 @@ function later ( ms: number, work: () => void ): Timer | undefined {
     return ms === Number.POSITIVE_INFINITY ? undefined : setTimeout(work, Math.min(ms, ceiling));
 
 }
-function faulted ( caught: unknown, reason: string ): error.Fault {
+function faulted ( caught: unknown, reason: string ): exception.Fault {
 
-    return error.isFault(caught) ? caught : error.fault("unavailable", reason, { cause: caught });
+    return exception.isFault(caught) ? caught : exception.fault("unavailable", reason, { cause: caught });
 
 }
-function closed ( cause?: error.Fault ): error.Fault {
+function closed ( cause?: exception.Fault ): exception.Fault {
 
-    return cause?.reason === "socket.closed" ? cause : error.fault("unavailable", "socket.closed", cause ? { cause } : {});
+    return cause?.reason === "socket.closed" ? cause : exception.fault("unavailable", "socket.closed", cause ? { cause } : {});
 
 }
 function asked<T> ( read: () => T | Promise<T>, reason: string ): Promise<T> {
 
-    return new Promise<T>(( resolve ) => resolve(read())).catch(( caught: unknown ) => {
+    return exception.mend(new Promise<T>(( resolve ) => resolve(read())), ( caught ) => {
 
         throw faulted(caught, reason);
 
@@ -118,8 +118,8 @@ function asked<T> ( read: () => T | Promise<T>, reason: string ): Promise<T> {
 }
 function bounded<T> ( reason: string, limit: number | undefined, signal: AbortSignal | undefined, arm: ( resolve: ( value: T ) => void, reject: ( cause: unknown ) => void ) => () => void ): Promise<T> {
 
-    if ( limit !== undefined && !(limit >= 0) ) return Promise.reject(new RangeError("not a duration"));
-    if ( signal?.aborted ) return Promise.reject(error.fault("timeout", "socket.aborted", { cause: signal.reason }));
+    if ( limit !== undefined && !(limit >= 0) ) return Promise.reject(exception.misuse("not a duration"));
+    if ( signal?.aborted ) return Promise.reject(exception.fault("timeout", "socket.aborted", { cause: signal.reason }));
 
     return new Promise<T>(( resolve, reject ) => {
 
@@ -142,7 +142,7 @@ function bounded<T> ( reason: string, limit: number | undefined, signal: AbortSi
         };
         const abort = (): void => {
 
-            if ( end() ) reject(error.fault("timeout", "socket.aborted", { cause: signal?.reason }));
+            if ( end() ) reject(exception.fault("timeout", "socket.aborted", { cause: signal?.reason }));
 
         };
 
@@ -169,7 +169,7 @@ function bounded<T> ( reason: string, limit: number | undefined, signal: AbortSi
 
         if ( limit !== undefined ) timer = later(limit, () => {
 
-            if ( end() ) reject(error.fault("timeout", reason));
+            if ( end() ) reject(exception.fault("timeout", reason));
 
         });
 
@@ -181,14 +181,20 @@ function bounded<T> ( reason: string, limit: number | undefined, signal: AbortSi
 
 }
 
-export const factory: adapter.Port<SocketFactory> = adapter.port<SocketFactory>("socket.factory", {
-    fallback: adapter.web("socket.unsupported", ( host ) => {
+function posted ( socket: Socket, text: string ): void {
 
-        const found = host.WebSocket;
+    socket.send(text);
+
+}
+
+export const factory: exception.Slot<SocketFactory> = exception.slot<SocketFactory>("socket.factory", {
+    fallback: () => {
+
+        const found = device.host<{ WebSocket?: new ( url: string, protocols?: string | string[] ) => unknown }>().WebSocket;
 
         return found ? ( url, protocols ) => new found(url, protocols) as Socket : undefined;
 
-    }),
+    },
 });
 export function open ( options: Options ): Connection {
 
@@ -208,7 +214,7 @@ export function open ( options: Options ): Connection {
     let socket: Socket | undefined;
     let status: Status = "idle";
     let noted: Note = { status: "idle", attempt: 0 };
-    let last: error.Fault | undefined;
+    let last: exception.Fault | undefined;
     let gate: func.Deferred<void> | undefined;
     let ident: string | undefined;
     let guard: Timer | undefined;
@@ -288,17 +294,7 @@ export function open ( options: Options ): Connection {
 
         const made = socket;
 
-        if ( made?.readyState !== 1 ) return false;
-
-        try {
-
-            made.send(text);
-
-        } catch {
-
-            return false;
-
-        }
+        if ( made?.readyState !== 1 || exception.threw(exception.run(posted, made, text)) ) return false;
 
         sent += 1;
 
@@ -327,12 +323,12 @@ export function open ( options: Options ): Connection {
     };
     const pack = ( name: string, data: unknown, channel: string | undefined, id: string | undefined, command?: Command ): string => {
 
-        if ( !command && !named(name) ) throw error.fault("internal", "socket.event");
-        if ( channel !== undefined && channel !== "" && !named(channel) ) throw error.fault("internal", "socket.channel");
+        if ( !command && !named(name) ) throw exception.fault("internal", "socket.event");
+        if ( channel !== undefined && channel !== "" && !named(channel) ) throw exception.fault("internal", "socket.channel");
 
         const text = protocol.encode({ event: name, data, channel: channel || undefined, id }, command);
 
-        if ( !fits(text, most) ) throw error.fault("too_large", "socket.frame");
+        if ( !fits(text, most) ) throw exception.fault("too_large", "socket.frame");
 
         return text;
 
@@ -378,17 +374,9 @@ export function open ( options: Options ): Connection {
         serial += 1;
 
         const id = `${stem}-${serial.toString(36)}`;
-        let text: string;
+        const text = exception.run(() => pack(name, data, channel, id, command));
 
-        try {
-
-            text = pack(name, data, channel, id, command);
-
-        } catch ( caught ) {
-
-            return Promise.reject(caught);
-
-        }
+        if ( exception.threw(text) ) return Promise.reject(text.caught);
 
         return bounded<Frame>("socket.request", wait.timeout ?? limit, wait.signal, ( resolve, reject ) => {
 
@@ -397,7 +385,7 @@ export function open ( options: Options ): Connection {
 
             if ( waiting.size >= crowd || (direct ? crowded() : outbox.length >= crowd) ) {
 
-                reject(error.fault("unavailable", "socket.busy"));
+                reject(exception.fault("unavailable", "socket.busy"));
 
                 return func.noop;
 
@@ -419,7 +407,7 @@ export function open ( options: Options ): Connection {
         });
 
     };
-    const settle = ( name: string, room: Room, turn: number, cause: error.Fault | undefined, reply?: Frame ): void => {
+    const settle = ( name: string, room: Room, turn: number, cause: exception.Fault | undefined, reply?: Frame ): void => {
 
         if ( rooms.get(name) !== room || room.asking !== turn ) return;
 
@@ -437,9 +425,9 @@ export function open ( options: Options ): Connection {
 
         }
 
-        if ( reply && !error.retryable(cause) ) rooms.delete(name);
+        if ( reply && !exception.retryable(cause) ) rooms.delete(name);
 
-        if ( waiter ) waiter.reject(cause.reason === "socket.request" ? error.fault("timeout", "socket.join", { cause }) : cause);
+        if ( waiter ) waiter.reject(cause.reason === "socket.request" ? exception.fault("timeout", "socket.join", { cause }) : cause);
         else if ( reply ) deliver({ event: reply.event, data: reply.data, channel: name });
 
     };
@@ -452,14 +440,14 @@ export function open ( options: Options ): Connection {
         const turn = asks;
 
         room.asking = turn;
-        void ask("", undefined, name, {}, "join").then(
+        void exception.mend(ask("", undefined, name, {}, "join").then(
             ( reply ) => {
 
                 settle(name, room, turn, protocol.kind(reply) === "error" ? protocol.fault(reply) : undefined, reply);
                 tell();
 
             },
-        ).catch(( caught: unknown ) => {
+        ), ( caught ) => {
 
             settle(name, room, turn, faulted(caught, "socket.join"));
             tell();
@@ -467,7 +455,7 @@ export function open ( options: Options ): Connection {
         });
 
     };
-    const shed = ( cause: error.Fault, all: boolean ): void => {
+    const shed = ( cause: exception.Fault, all: boolean ): void => {
 
         const shut = closed(cause);
 
@@ -526,18 +514,18 @@ export function open ( options: Options ): Connection {
         made.onmessage = null;
         made.onerror = func.noop;
 
-        try {
+        exception.rescue(() => {
 
             made.close(code, reason);
 
-        } catch {
+        }, () => {
 
-            adapter.probe(() => made.close());
+            exception.probe(() => made.close());
 
-        }
+        });
 
     };
-    const lost = ( cause: error.Fault, final: boolean, code?: number, reason?: string ): void => {
+    const lost = ( cause: exception.Fault, final: boolean, code?: number, reason?: string ): void => {
 
         if ( plan && status === "open" && date.now() - started >= plan.steady ) attempts = 0;
 
@@ -575,7 +563,7 @@ export function open ( options: Options ): Connection {
         const how = typeof code === "number" ? code : 1006;
         const why = typeof reason === "string" ? reason : "";
 
-        lost(adapter.probe(() => protocol.ending?.(how, why)) ?? error.fault("unavailable", "socket.closed", { cause: { code: how, reason: why } }), adapter.probe(() => plan?.when(how, why)) === false);
+        lost(exception.probe(() => protocol.ending?.(how, why)) ?? exception.fault("unavailable", "socket.closed", { cause: { code: how, reason: why } }), exception.probe(() => plan?.when(how, why)) === false);
 
     };
     const tick = (): void => {
@@ -584,21 +572,21 @@ export function open ( options: Options ): Connection {
 
             quiet = true;
 
-            try {
+            exception.rescue(() => {
 
                 push(pack("", undefined, undefined, undefined, "ping"));
 
-            } catch ( cause ) {
+            }, ( cause ) => {
 
                 lost(faulted(cause, "socket.protocol"), true);
 
-            }
+            });
 
             return;
 
         }
 
-        lost(error.fault("timeout", "socket.heartbeat"), false, 4000, "heartbeat");
+        lost(exception.fault("timeout", "socket.heartbeat"), false, 4000, "heartbeat");
         tell();
 
     };
@@ -628,7 +616,7 @@ export function open ( options: Options ): Connection {
     const heard = ( raw: unknown ): void => {
 
         const text = typeof raw === "string" ? raw : textOf(raw, most);
-        const frame = text !== undefined && fits(text, most) ? adapter.probe(() => protocol.decode(text)) : undefined;
+        const frame = text !== undefined && fits(text, most) ? exception.probe(() => protocol.decode(text)) : undefined;
 
         if ( !frame ) {
 
@@ -638,7 +626,7 @@ export function open ( options: Options ): Connection {
 
         }
 
-        try {
+        exception.rescue(() => {
 
             const kind = protocol.kind(frame);
             const identity = kind === "hello" ? protocol.identity(frame) : undefined;
@@ -669,18 +657,18 @@ export function open ( options: Options ): Connection {
 
             deliver(frame);
 
-        } catch {
+        }, () => {
 
             refused += 1;
 
-        }
+        });
 
     };
     const dial = ( address: unknown, token: unknown ): void => {
 
         if ( typeof address !== "string" || !clean(address, 2048) || !reachable.test(address) ) {
 
-            lost(error.fault("internal", "socket.url"), true);
+            lost(exception.fault("internal", "socket.url"), true);
 
             return;
 
@@ -688,21 +676,17 @@ export function open ( options: Options ): Connection {
 
         if ( typeof token === "string" && !fits(token, most) ) {
 
-            lost(error.fault("too_large", "socket.frame"), true);
+            lost(exception.fault("too_large", "socket.frame"), true);
 
             return;
 
         }
 
-        let made: Socket;
+        const made = exception.run(() => (options.factory ?? factory.get())(wired(address), options.protocols));
 
-        try {
+        if ( exception.threw(made) ) {
 
-            made = (options.factory ?? factory.get())(wired(address), options.protocols);
-
-        } catch ( caught ) {
-
-            lost(faulted(caught, "socket.open"), true);
+            lost(faulted(made.caught, "socket.open"), true);
 
             return;
 
@@ -749,7 +733,7 @@ export function open ( options: Options ): Connection {
         guard = later(limit, () => {
 
             guard = undefined;
-            lost(error.fault("timeout", "socket.open"), false, 4000, "timeout");
+            lost(exception.fault("timeout", "socket.open"), false, 4000, "timeout");
             tell();
 
         });
@@ -777,7 +761,7 @@ export function open ( options: Options ): Connection {
 
                 const cause = faulted(caught, "socket.prepare");
 
-                lost(cause, !error.retryable(cause));
+                lost(cause, !exception.retryable(cause));
                 tell();
 
             },
@@ -804,15 +788,9 @@ export function open ( options: Options ): Connection {
 
             }
 
-            try {
+            const told = exception.run(tell);
 
-                tell();
-
-            } catch ( caught ) {
-
-                return Promise.reject(caught);
-
-            }
+            if ( exception.threw(told) ) return Promise.reject(told.caught);
 
             if ( status === "open" ) return Promise.resolve();
             if ( status !== "connecting" ) return Promise.reject(last ?? closed());
@@ -860,8 +838,8 @@ export function open ( options: Options ): Connection {
             }),
         on: ( name, handler, channel ) => {
 
-            if ( name !== "*" && !named(name) ) throw error.fault("internal", "socket.event");
-            if ( channel !== undefined && channel !== "" && !named(channel) ) throw error.fault("internal", "socket.channel");
+            if ( name !== "*" && !named(name) ) throw exception.fault("internal", "socket.event");
+            if ( channel !== undefined && channel !== "" && !named(channel) ) throw exception.fault("internal", "socket.channel");
 
             const rows = channel ? rowsOf(channel) : everywhere;
             const off = name === "*" ? rows.any(( frame ) => handler(frame.data, frame)) : rows.on(name, ( frame ) => handler(frame.data, frame));
@@ -884,7 +862,7 @@ export function open ( options: Options ): Connection {
         },
         join: ( name ) => {
 
-            if ( !named(name) ) return Promise.reject(error.fault("internal", "socket.channel"));
+            if ( !named(name) ) return Promise.reject(exception.fault("internal", "socket.channel"));
 
             const room = rooms.get(name) ?? { joined: false, asking: 0, gate: undefined };
 
@@ -913,13 +891,13 @@ export function open ( options: Options ): Connection {
             if ( !room ) return Promise.resolve();
 
             rooms.delete(name);
-            room.gate?.reject(error.fault("conflict", "socket.left"));
+            room.gate?.reject(exception.fault("conflict", "socket.left"));
 
             if ( status !== "open" ) return Promise.resolve();
 
-            return ask("", undefined, name, {}, "leave").then(func.noop, ( caught: unknown ) => {
+            return exception.mend(ask("", undefined, name, {}, "leave").then(func.noop), ( caught ) => {
 
-                if ( !error.isFault(caught) || caught.reason !== "socket.closed" ) throw caught;
+                if ( !exception.isFault(caught) || caught.reason !== "socket.closed" ) throw caught;
 
             });
 

@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Class, Glob, Matcher, Parsed, Piece, Plan, Split, Unit } from "./arch.ts";
 export const separator = "/";
 
@@ -125,7 +126,7 @@ function braces ( pattern: string ): string[] {
 
                 for ( const choice of braces(pattern.slice((cuts[index] ?? 0) + 1, cuts[index + 1])) ) for ( const tail of tails ) out.push(head + choice + tail);
 
-                if ( out.length > widest ) throw new RangeError("not a glob");
+                if ( out.length > widest ) throw exception.misuse("not a glob");
 
             }
 
@@ -321,7 +322,7 @@ function route ( pieces: readonly Piece[], parts: readonly ArrayLike<string>[], 
 }
 function named ( name: string ): string {
 
-    if ( typeof name !== "string" || name === "" || name === "." || name === ".." || name.includes("/") || name.includes("\\") || name.includes("\u0000") ) throw new RangeError("not a name");
+    if ( typeof name !== "string" || name === "" || name === "." || name === ".." || name.includes("/") || name.includes("\\") || name.includes("\u0000") ) throw exception.misuse("not a name");
 
     return name;
 
@@ -536,7 +537,7 @@ export function glob ( pattern: string | readonly string[], options: Glob = {} )
 
     for ( const given of typeof pattern === "string" ? [pattern] : pattern ) {
 
-        if ( given.length > longest ) throw new RangeError("not a glob");
+        if ( given.length > longest ) throw exception.misuse("not a glob");
 
         const negated = given.startsWith("!");
 

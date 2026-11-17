@@ -3,7 +3,7 @@ import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server";
 import { App } from "../src/app/index.tsx";
 import { Screen } from "../src/app/screen.tsx";
 import { toneOf } from "../src/features/hello/hooks/use-hello.ts";
-import { answer, ask } from "../src/specs/runtime.ts";
+import { host } from "../src/specs/app.ts";
 import { faults } from "../src/stores/preferences.ts";
 
 beforeEach(() => {
@@ -36,7 +36,7 @@ describe("screen", () => {
 
         expect(renderToStaticMarkup(<Screen path="/" />)).not.toContain('data-testid="dialog-alert"');
 
-        const asked = ask("hello.refresh");
+        const asked = host.app.ask("hello.refresh");
         const open = renderToStaticMarkup(<Screen path="/" />);
 
         expect(open).toContain('aria-modal="true" role="alertdialog"');
@@ -47,7 +47,7 @@ describe("screen", () => {
         expect(open).toContain(">لا</div>");
         expect(open).toContain('data-testid="button-danger-md"');
         expect(open).toContain(">نعم</div>");
-        answer(false);
+        host.app.answer(false);
         expect(await asked).toBe(false);
         expect(renderToStaticMarkup(<Screen path="/" />)).not.toContain('data-testid="dialog-alert"');
 

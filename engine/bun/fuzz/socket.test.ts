@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import type * as socket from "engine/socket";
 import * as fc from "fast-check";
 
@@ -106,7 +106,7 @@ describe("fuzz socket", () => {
 
             } catch ( caught ) {
 
-                answer = error.is(caught) ? caught.reason ?? "?" : "?";
+                answer = exception.is(caught) ? caught.reason ?? "?" : "?";
 
             }
 
@@ -221,7 +221,7 @@ describe("fuzz socket", () => {
 
                     const asked = live.request(`q${serial}`, serial, { timeout: 1000 });
 
-                    asks.set(`q${serial}`, asked.catch(( cause: unknown ) => (error.is(cause) ? cause.reason : "?")));
+                    asks.set(`q${serial}`, asked.catch(( cause: unknown ) => (exception.is(cause) ? cause.reason : "?")));
 
                 } else if ( step.kind === "answer" ) {
 

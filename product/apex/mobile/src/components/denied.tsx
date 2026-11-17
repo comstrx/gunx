@@ -7,14 +7,14 @@ import { Link } from "@/elements/link.tsx";
 import { Text } from "@/elements/text.tsx";
 import { navigate } from "@/hooks/use-path.ts";
 import { useMenu } from "@/hooks/use-session.ts";
-import { labels } from "@/specs/runtime.ts";
+import { host } from "@/specs/app.ts";
 import type { Locale } from "@/types/index.ts";
 
 export type DeniedProps = { locale: Locale; at: string; page: string };
 
 export function Denied ({ locale, at, page }: DeniedProps ) {
 
-    const text = labels(locale, "nav");
+    const text = host.app.labels(locale, "nav");
     const [first] = useMenu(locale, at);
     const id = useId();
 

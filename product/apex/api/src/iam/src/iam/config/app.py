@@ -18,6 +18,8 @@ class AppSettings(Settings):
     token_secret    : str = "token-secret-for-the-local-lab-0000000001"
     issuer          : str = "edge"
     fixed_code      : str = "000000"
+    cache_url       : str = ""
+    avatar_bytes    : int = 32 * 1024 * 1024
     database_url    : str = "postgresql://engine:engine@127.0.0.1:5432/engine_test"
     database_schema : str = "iam"
     database_ssl    : str = ""

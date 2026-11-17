@@ -1,3 +1,3 @@
-core:load:use module::notify || return
-core:load:use module::gate || return
-core:load:use module::extract || return
+module:bundle:load:use module::notify || return
+module:bundle:load:use module::gate || return
+module:bundle:load:use module::extract || return

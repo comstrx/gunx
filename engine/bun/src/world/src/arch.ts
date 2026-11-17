@@ -131,6 +131,14 @@ export type Schemes<T extends Tokens> = { light: T; dark: T };
 export type ThemeState<T extends Tokens> = { preference: Preference; system: Scheme; scheme: Scheme; palette: T; ready: boolean };
 export type Readable<T> = { getState: () => T; subscribe: ( listener: ( state: T, previous: T ) => void ) => () => void };
 export type Root = { lang?: string; dir?: string; dataset?: Record<string, string | undefined>; style?: { colorScheme?: string } };
+export type Look = { surface?: string | undefined; lang?: string | undefined; dir?: string | undefined; preference: Preference };
+export type Scope = { name: string; id: string; settings: { locales: string[]; scheme: string } };
+export type Page = {
+    document?: { documentElement?: Root; currentScript?: { dataset?: Record<string, string | undefined> } | null };
+    localStorage?: { getItem: ( key: string ) => string | null; setItem: ( key: string, value: string ) => void };
+    navigator?: { languages?: readonly string[] };
+    setTimeout?: ( work: () => void, wait: number ) => unknown;
+};
 export type ThemeOptions<T extends Tokens> = {
     tokens: Schemes<T>;
     preference?: Preference | undefined;
@@ -152,7 +160,7 @@ export type Theme<T extends Tokens> = Readable<ThemeState<T>> & {
     cycle: () => void;
     css: () => string;
     variables: ( scheme?: Scheme ) => Readonly<Record<string, string>>;
-    apply: ( root: Root | undefined, speak?: { lang: string; dir: string } | undefined ) => void;
+    apply: ( root: Root | undefined, speak?: { lang: string; dir: string; surface?: string | undefined } | undefined ) => void;
     hydrate: () => Promise<void>;
     destroy: () => void;
 };

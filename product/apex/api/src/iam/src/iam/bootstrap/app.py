@@ -3,18 +3,23 @@ from contextlib import asynccontextmanager
 
 from contract import MESSAGES, SCOPES
 from engine.auth import auth
+from engine.config import env
+from engine.crypto import crypto
 from engine.broker import Rabbit, broker
+from engine.cache import Redis, cache
 from engine.database import Database, Migrator, Outbox, POSTGRES
 from engine.event import events
-from engine.http import App
+from engine.http import App, Limits
 from engine.log import log
 from engine.metric import metrics
+from engine.storage import Policy, storage as disks
 from engine.token import token
 from engine.translate import translate
 
-from ..app.controllers import SessionsController
+from ..app.controllers import AvatarsController, SessionsController
 from ..app.repositories import Memberships, Sessions as SessionRows, Tenants, Users
-from ..app.services import Sessions
+from ..app.services import Avatars, Sessions
+from ..app.services.avatars import MEDIA
 from ..config.app import ROOT, settings
 from ..database.migrations import TABLES, inbox, ledger, outbox as outbox_table
 from ..database.seeders import memberships as member_seed, tenants as tenant_seed, users as user_seed
@@ -26,7 +31,11 @@ def make () -> App:
     metrics.setup(settings.name)
     translate.load(MESSAGES, ROOT / "resources" / "messages")
     token.setup(settings.token_secret, issuer=settings.issuer)
-    auth.setup(roles=dict(SCOPES), fixed_code=settings.fixed_code)
+    if settings.cache_url: cache.use(Redis(settings.cache_url, prefix="edge:"))
+
+    auth.setup(roles=dict(SCOPES), fixed_code=settings.fixed_code, testing=env.stage() != "production")
+
+    if env.stage() != "production" and not crypto.ready(): crypto.setup([crypto.key()])
 
     if settings.amqp_url: broker.setup(Rabbit(settings.amqp_url))
 
@@ -36,7 +45,9 @@ def make () -> App:
     memberships = Memberships(database)
     sessions    = SessionRows(database)
     outbox      = Outbox(database, table=outbox_table)
-    service     = Sessions(users, tenants, memberships, sessions)
+    policy      = Policy(max_size=settings.avatar_bytes, allowed=frozenset(MEDIA))
+    avatars     = Avatars(disks.local("avatars", ROOT / "storage" / "app" / "public"), policy)
+    service     = Sessions(users, tenants, memberships, sessions, avatars)
 
     events.setup(settings.name, broker)
     events.durable(outbox, database, inbox)
@@ -73,9 +84,9 @@ def make () -> App:
             await database.close()
 
     return (
-        App(settings.name, settings.version)
+        App(settings.name, settings.version, limits=Limits(body_bytes=settings.avatar_bytes))
         .throttles(start="10/1m:ip", refresh="30/1m:ip")
-        .routing(routes(SessionsController(service)))
+        .routing(routes(SessionsController(service), AvatarsController(avatars)))
         .public(ROOT / "public")
         .lifecycle(storage, users.run)
     )

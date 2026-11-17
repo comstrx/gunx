@@ -1,3 +1,4 @@
+@use module::notify::src::arch
 @use module::notify::src::event
 @use module::notify::src::install
 @use module::notify::src::telegram

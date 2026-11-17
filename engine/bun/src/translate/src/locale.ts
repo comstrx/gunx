@@ -1,4 +1,5 @@
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import type { Direction, Naming, Offer, Tag, Wish } from "./arch.ts";
 
@@ -28,15 +29,7 @@ export function held<K, V> ( map: Map<K, V>, key: K, value: V, limit: number ): 
 }
 export function tried<T> ( work: () => T ): T | undefined {
 
-    try {
-
-        return work();
-
-    } catch {
-
-        return undefined;
-
-    }
+    return exception.probe(() => work());
 
 }
 function read ( locale: string ): Tag | undefined {

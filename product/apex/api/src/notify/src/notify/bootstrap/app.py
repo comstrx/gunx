@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from contract import MESSAGES
 from engine.auth import auth
+from engine.broadcast import broadcast
 from engine.broker import Rabbit, broker
 from engine.database import Database, Migrator, Outbox, POSTGRES
 from engine.event import Events
@@ -32,6 +33,7 @@ def make () -> App:
 
     if settings.amqp_url: broker.setup(Rabbit(settings.amqp_url))
     if not notify.ready(): notify.setup(Log())
+    if settings.cache_url: broadcast.setup(url=settings.cache_url)
 
     database = Database()
     notices  = Notices(database)
@@ -62,7 +64,7 @@ def make () -> App:
 
             await database.execute(f"CREATE SCHEMA IF NOT EXISTS {POSTGRES.ident(settings.database_schema)}")
             await Migrator(database, TABLES, ledger).apply()
-            await bus.declare("iam.*")
+            await bus.declare("iam.#")
             await queue.declare()
 
             outbox.start()
@@ -77,6 +79,8 @@ def make () -> App:
             await bus.stop()
             await outbox.stop()
             await database.close()
+
+            if settings.cache_url: await broadcast.close()
 
     return (
         App(settings.name, settings.version)

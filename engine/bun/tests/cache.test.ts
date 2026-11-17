@@ -1,7 +1,7 @@
 import { describe, expect, test as it, jest } from "bun:test";
 import * as cache from "engine/cache";
 import * as crypto from "engine/crypto";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 
 type Fired = { key: string | null; newValue: string | null; storageArea?: unknown };
 type Shelf = cache.WebStorage & { data: Map<string, string> };
@@ -16,7 +16,7 @@ function pass ( ms: number ): void {
 }
 function shape ( failure: unknown ): unknown {
 
-    if ( error.isFault(failure) ) return [failure.code, failure.reason];
+    if ( exception.isFault(failure) && failure.reason !== "misuse" ) return [failure.code, failure.reason];
 
     return failure instanceof Error ? `${failure.name}: ${failure.message}` : failure;
 
@@ -254,10 +254,46 @@ describe("cache", () => {
         expect(refused.remaining).toBe(0);
         expect(refused.retryAfter).toBe(1);
         expect(limit.peek("ip").remaining).toBe(0);
-        expect(() => limit.assert("ip")).toThrow(error.Fault);
+        expect(() => limit.assert("ip")).toThrow(exception.Fault);
         limit.reset("ip");
         expect(limit.assert("ip", 2).remaining).toBe(0);
         expect(limit.take("other", 3).allowed).toBe(false);
+
+    });
+    it("the cookie kind is a storage like the others: a box over a document's jar keeps its values there, and a kind that fell back to memory says it is volatile", async () => {
+
+        const document = page();
+        const restore = cache.use("cookie", cache.cookies(cache.documentCookies(document), { path: "/" }));
+        const box = cache.open({ kind: "cookie", prefix: "shop" });
+
+        await box.set("seen", 3);
+        await box.set("gone", 1, { ttl: 1 });
+
+        expect([await box.get("seen"), cache.volatile("cookie"), document.cookie.includes("shop.seen="), document.lines.some(( line ) => line.includes("Path=/")), await box.keys()]).toEqual([3, false, true, true, ["seen", "gone"]]);
+
+        await box.remove("seen");
+
+        expect([await box.get("seen"), document.cookie.includes("shop.seen=")]).toEqual([undefined, false]);
+
+        restore();
+
+        const bound = cache.use("session", cache.memory());
+
+        expect([cache.volatile("memory"), cache.volatile("session"), cache.volatile("cookie")]).toEqual([true, true, true]);
+
+        bound();
+
+        const kept = new Map<string, string>();
+        const vault = cache.use("secure", { get: ( key ) => kept.get(key) ?? null, set: ( key, value ) => { kept.set(key, value); }, delete: ( key ) => { kept.delete(key); }, keys: () => [...kept.keys()] });
+        const secrets = cache.open({ kind: "secure", prefix: "shop.session" });
+
+        await secrets.set("tokens", { access: "a" });
+
+        expect([cache.volatile("secure"), await secrets.get("tokens"), [...kept.keys()]]).toEqual([false, { access: "a" }, ["shop.session.tokens"]]);
+
+        vault();
+
+        expect(cache.volatile("secure")).toBe(true);
 
     });
     it("cookies parse, serialize, jar and sign with a stamp", async () => {
@@ -267,7 +303,7 @@ describe("cache", () => {
         expect(cache.serializeCookie("s", "v w", { maxAge: 60, httpOnly: true })).toBe("s=v%20w; Max-Age=60; Path=/; HttpOnly; SameSite=Lax");
         expect(cache.serializeCookie("s", "v", { sameSite: "none" })).toBe("s=v; Path=/; Secure; SameSite=None");
         expect(cache.serializeCookie("s", "v", { partitioned: true, domain: "a.io", path: "/x" })).toBe("s=v; Path=/x; Domain=a.io; Secure; SameSite=Lax; Partitioned");
-        expect(() => cache.serializeCookie("bad name", "v")).toThrow(RangeError);
+        expect(() => cache.serializeCookie("bad name", "v")).toThrow(exception.Fault);
 
         const document = { cookie: "a=1" };
         const jar = cache.documentCookies(document);
@@ -770,7 +806,7 @@ describe("cache", () => {
 
             })();
 
-            expect(error.isFault(fault) && [fault.code, fault.reason, fault.status, fault.retryAfter]).toEqual(["too_many_requests", "throttle", 429, 1]);
+            expect(exception.isFault(fault) && [fault.code, fault.reason, fault.status, fault.retryAfter]).toEqual(["too_many_requests", "throttle", 429, 1]);
             expect(limit.assert("y", 2)).toEqual({ allowed: true, limit: 3, remaining: 1, retryAfter: 0 });
 
             const long = cache.limiter(1, 90_000);
@@ -792,8 +828,8 @@ describe("cache", () => {
 
         });
 
-        expect(["3", Number.NaN, undefined].map(( given ) => shape((() => { try { return cache.limiter(given as number, 1000); } catch ( failure ) { return failure; } })()))).toEqual(Array(3).fill("RangeError: not a limit"));
-        expect(shape((() => { try { return cache.limiter(3, Number.NaN); } catch ( failure ) { return failure; } })())).toBe("RangeError: not a limit");
+        expect(["3", Number.NaN, undefined].map(( given ) => shape((() => { try { return cache.limiter(given as number, 1000); } catch ( failure ) { return failure; } })()))).toEqual(Array(3).fill("Fault: not a limit"));
+        expect(shape((() => { try { return cache.limiter(3, Number.NaN); } catch ( failure ) { return failure; } })())).toBe("Fault: not a limit");
         expect([cache.limiter(0.2, 0.2).take("a").limit, cache.limiter(-9, 5).take("a").remaining, cache.limiter(2.9, 5).peek("a").limit, cache.limiter(Number.POSITIVE_INFINITY, 5).take("a", 10 ** 9).allowed]).toEqual([1, 0, 2, true]);
         expect([cache.limiter(1, 1000, Number.NaN).take("a").allowed, cache.limiter(1, 1000, 0).take("a").allowed]).toEqual([true, true]);
 
@@ -874,24 +910,24 @@ describe("cache", () => {
             thrown(() => cache.serializeCookie("__Host-a", "1", { domain: "example.com" })),
             thrown(() => cache.serializeCookie("__Host-a", "1", { path: "/x" })),
         ]).toEqual([
-            "RangeError: not a cookie name: ",
-            "RangeError: not a cookie name: a b",
-            "RangeError: not a cookie name: a=b",
-            "RangeError: not a cookie name: a;b",
-            "RangeError: not a cookie path",
-            "RangeError: not a cookie path",
-            "RangeError: not a cookie path",
-            "RangeError: not a cookie domain",
-            "RangeError: not a cookie domain",
-            "RangeError: not a cookie site",
-            "RangeError: not a cookie age",
-            "RangeError: not a cookie age",
-            "RangeError: not a cookie expiry",
-            "RangeError: not a host cookie",
-            "RangeError: not a host cookie",
+            "Fault: not a cookie name: ",
+            "Fault: not a cookie name: a b",
+            "Fault: not a cookie name: a=b",
+            "Fault: not a cookie name: a;b",
+            "Fault: not a cookie path",
+            "Fault: not a cookie path",
+            "Fault: not a cookie path",
+            "Fault: not a cookie domain",
+            "Fault: not a cookie domain",
+            "Fault: not a cookie site",
+            "Fault: not a cookie age",
+            "Fault: not a cookie age",
+            "Fault: not a cookie expiry",
+            "Fault: not a host cookie",
+            "Fault: not a host cookie",
         ]);
         expect(cache.serializeCookie("a", "x".repeat(4094)).split(";")[0]).toHaveLength(4096);
-        expect([thrown(() => cache.serializeCookie("a", "x".repeat(4095))), thrown(() => cache.serializeCookie("a", "é".repeat(700)))]).toEqual(["RangeError: cookie too large", "RangeError: cookie too large"]);
+        expect([thrown(() => cache.serializeCookie("a", "x".repeat(4095))), thrown(() => cache.serializeCookie("a", "é".repeat(700)))]).toEqual(["Fault: cookie too large", "Fault: cookie too large"]);
 
     });
     it("cookie jars read one document or one request and write only checked lines", () => {
@@ -904,7 +940,7 @@ describe("cache", () => {
         expect([jar.get("a"), jar.get("b"), jar.get("zz"), jar.get("__proto__"), jar.get("constructor"), jar.names()]).toEqual(["1", "x y", undefined, undefined, undefined, ["a", "b"]]);
         jar.remove("a", { path: "/app" });
         expect([doc.lines.at(-1), jar.names(), jar.get("a")]).toEqual(["a=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/app; SameSite=Lax", ["b"], undefined]);
-        expect([thrown(() => jar.set("a b", "1")), thrown(() => jar.remove("a b")), doc.lines.length]).toEqual(["RangeError: not a cookie name: a b", "RangeError: not a cookie name: a b", 3]);
+        expect([thrown(() => jar.set("a b", "1")), thrown(() => jar.remove("a b")), doc.lines.length]).toEqual(["Fault: not a cookie name: a b", "Fault: not a cookie name: a b", 3]);
 
         const request = cache.headerCookies("a=1; b=2");
         const empty = cache.headerCookies(null);
@@ -917,7 +953,7 @@ describe("cache", () => {
         request.outgoing().push("x=1");
         request.set("a", "back");
         expect([request.outgoing().length, request.get("a"), request.names()]).toEqual([4, "back", ["a", "b", "c"]]);
-        expect([thrown(() => request.set("bad name", "1")), request.outgoing().length, request.get("bad name")]).toEqual(["RangeError: not a cookie name: bad name", 4, undefined]);
+        expect([thrown(() => request.set("bad name", "1")), request.outgoing().length, request.get("bad name")]).toEqual(["Fault: not a cookie name: bad name", 4, undefined]);
         expect([empty.names(), empty.get("a"), empty.outgoing()]).toEqual([[], undefined, []]);
 
     });
@@ -1008,7 +1044,7 @@ describe("cache", () => {
         const full = await caught(() => web.set("k", "123456"));
 
         await web.set("k", "12345");
-        expect([shape(full), error.isFault(full) && full.status, full instanceof Error && (full.cause as Error).name]).toEqual([["too_large", "storage.full"], 413, "QuotaExceededError"]);
+        expect([shape(full), exception.isFault(full) && full.status, full instanceof Error && (full.cause as Error).name]).toEqual([["too_large", "storage.full"], 413, "QuotaExceededError"]);
         expect(shape(await caught(() => cache.web(shelf(1, "NS_ERROR_DOM_QUOTA_REACHED"), {}).set("k", "12")))).toEqual(["too_large", "storage.full"]);
         expect(shape(await caught(() => cache.web(shelf(1, "SecurityError"), {}).set("k", "12")))).toEqual(["unavailable", "storage.refused"]);
         expect([await web.get("k"), await web.get("none"), await web.keys(), local.data.get("k")]).toEqual(["12345", null, ["k"], "12345"]);
@@ -1057,8 +1093,8 @@ describe("cache", () => {
             "k=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/app; Secure; SameSite=Lax",
         ]);
         expect([await baked.get("s"), await baked.get("k"), await baked.keys()]).toEqual(["v", null, ["s"]]);
-        expect(shape(await caught(() => baked.set("a b", "v")))).toBe("RangeError: not a cookie name: a b");
-        expect(shape(await caught(() => baked.set("big", "x".repeat(5000))))).toBe("RangeError: cookie too large");
+        expect(shape(await caught(() => baked.set("a b", "v")))).toBe("Fault: not a cookie name: a b");
+        expect(shape(await caught(() => baked.set("big", "x".repeat(5000))))).toBe("Fault: cookie too large");
         await box.set("user", { id: 7 });
         expect([doc.lines.at(-1), await box.get("user"), await box.keys()]).toEqual(["app.user=%7B%22v%22%3A%7B%22id%22%3A7%7D%7D; Max-Age=31536000; Path=/; SameSite=Lax", { id: 7 }, ["user"]]);
 
@@ -1273,10 +1309,10 @@ describe("cache", () => {
             await box.set("back", 1, { ttl: 1 });
             jest.setSystemTime(origin - 60_000);
             expect(await box.get("back")).toBe(1);
-            expect(shape(await caught(() => box.set("x", 1, { ttl: Number.NaN })))).toBe("RangeError: not a ttl");
-            expect(shape(await caught(() => box.set("x", 1, { ttl: "5" as unknown as number })))).toBe("RangeError: not a ttl");
-            expect(shape(await caught(() => box.touch("c", { ttl: Number.NaN })))).toBe("RangeError: not a ttl");
-            expect(shape(await caught(() => cache.open({ storage: inner, ttl: Number.NaN }).set("x", 1)))).toBe("RangeError: not a ttl");
+            expect(shape(await caught(() => box.set("x", 1, { ttl: Number.NaN })))).toBe("Fault: not a ttl");
+            expect(shape(await caught(() => box.set("x", 1, { ttl: "5" as unknown as number })))).toBe("Fault: not a ttl");
+            expect(shape(await caught(() => box.touch("c", { ttl: Number.NaN })))).toBe("Fault: not a ttl");
+            expect(shape(await caught(() => cache.open({ storage: inner, ttl: Number.NaN }).set("x", 1)))).toBe("Fault: not a ttl");
             expect([await box.has("x"), await box.get("c")]).toEqual([false, 3]);
 
         });
@@ -1335,12 +1371,12 @@ describe("cache", () => {
         expect<unknown[]>([await box.has("null"), await box.has("zero"), await box.remember("null", () => 5), await box.remember("off", () => true)]).toEqual([true, true, null, false]);
         expect([await box.remember("void", () => undefined), await box.has("void"), await box.update("zero", () => undefined), await box.has("zero")]).toEqual([undefined, false, undefined, false]);
         await box.set("text", "abc");
-        expect(shape(await caught(() => box.increment("text")))).toBe("RangeError: not a counter");
-        expect(shape(await caught(() => box.decrement("null")))).toBe("RangeError: not a counter");
-        expect(shape(await caught(() => box.increment("n", Number.NaN)))).toBe("RangeError: not a step");
-        expect(shape(await caught(() => box.increment("n", Number.POSITIVE_INFINITY)))).toBe("RangeError: not a step");
+        expect(shape(await caught(() => box.increment("text")))).toBe("Fault: not a counter");
+        expect(shape(await caught(() => box.decrement("null")))).toBe("Fault: not a counter");
+        expect(shape(await caught(() => box.increment("n", Number.NaN)))).toBe("Fault: not a step");
+        expect(shape(await caught(() => box.increment("n", Number.POSITIVE_INFINITY)))).toBe("Fault: not a step");
         await box.set("max", Number.MAX_VALUE);
-        expect(shape(await caught(() => box.increment("max", Number.MAX_VALUE)))).toBe("RangeError: not a step");
+        expect(shape(await caught(() => box.increment("max", Number.MAX_VALUE)))).toBe("Fault: not a step");
         expect([await box.get("text"), await box.get("null"), await box.has("n"), await box.get("max")]).toEqual(["abc", null, false, Number.MAX_VALUE]);
         expect([await box.increment("f", 0.5), await box.decrement("f", 0.25), await box.increment("f", 0), await box.decrement("fresh", 2)]).toEqual([0.5, 0.25, 0.25, -2]);
         await inner.set("junk", "{bad");
@@ -1451,14 +1487,14 @@ describe("cache", () => {
         const document = page();
 
         expect(["__proto__", "constructor", "prototype"].map(( name ) => thrown(() => cache.serializeCookie(name, "1")))).toEqual([
-            "RangeError: not a cookie name: __proto__",
-            "RangeError: not a cookie name: constructor",
-            "RangeError: not a cookie name: prototype",
+            "Fault: not a cookie name: __proto__",
+            "Fault: not a cookie name: constructor",
+            "Fault: not a cookie name: prototype",
         ]);
         expect([thrown(() => cache.serializeCookie("k", `a${lone}b`)), thrown(() => cache.documentCookies(document).set("k", lone)), thrown(() => cache.headerCookies("").set("k", lone)), document.lines]).toEqual([
-            "RangeError: not a cookie value",
-            "RangeError: not a cookie value",
-            "RangeError: not a cookie value",
+            "Fault: not a cookie value",
+            "Fault: not a cookie value",
+            "Fault: not a cookie value",
             [],
         ]);
         expect([1e21, 1e300, Number.MAX_VALUE, 2 ** 53, 12.9, -3].map(( maxAge ) => cache.serializeCookie("k", "v", { maxAge }))).toEqual([

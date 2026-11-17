@@ -1,5 +1,5 @@
-import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import type { ResourceFlight as Flight, Handle, Resource, ResourceOptions } from "./arch.ts";
 import { createStore } from "./zustand.ts";
 
@@ -15,7 +15,7 @@ export function resource<T> ( options: ResourceOptions<T> ): Handle<T> {
 
     const { load, seed, staleAfter, now = Date.now } = options;
 
-    if ( staleAfter !== undefined && !(staleAfter >= 0) ) throw new RangeError("not a duration");
+    if ( staleAfter !== undefined && !(staleAfter >= 0) ) throw exception.misuse("not a duration");
 
     const initial: Resource<T> = { status: seed === undefined ? "idle" : "done", data: seed, error: undefined, at: 0, stale: seed !== undefined };
     const store = createStore<Resource<T>>(() => initial);
@@ -52,29 +52,20 @@ export function resource<T> ( options: ResourceOptions<T> ): Handle<T> {
     };
     const work = async ( mine: Flight<T> ): Promise<void> => {
 
-        let data: T;
-        let at: number;
+        const taken = await exception.attempt(async () => {
 
-        try {
+            const loaded = await event.race(load(mine.controller.signal), mine.controller.signal);
 
-            data = await event.race(load(mine.controller.signal), mine.controller.signal);
+            return current === mine ? { data: loaded, at: now() } : undefined;
 
-            if ( current !== mine ) {
+        });
 
-                mine.settle(undefined);
-
-                return;
-
-            }
-
-            at = now();
-
-        } catch ( caught ) {
+        if ( !taken.ok ) {
 
             if ( current === mine ) {
 
                 current = undefined;
-                store.setState({ status: "failed", error: error.of(caught) });
+                store.setState({ status: "failed", error: taken.fault });
 
             }
 
@@ -83,6 +74,16 @@ export function resource<T> ( options: ResourceOptions<T> ): Handle<T> {
             return;
 
         }
+
+        if ( taken.value === undefined ) {
+
+            mine.settle(undefined);
+
+            return;
+
+        }
+
+        const { data, at } = taken.value;
 
         if ( current !== mine ) {
 

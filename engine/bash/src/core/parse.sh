@@ -74,15 +74,15 @@ core:parse:has () {
 
     local -n _table="${1}"
 
-    [[ -n "${_table[${2:-}]+x}" ]]
+    [[ -n "${2:-}" && -n "${_table[${2}]+x}" ]]
 
 }
 core:parse:get () {
 
     local -n _table="${1}"
-    local key="${2}"
+    local key="${2:-}"
 
-    [[ -n "${_table[${key}]+x}" ]] || {
+    [[ -n "${key}" && -n "${_table[${key}]+x}" ]] || {
 
         (( $# >= 3 )) && { core:log:print "${3}"; return 0; }
 
@@ -97,7 +97,9 @@ core:parse:get () {
 core:parse:count () {
 
     local -n _table="${1}"
-    local count="${_table[${2:-}]:-0}"
+    local count=0
+
+    [[ -z "${2:-}" ]] || count="${_table[${2}]:-0}"
 
     core:num:natural "${count}" || count=0
 
@@ -107,7 +109,9 @@ core:parse:count () {
 core:parse:list () {
 
     local -n _table="${1}"
-    local key="${2}" count=0 index=0
+    local key="${2:-}" count=0 index=0
+
+    [[ -n "${key}" ]] || return 0
 
     count="${_table[${key}]:-0}"
     core:num:natural "${count}" || return 0

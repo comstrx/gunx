@@ -1,12 +1,13 @@
 import * as auth from "engine-auth";
-import * as error from "engine-error";
+import type * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as parse from "engine-parse";
 import * as string from "engine-string";
 import * as validate from "engine-validate";
 import type { Block, Chain, Compiled, CompiledFeature, CompiledScreen, Context, Effect, Flow, Handler, Hook, Index, Matched, MenuItem, Mounted, Readable, Routes, Runtime, RuntimeOptions, Screen, Space, Stage, Trigger, Visibility, Watcher } from "./arch.ts";
-import { namespaces } from "./arch.ts";
+import { maxDepth as deepest, namespaces } from "./arch.ts";
 import { screenOf } from "./compiled.ts";
 import { empty, evaluate, resolve, resolveAll } from "./when.ts";
 
@@ -14,7 +15,7 @@ const roots: ReadonlySet<string> = new Set(namespaces);
 const indexes = new WeakMap<CompiledScreen, Index>();
 const tables = new WeakMap<Compiled, Routes>();
 const nothing: json.Dictionary = Object.freeze({});
-const deepest = 64;
+const formed = new WeakMap<Compiled, string | undefined>();
 
 function isSpace ( key: string ): key is Space {
 
@@ -30,18 +31,18 @@ function fits ( key: Space, value: unknown ): boolean {
     return json.isRecord(value) && typeof value.step === "string" && Number.isInteger(value.index) && typeof value.first === "boolean" && typeof value.last === "boolean" && typeof value.done === "boolean";
 
 }
-function refused ( path: unknown ): error.Fault {
+function refused ( path: unknown ): exception.Fault {
 
     const label = typeof path === "string" ? path.slice(0, 120) : "";
 
-    return error.fault("internal", "spec.path", { message: `${label}: not a context path`, errors: { path: [label] } });
+    return exception.fault("internal", "spec.path", { message: `${label}: not a context path`, errors: { path: [label] } });
 
 }
-function absent ( name: unknown ): error.Fault {
+function absent ( name: unknown ): exception.Fault {
 
     const label = typeof name === "string" ? name.slice(0, 120) : "";
 
-    return error.fault("not_found", "spec.screen", { message: `${label}: no such screen`, errors: { screen: [label] } });
+    return exception.fault("not_found", "spec.screen", { message: `${label}: no such screen`, errors: { screen: [label] } });
 
 }
 function absorbed ( base: Context, given: Partial<Context> | undefined ): Context {
@@ -218,7 +219,7 @@ function filled ( pattern: string, values: json.Dictionary ): string {
 
         const text = worded(Object.hasOwn(values, key) ? values[key] : undefined);
 
-        if ( text === "" ) throw error.fault("internal", "spec.navigate", { message: `${pattern}: {${key}} has no value`, errors: { [key]: ["required"] } });
+        if ( text === "" ) throw exception.fault("internal", "spec.navigate", { message: `${pattern}: {${key}} has no value`, errors: { [key]: ["required"] } });
 
         params[key] = text;
 
@@ -232,18 +233,18 @@ function filled ( pattern: string, values: json.Dictionary ): string {
 
     }
 
-    try {
+    return exception.rescue(() => {
 
         const path = parse.fill(pattern, params);
         const extra = parse.queryString(rest);
 
         return extra === "" ? path : `${path}${path.includes("?") ? "&" : "?"}${extra}`;
 
-    } catch ( caught ) {
+    }, ( caught ) => {
 
-        throw error.fault("internal", "spec.navigate", { message: `${pattern}: ${error.of(caught).message}` });
+        throw exception.fault("internal", "spec.navigate", { message: `${pattern}: ${exception.of(caught).message}` });
 
-    }
+    });
 
 }
 function resource ( operation: string ): string {
@@ -268,12 +269,23 @@ function settled (): Promise<void> {
     return Promise.resolve();
 
 }
-function readable<T> ( signal: event.Signal<T> ): Readable<T> {
+function formOf ( compiled: Compiled ): string | undefined {
+
+    if ( formed.has(compiled) ) return formed.get(compiled);
+
+    const found = compiled.screens.flatMap(( screen ) => screen.features).find(( feature ) => Object.keys(feature.form).length > 0)?.name;
+
+    formed.set(compiled, found);
+
+    return found;
+
+}
+
+export function readable<T> ( signal: event.Signal<T> ): Readable<T> {
 
     return { getState: signal.get, subscribe: ( listener ) => signal.watch(listener) };
 
 }
-
 export function match ( compiled: Compiled, path: string ): Matched | undefined {
 
     if ( typeof path !== "string" ) return undefined;
@@ -295,9 +307,9 @@ export function match ( compiled: Compiled, path: string ): Matched | undefined 
     return undefined;
 
 }
-export function titleOf ( screen: Pick<Screen, "name" | "title">, locale: string, fallback = "en" ): string {
+export function spoken ( held: unknown, locale: string, fallback = "en" ): string | undefined {
 
-    const titles: json.Dictionary = json.isRecord(screen.title) ? screen.title : {};
+    const titles: json.Dictionary = json.isRecord(held) ? held : {};
     let tag = typeof locale === "string" ? locale : "";
 
     while ( tag !== "" ) {
@@ -319,7 +331,12 @@ export function titleOf ( screen: Pick<Screen, "name" | "title">, locale: string
 
     }
 
-    return string.title(screen.name);
+    return undefined;
+
+}
+export function titleOf ( screen: Pick<Screen, "name" | "title">, locale: string, fallback = "en" ): string {
+
+    return spoken(screen.title, locale, fallback) ?? string.title(screen.name);
 
 }
 export function menuOf ( compiled: Compiled, locale: string, current = "/" ): MenuItem[] {
@@ -358,7 +375,7 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
     const view = event.signal<Visibility>(blank());
     const handlers = new Map<string, Handler>();
     const books = new WeakMap<CompiledFeature, validate.Schema>();
-    const loose: Chain = { live: () => true, seen: state.get };
+    const loose: Chain = { live: () => true, seen: state.get, timers: new Map() };
     const { translate, rulebook } = options;
     let active: Stage | undefined;
     let lease = 0;
@@ -430,14 +447,14 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
         view.set(next);
 
     }
-    function told ( fault: error.Fault, where: string ): void {
+    function told ( fault: exception.Fault, where: string ): void {
 
-        error.attemptSync(() => options.fail?.(fault, where));
+        exception.attemptSync(() => options.fail?.(fault, where));
 
     }
     function marked ( caught: unknown, where: string ): void {
 
-        const noted = error.attemptSync(() => write("signals.failure", error.describe(caught)));
+        const noted = exception.attemptSync(() => write("signals.failure", exception.describe(caught)));
 
         if ( !noted.ok ) told(noted.fault, where);
 
@@ -445,12 +462,12 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
     function failed ( caught: unknown, where: string ): void {
 
         marked(caught, where);
-        told(error.of(caught), where);
+        told(exception.of(caught), where);
 
     }
     function settle ( work: Promise<unknown>, where: string ): void {
 
-        void work.catch(( caught: unknown ) => failed(caught, where));
+        void exception.mend(work, ( caught: unknown ) => failed(caught, where));
 
     }
     function keyed ( feature: string, action: string ): string {
@@ -476,7 +493,7 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
         const handler = handlers.get(action);
         const label = action.slice(0, 120);
 
-        if ( !handler ) throw error.fault("not_found", "spec.action", { message: `${label}: no handler is registered`, errors: { action: [label] } });
+        if ( !handler ) throw exception.fault("not_found", "spec.action", { message: `${label}: no handler is registered`, errors: { action: [label] } });
 
         return handler(input, made);
 
@@ -487,7 +504,7 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
         const at = state.get().flow.index;
         const index = to === "next" ? Math.min(steps.length, at + 1) : to === "back" ? Math.max(0, at - 1) : steps.indexOf(to);
 
-        if ( steps.length === 0 || index < 0 ) throw error.fault("not_found", "spec.step", { message: `${String(to).slice(0, 120)}: no such step on this screen`, errors: { step: [String(to).slice(0, 120)] } });
+        if ( steps.length === 0 || index < 0 ) throw exception.fault("not_found", "spec.step", { message: `${String(to).slice(0, 120)}: no such step on this screen`, errors: { step: [String(to).slice(0, 120)] } });
 
         return flowOf(steps, index);
 
@@ -519,15 +536,25 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
     }
     async function perform ( effects: readonly Effect[], chain: Chain, depth: number ): Promise<void> {
 
-        if ( depth > deepest ) throw error.fault("internal", "spec.depth", { message: "effects nest too deep" });
+        if ( depth > deepest ) throw exception.fault("internal", "spec.depth", { message: "effects nest too deep" });
 
         for ( const effect of effects ) {
 
             if ( !chain.live() ) return;
-            if ( !json.isRecord(effect) ) throw error.fault("internal", "spec.effect", { message: "an effect is an object" });
+            if ( !json.isRecord(effect) ) throw exception.fault("internal", "spec.effect", { message: "an effect is an object" });
 
-            if ( "set" in effect ) write(effect.set, resolve(effect.to, chain.seen(), translate));
+            if ( "transfer" in effect ) {
+
+                const input = resolveAll(effect.with, chain.seen(), translate);
+
+                await options.transfer?.({ name: effect.transfer, ...(effect.to === undefined ? {} : { to: filled(effect.to, input) }), with: input, refresh: effect.reload === true, ...(effect.carry === undefined ? {} : { carry: effect.carry }), ...(effect.inherit === false ? { inherit: false } : {}) });
+
+            } else if ( "open" in effect ) await options.open?.(filled(effect.open, resolveAll(effect.with, chain.seen(), translate)), json.isRecord(effect.props) ? effect.props : {});
+            else if ( "close" in effect ) await options.close?.(effect.close);
+            else if ( "set" in effect ) write(effect.set, resolve(effect.to, chain.seen(), translate));
             else if ( "clear" in effect ) write(effect.clear, undefined);
+            else if ( "toggle" in effect ) write(effect.toggle, json.pathGet(state.get(), effect.toggle) !== true);
+            else if ( "after" in effect ) later(effect, chain, depth);
             else if ( "show" in effect ) toggle("hidden", effect.show, false);
             else if ( "hide" in effect ) toggle("hidden", effect.hide, true);
             else if ( "enable" in effect ) toggle("disabled", effect.enable, false);
@@ -568,24 +595,40 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
             } else if ( "refresh" in effect ) await invoke(keyed(effect.refresh, "refresh"), {});
             else if ( "navigate" in effect ) options.navigate?.(filled(effect.navigate, resolveAll(effect.with, chain.seen(), translate)));
             else if ( "when" in effect ) await perform(evaluate(effect.when, chain.seen()) ? effect.do : (effect.else ?? []), chain, depth + 1);
-            else throw error.fault("internal", "spec.effect", { message: "an effect names what it does" });
+            else throw exception.fault("internal", "spec.effect", { message: "an effect names what it does" });
 
         }
+
+    }
+    function later ( effect: Extract<Effect, { after: number }>, chain: Chain, depth: number ): void {
+
+        const key: object = effect.latest === true ? effect : {};
+        const pending = chain.timers.get(key);
+
+        if ( pending !== undefined ) clearTimeout(pending);
+
+        chain.timers.set(key, setTimeout(() => {
+
+            chain.timers.delete(key);
+
+            if ( chain.live() ) settle(perform(effect.do, chain, depth + 1), "after");
+
+        }, Math.min(Math.max(0, Number(effect.after) || 0), 600_000)));
 
     }
     async function hooked ( effects: readonly Effect[] | undefined, chain: Chain, where: string ): Promise<void> {
 
         if ( effects === undefined || effects.length === 0 ) return;
 
-        try {
+        await exception.rescueAsync(async () => {
 
             await perform(effects, chain, 0);
 
-        } catch ( caught ) {
+        }, async ( caught ) => {
 
             failed(caught, where);
 
-        }
+        });
 
     }
     function wired ( stage: Stage, triggers: readonly Trigger[], where: string ): void {
@@ -607,17 +650,17 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
 
                 };
 
-                try {
+                exception.rescue(() => {
 
                     write("event", carried);
 
-                    if ( evaluate(trigger.when, state.get()) ) settle(perform(trigger.do, { live: stage.chain.live, seen }, 0), label);
+                    if ( evaluate(trigger.when, state.get()) ) settle(perform(trigger.do, { live: stage.chain.live, seen, timers: stage.chain.timers }, 0), label);
 
-                } catch ( caught ) {
+                }, ( caught ) => {
 
                     failed(caught, label);
 
-                }
+                });
 
             }));
 
@@ -625,6 +668,8 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
 
     }
     function fed ( stage: Stage ): void {
+
+        const resources = new Set<string>();
 
         for ( const feature of stage.screen.features ) {
 
@@ -637,6 +682,7 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
                 if ( !binding || !("read" in binding) || binding.live === undefined || binding.live === false ) continue;
 
                 topics.add(typeof binding.live === "string" ? binding.live : `${resource(binding.read)}.*`);
+                resources.add(resource(binding.read));
 
             }
 
@@ -653,6 +699,8 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
             }
 
         }
+
+        if ( options.feed ) for ( const name of resources ) stage.stops.push(options.feed(name));
 
     }
     function watched ( stage: Stage ): void {
@@ -719,9 +767,11 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
 
         stage.live = false;
 
-        for ( const stop of stage.stops ) error.attemptSync(stop);
+        for ( const stop of stage.stops ) exception.attemptSync(stop);
+        for ( const timer of stage.chain.timers.values() ) clearTimeout(timer);
 
         stage.stops.length = 0;
+        stage.chain.timers.clear();
         stage.left = departed(stage);
 
         return stage.left;
@@ -737,29 +787,33 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
 
         const ticket = lease;
         const index = indexed(screen);
-        const stage: Stage = { screen, index, live: true, stops: [], left: undefined, chain: { live: () => stage.live, seen: state.get } };
+        const stage: Stage = { screen, index, live: true, stops: [], left: undefined, chain: { live: () => stage.live, seen: state.get, timers: new Map() } };
 
         if ( active ) await retire(active);
         if ( ticket !== lease ) return { screen, unmount: settled };
 
         active = stage;
 
-        try {
+        const mounted = exception.attemptSync(() => {
 
             view.set(blank());
             state.set({ ...state.get(), params: copied(route.params), query: queried(route.query), form: {}, settings: index.settings, flow: flowOf(screen.flow, screen.flow.length ? 0 : -1) });
             wired(stage, screen.triggers, screen.name);
+
+            if ( options.nested !== true ) wired(stage, compiled.surface.triggers, compiled.surface.name);
 
             for ( const feature of screen.features ) wired(stage, feature.triggers, feature.id);
 
             fed(stage);
             watched(stage);
 
-        } catch ( caught ) {
+        });
+
+        if ( !mounted.ok ) {
 
             await retire(stage);
 
-            throw caught;
+            throw mounted.fault;
 
         }
 
@@ -772,7 +826,7 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
     }
     async function act ( feature: string, action: string, input: json.Dictionary = {} ): Promise<unknown> {
 
-        if ( typeof feature !== "string" || typeof action !== "string" ) throw error.fault("not_found", "spec.action", { message: "an action is named by its feature and its verb" });
+        if ( typeof feature !== "string" || typeof action !== "string" ) throw exception.fault("not_found", "spec.action", { message: "an action is named by its feature and its verb" });
 
         const stage = active;
         const found = stage ? placedIn(stage.index, feature) : undefined;
@@ -783,11 +837,11 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
         await perform(found?.on.submit ?? [], chain, 0);
         await perform(stage?.screen.on.submit ?? [], chain, 0);
 
-        try {
+        await exception.rescueAsync(async () => {
 
             result = await invoke(keyed(feature, action), json.isRecord(input) ? input : {});
 
-        } catch ( caught ) {
+        }, async ( caught ) => {
 
             marked(caught, where);
             await hooked(found?.on.failure, chain, `${where}.failure`);
@@ -795,7 +849,7 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
 
             throw caught;
 
-        }
+        });
 
         await hooked(found?.on.success, chain, `${where}.success`);
         await hooked(stage?.screen.on.success, chain, `${where}.success`);
@@ -854,7 +908,7 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
         patch: ( values ) => state.set(absorbed(state.get(), values)),
         handle: ( action, handler ) => {
 
-            if ( typeof action !== "string" || action === "" || typeof handler !== "function" ) throw error.fault("internal", "spec.handler", { message: "a handler is a function under an action name" });
+            if ( typeof action !== "string" || action === "" || typeof handler !== "function" ) throw exception.fault("internal", "spec.handler", { message: "a handler is a function under an action name" });
 
             handlers.set(action, handler);
 
@@ -865,7 +919,7 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
             };
 
         },
-        run: ( effects ) => perform(effects, loose, 0),
+        run: ( effects, carried ) => perform(effects, carried === undefined ? loose : { ...loose, seen: () => ({ ...state.get(), event: carried }) }, 0),
         act,
         mount,
         visible,
@@ -878,19 +932,9 @@ export function runtime ( compiled: Compiled, options: RuntimeOptions = {} ): Ru
         errors,
     };
 
-    if ( !rulebook ) {
+    const form = rulebook ? undefined : formOf(compiled);
 
-        for ( const screen of compiled.screens ) {
-
-            for ( const feature of screen.features ) {
-
-                if ( Object.keys(feature.form).length > 0 ) throw error.fault("internal", "spec.rulebook", { message: `${feature.name}: a form needs the runtime's rulebook option`, errors: { feature: [feature.name] } });
-
-            }
-
-        }
-
-    }
+    if ( form !== undefined ) throw exception.fault("internal", "spec.rulebook", { message: `${form}: a form needs the runtime's rulebook option`, errors: { feature: [form] } });
 
     for ( const key of Object.keys(options.handlers ?? {}) ) {
 

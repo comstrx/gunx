@@ -1,5 +1,5 @@
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import type { Entry, Facts, Level, Logger, Options, Scope, Verdict } from "./arch.ts";
 
@@ -63,15 +63,7 @@ function hidden ( key: string, extra: ReadonlySet<string> ): boolean {
 }
 function described ( failure: unknown ): Facts {
 
-    try {
-
-        return error.describe(failure);
-
-    } catch {
-
-        return { message: "unprintable failure" };
-
-    }
+    return exception.rescue(() => exception.describe(failure), () => ({ message: "unprintable failure" }));
 
 }
 function caused ( failure: Error ): Facts {
@@ -160,17 +152,21 @@ function clean ( value: unknown, scope: Scope, trail: object[] ): unknown {
 
     try {
 
-        if ( Array.isArray(value) ) return listed(value, scope, trail);
-        if ( value instanceof Set ) return listed(Array.from(value), scope, trail);
+        return exception.rescue(() => {
 
-        if ( value instanceof Map ) return mapped(value, scope, trail);
-        if ( value instanceof String || value instanceof Number || value instanceof Boolean ) return clean(value.valueOf(), scope, trail);
+            if ( Array.isArray(value) ) return listed(value, scope, trail);
+            if ( value instanceof Set ) return listed(Array.from(value), scope, trail);
 
-        return record(value instanceof Error ? caused(value) : value, scope, trail, {});
+            if ( value instanceof Map ) return mapped(value, scope, trail);
+            if ( value instanceof String || value instanceof Number || value instanceof Boolean ) return clean(value.valueOf(), scope, trail);
 
-    } catch {
+            return record(exception.isError(value) ? caused(value) : value, scope, trail, {});
 
-        return "[unreadable]";
+        }, () => {
+
+            return "[unreadable]";
+
+        });
 
     } finally {
 
@@ -181,33 +177,33 @@ function clean ( value: unknown, scope: Scope, trail: object[] ): unknown {
 }
 function safe ( facts: Facts, scope: Scope, out: Facts = {} ): Facts {
 
-    try {
+    return exception.rescue(() => {
 
         return record(facts, scope, [facts], out);
 
-    } catch {
+    }, () => {
 
         out["[unreadable]"] = true;
 
         return out;
 
-    }
+    });
 
 }
 
 export function tried<A> ( work: ( value: A ) => void, value: A ): { failure: unknown } | undefined {
 
-    try {
+    return exception.rescue(() => {
 
         work(value);
 
         return undefined;
 
-    } catch ( failure ) {
+    }, ( failure ) => {
 
         return { failure };
 
-    }
+    });
 
 }
 export function redact ( facts: Facts, names: readonly string[] = [] ): Facts {
@@ -282,7 +278,7 @@ export function create ( options: Options = {} ): Logger {
 
             const started = performance.now();
 
-            try {
+            return await exception.rescueAsync(async () => {
 
                 const result = await work();
 
@@ -290,13 +286,13 @@ export function create ( options: Options = {} ): Logger {
 
                 return result;
 
-            } catch ( caught ) {
+            }, ( caught ) => {
 
                 emit("error", label, { ...facts, ms: lap(started), ok: false, failure: shown(caught) });
 
                 throw caught;
 
-            }
+            });
 
         },
     };

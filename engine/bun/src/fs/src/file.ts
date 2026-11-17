@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as number from "engine-number";
 import * as string from "engine-string";
@@ -169,7 +169,7 @@ function weighed ( file: Blob | FileRef, bounds: Limits, field: string ): void {
 
     const size = file.size;
 
-    if ( size !== undefined && !(size >= 0 && size <= bounds.maxBytes) ) throw error.fault("validation", "file.size", { errors: { [field]: [`max:${bounds.maxBytes}`] }, message: `${field}: larger than ${number.bytes(bounds.maxBytes)}` });
+    if ( size !== undefined && !(size >= 0 && size <= bounds.maxBytes) ) throw exception.fault("validation", "file.size", { errors: { [field]: [`max:${bounds.maxBytes}`] }, message: `${field}: larger than ${number.bytes(bounds.maxBytes)}` });
 
 }
 function attach ( data: FormData, key: string, item: unknown, bounds: Limits, count: { files: number } ): void {
@@ -180,7 +180,7 @@ function attach ( data: FormData, key: string, item: unknown, bounds: Limits, co
 
         count.files += 1;
 
-        if ( count.files > bounds.maxFiles ) throw error.fault("validation", "file.count", { errors: { [key]: [`max_files:${bounds.maxFiles}`] } });
+        if ( count.files > bounds.maxFiles ) throw exception.fault("validation", "file.count", { errors: { [key]: [`max_files:${bounds.maxFiles}`] } });
 
         check(item, bounds, key);
 
@@ -229,7 +229,7 @@ export function check ( file: Blob | FileRef, bounds: Limits = limits, field = "
 
     weighed(file, bounds, field);
 
-    if ( !accepts(type, bounds.types, nameOf(file)) ) throw error.fault("validation", "file.type", { errors: { [field]: ["type"] }, message: `${field}: ${type} is not accepted` });
+    if ( !accepts(type, bounds.types, nameOf(file)) ) throw exception.fault("validation", "file.type", { errors: { [field]: ["type"] }, message: `${field}: ${type} is not accepted` });
 
 }
 export function formData ( value: Record<string, unknown>, bounds: Limits = limits ): FormData {
@@ -315,7 +315,7 @@ export function slices ( blob: Blob, size: number ): Slice[] {
 
     const out: Slice[] = [];
 
-    if ( !(Number.isInteger(size) && size > 0) || blob.size / size > most ) throw new RangeError("not a size");
+    if ( !(Number.isInteger(size) && size > 0) || blob.size / size > most ) throw exception.misuse("not a size");
 
     for ( let start = 0; start < blob.size; start += size ) {
 
@@ -360,8 +360,8 @@ export async function inspect ( file: Blob, bounds: Limits = limits, field = "fi
 
     for ( let wide = reach, read = first.length; far && size === undefined && read < file.size; read = wide, wide *= 4 ) size = imageSize(await head(file, wide));
 
-    if ( !accepts(type, bounds.types, vouched ? name : undefined) ) throw error.fault("validation", "file.content", { errors: { [field]: ["type"] }, message: `${field}: the content is ${type}` });
-    if ( bounds.maxPixels !== undefined && (size ? !(size.width * size.height <= bounds.maxPixels) : found !== undefined && raster.has(found)) ) throw error.fault("validation", "file.pixels", { errors: { [field]: [`max_pixels:${bounds.maxPixels}`] } });
+    if ( !accepts(type, bounds.types, vouched ? name : undefined) ) throw exception.fault("validation", "file.content", { errors: { [field]: ["type"] }, message: `${field}: the content is ${type}` });
+    if ( bounds.maxPixels !== undefined && (size ? !(size.width * size.height <= bounds.maxPixels) : found !== undefined && raster.has(found)) ) throw exception.fault("validation", "file.pixels", { errors: { [field]: [`max_pixels:${bounds.maxPixels}`] } });
 
     return { type, size: file.size, name: safe(name, ""), ...(size ? { width: size.width, height: size.height } : {}) };
 

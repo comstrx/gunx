@@ -1,10 +1,10 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as net from "engine-net";
 import type { Stage } from "./arch.ts";
 
-function refused ( value: unknown ): error.Fault {
+function refused ( value: unknown ): exception.Fault {
 
-    return error.fault("internal", "api.address", { message: `${typeof value === "string" ? value.slice(0, 200) : typeof value}: an api address is a bare http or https url` });
+    return exception.fault("internal", "api.address", { message: `${typeof value === "string" ? value.slice(0, 200) : typeof value}: an api address is a bare http or https url` });
 
 }
 function owned ( text: string ): boolean {
@@ -37,7 +37,7 @@ export function address ( value: string, stage: Stage = {} ): string {
 
     if ( stage.release && !stage.insecure && (parts.protocol !== "https" || net.isPrivateAddress(parts.hostname)) ) {
 
-        throw error.fault("internal", "api.cleartext", { message: `${parts.origin}: a release calls a public https address` });
+        throw exception.fault("internal", "api.cleartext", { message: `${parts.origin}: a release calls a public https address` });
 
     }
 

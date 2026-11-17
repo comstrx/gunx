@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as validate from "engine-validate";
 import type { Header, Headers, Names, Overrides, Paths, Wire } from "./arch.ts";
@@ -13,9 +13,9 @@ function within ( low: number, high: number ) {
     return validate.int().check(validate.gte(low), validate.lte(high));
 
 }
-function refused ( field: string, message: string ): error.Fault {
+function refused ( field: string, message: string ): exception.Fault {
 
-    return error.fault("validation", "api.wire", { message: `wire: ${message}`, errors: { [field]: [message] } });
+    return exception.fault("validation", "api.wire", { message: `wire: ${message}`, errors: { [field]: [message] } });
 
 }
 function lowered ( name: string ): string {

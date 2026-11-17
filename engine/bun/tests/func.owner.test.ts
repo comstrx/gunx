@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as func from "engine/func";
 
 describe("lane ownership", () => {
@@ -94,9 +95,9 @@ describe("lane ownership", () => {
     });
     it("zero pending means no queue and invalid bounds fail before admission", async () => {
 
-        expect(() => func.lane(Number.POSITIVE_INFINITY)).toThrow(RangeError);
+        expect(() => func.lane(Number.POSITIVE_INFINITY)).toThrow(exception.Fault);
 
-        for ( const pending of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY] ) expect(() => func.lane(1, { pending })).toThrow(RangeError);
+        for ( const pending of [-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY] ) expect(() => func.lane(1, { pending })).toThrow(exception.Fault);
 
         const made = func.lane(1, { pending: 0 });
         const held = Promise.withResolvers<void>();

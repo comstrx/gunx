@@ -1,6 +1,6 @@
 @use () {
 
-    core:load:use "$@"
+    module:bundle:load:use "$@"
 
 }
 @print () {

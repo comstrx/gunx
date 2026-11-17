@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as fake from "engine-fake";
 import * as json from "engine-json";
 import * as list from "engine-list";
@@ -177,9 +177,9 @@ function merged ( schema: validate.Schema, base: json.Dictionary, changes: json.
     return next;
 
 }
-function missing ( cause: unknown ): error.Fault {
+function missing ( cause: unknown ): exception.Fault {
 
-    return error.fault("not_found", "fakes.missing", { cause });
+    return exception.fault("not_found", "fakes.missing", { cause });
 
 }
 
@@ -272,7 +272,7 @@ export function fakes ( features: Catalogue, options: FakeOptions = {} ): Fakes 
         const made: json.Dictionary[] = [];
         const clashes = ( row: json.Dictionary ): boolean => kind.uniques.some(( column, at ) => row[column] !== undefined && seen[at]?.has(String(row[column])) === true);
 
-        try {
+        exception.rescue(() => {
 
             for ( let at = 0; at < kind.count; at += 1 ) {
 
@@ -286,11 +286,11 @@ export function fakes ( features: Catalogue, options: FakeOptions = {} ): Fakes 
 
             }
 
-        } catch ( caught ) {
+        }, ( caught ) => {
 
             throw forced === undefined ? caught : missing(caught);
 
-        }
+        });
 
         tables.set(name, made);
 
@@ -345,15 +345,15 @@ export function fakes ( features: Catalogue, options: FakeOptions = {} ): Fakes 
 
         }
 
-        try {
+        exception.rescue(() => {
 
             made = maker.fork(`${idOf(endpoint)} ${place.name(params)}/${String(params[place.key] ?? "")}`).from(endpoint.output, forced);
 
-        } catch ( caught ) {
+        }, ( caught ) => {
 
             throw Object.keys(forced).length ? missing(caught) : caught;
 
-        }
+        });
 
         return json.isRecord(made) ? merged(endpoint.output, made, json.omit(chosen(given, fields.keys()), Object.keys(forced))) : made;
 
@@ -370,7 +370,7 @@ export function fakes ( features: Catalogue, options: FakeOptions = {} ): Fakes 
 
             if ( Object.hasOwn(sent, column) ) {
 
-                if ( taken(held, column, row[column]) ) throw error.fault("conflict", "fakes.taken", { errors: { [column]: ["the value is taken"] } });
+                if ( taken(held, column, row[column]) ) throw exception.fault("conflict", "fakes.taken", { errors: { [column]: ["the value is taken"] } });
 
                 continue;
 

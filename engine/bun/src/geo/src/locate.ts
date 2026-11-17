@@ -1,5 +1,5 @@
 import type * as device from "engine-device";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Locate, Near, Point } from "./arch.ts";
 import { meters } from "./path.ts";
 import { distance, earthRadius, isPoint, rad } from "./point.ts";
@@ -40,19 +40,19 @@ export function locate ( unit: Pick<device.Device, "position" | "follow">, optio
             done = true;
             clearTimeout(timer);
             signal?.removeEventListener("abort", abort);
-            try {
+            return exception.rescue(() => {
 
                 stop();
 
-            } catch ( cause ) {
+                return true;
+
+            }, ( cause ) => {
 
                 reject(cause);
 
                 return false;
 
-            }
-
-            return true;
+            });
 
         };
         const fail = ( cause: unknown ): void => {
@@ -65,12 +65,12 @@ export function locate ( unit: Pick<device.Device, "position" | "follow">, optio
             if ( fine(found, radius) && finish() ) resolve(found);
 
         };
-        const abort = (): void => fail(error.fault("timeout", "geo.aborted"));
+        const abort = (): void => fail(exception.fault("timeout", "geo.aborted"));
         const watch = (): void => {
 
             if ( done ) return;
 
-            try {
+            exception.rescue(() => {
 
                 let acquiring = true;
                 let pending: device.Position | undefined;
@@ -93,23 +93,22 @@ export function locate ( unit: Pick<device.Device, "position" | "follow">, optio
 
                 }
 
-            } catch ( cause ) {
+            }, ( cause ) => {
 
-                fail(error.isFault(cause) ? cause : error.fault("unavailable", "geo.refused", { cause }));
+                fail(exception.isFault(cause) ? cause : exception.fault("unavailable", "geo.refused", { cause }));
 
-            }
+            });
 
         };
-        const timer = setTimeout(() => fail(error.fault("timeout", "geo.locate", { message: `no position within ${wait}ms` })), wait);
+        const timer = setTimeout(() => fail(exception.fault("timeout", "geo.locate", { message: `no position within ${wait}ms` })), wait);
 
         if ( signal?.aborted ) return abort();
 
         signal?.addEventListener("abort", abort, { once: true });
 
-        Promise.resolve()
+        void exception.mend(Promise.resolve()
             .then(() => done ? undefined : unit.position(wanted))
-            .then(( known ) => (fine(known, radius) ? settle(known) : watch()), watch)
-            .catch(fail);
+            .then(( known ) => (fine(known, radius) ? settle(known) : watch()), watch), fail);
 
     });
 

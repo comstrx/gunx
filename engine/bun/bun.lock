@@ -20,18 +20,13 @@
         "zod": "catalog:",
       },
     },
-    "src/adapter": {
-      "name": "engine-adapter",
-      "dependencies": {
-        "engine-error": "workspace:*",
-      },
-    },
     "src/api": {
       "name": "engine-api",
       "dependencies": {
         "engine-date": "workspace:*",
         "engine-error": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-fake": "workspace:*",
         "engine-func": "workspace:*",
         "engine-json": "workspace:*",
@@ -51,6 +46,7 @@
         "engine-crypto": "workspace:*",
         "engine-date": "workspace:*",
         "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-state": "workspace:*",
       },
@@ -58,10 +54,10 @@
     "src/cache": {
       "name": "engine-cache",
       "dependencies": {
-        "engine-adapter": "workspace:*",
         "engine-crypto": "workspace:*",
         "engine-date": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-device": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-list": "workspace:*",
         "engine-string": "workspace:*",
@@ -70,7 +66,8 @@
     "src/crypto": {
       "name": "engine-crypto",
       "dependencies": {
-        "engine-adapter": "workspace:*",
+        "engine-device": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-rand": "workspace:*",
         "engine-string": "workspace:*",
@@ -79,6 +76,7 @@
     "src/date": {
       "name": "engine-date",
       "dependencies": {
+        "engine-exception": "workspace:*",
         "engine-number": "workspace:*",
         "engine-string": "workspace:*",
       },
@@ -86,9 +84,7 @@
     "src/device": {
       "name": "engine-device",
       "dependencies": {
-        "engine-adapter": "workspace:*",
-        "engine-error": "workspace:*",
-        "engine-json": "workspace:*",
+        "engine-exception": "workspace:*",
       },
     },
     "src/engine": {
@@ -97,7 +93,6 @@
         "tool": "./bin/tool.ts",
       },
       "dependencies": {
-        "engine-adapter": "workspace:*",
         "engine-api": "workspace:*",
         "engine-auth": "workspace:*",
         "engine-cache": "workspace:*",
@@ -106,6 +101,7 @@
         "engine-device": "workspace:*",
         "engine-error": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-fake": "workspace:*",
         "engine-form": "workspace:*",
         "engine-fs": "workspace:*",
@@ -115,6 +111,7 @@
         "engine-json": "workspace:*",
         "engine-list": "workspace:*",
         "engine-log": "workspace:*",
+        "engine-media": "workspace:*",
         "engine-net": "workspace:*",
         "engine-number": "workspace:*",
         "engine-parse": "workspace:*",
@@ -137,13 +134,15 @@
     },
     "src/error": {
       "name": "engine-error",
-      "dependencies": {
-        "engine-json": "workspace:*",
-        "engine-string": "workspace:*",
-      },
     },
     "src/event": {
       "name": "engine-event",
+      "dependencies": {
+        "engine-exception": "workspace:*",
+      },
+    },
+    "src/exception": {
+      "name": "engine-exception",
       "dependencies": {
         "engine-error": "workspace:*",
       },
@@ -152,6 +151,7 @@
       "name": "engine-fake",
       "dependencies": {
         "engine-date": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-rand": "workspace:*",
         "engine-string": "workspace:*",
         "engine-validate": "workspace:*",
@@ -162,8 +162,8 @@
     "src/form": {
       "name": "engine-form",
       "dependencies": {
-        "engine-error": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-list": "workspace:*",
         "engine-rand": "workspace:*",
@@ -174,9 +174,9 @@
     "src/fs": {
       "name": "engine-fs",
       "dependencies": {
-        "engine-adapter": "workspace:*",
         "engine-crypto": "workspace:*",
         "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-list": "workspace:*",
         "engine-number": "workspace:*",
@@ -187,23 +187,22 @@
       "name": "engine-func",
       "dependencies": {
         "engine-date": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
       },
     },
     "src/geo": {
       "name": "engine-geo",
       "dependencies": {
-        "engine-adapter": "workspace:*",
         "engine-device": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-number": "workspace:*",
       },
     },
     "src/history": {
       "name": "engine-history",
       "dependencies": {
-        "engine-adapter": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-device": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-parse": "workspace:*",
       },
@@ -211,6 +210,7 @@
     "src/json": {
       "name": "engine-json",
       "dependencies": {
+        "engine-exception": "workspace:*",
         "engine-list": "workspace:*",
         "engine-number": "workspace:*",
         "engine-string": "workspace:*",
@@ -219,6 +219,7 @@
     "src/list": {
       "name": "engine-list",
       "dependencies": {
+        "engine-exception": "workspace:*",
         "engine-number": "workspace:*",
         "engine-string": "workspace:*",
       },
@@ -227,17 +228,24 @@
       "name": "engine-log",
       "dependencies": {
         "engine-date": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
+      },
+    },
+    "src/media": {
+      "name": "engine-media",
+      "dependencies": {
+        "engine-device": "workspace:*",
+        "engine-exception": "workspace:*",
       },
     },
     "src/net": {
       "name": "engine-net",
       "dependencies": {
-        "engine-adapter": "workspace:*",
         "engine-date": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-device": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-func": "workspace:*",
         "engine-json": "workspace:*",
         "engine-parse": "workspace:*",
@@ -248,6 +256,7 @@
     "src/number": {
       "name": "engine-number",
       "dependencies": {
+        "engine-exception": "workspace:*",
         "engine-string": "workspace:*",
       },
     },
@@ -255,6 +264,7 @@
       "name": "engine-parse",
       "dependencies": {
         "engine-date": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-string": "workspace:*",
         "engine-value": "workspace:*",
@@ -265,8 +275,8 @@
       "dependencies": {
         "engine-cache": "workspace:*",
         "engine-date": "workspace:*",
-        "engine-error": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-func": "workspace:*",
         "engine-json": "workspace:*",
         "engine-rand": "workspace:*",
@@ -275,7 +285,8 @@
     "src/rand": {
       "name": "engine-rand",
       "dependencies": {
-        "engine-adapter": "workspace:*",
+        "engine-device": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-list": "workspace:*",
         "engine-number": "workspace:*",
         "engine-string": "workspace:*",
@@ -284,6 +295,7 @@
     "src/search": {
       "name": "engine-search",
       "dependencies": {
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-list": "workspace:*",
         "engine-string": "workspace:*",
@@ -293,6 +305,7 @@
       "name": "engine-seo",
       "dependencies": {
         "engine-date": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-string": "workspace:*",
       },
@@ -300,10 +313,10 @@
     "src/socket": {
       "name": "engine-socket",
       "dependencies": {
-        "engine-adapter": "workspace:*",
         "engine-date": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-device": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-func": "workspace:*",
         "engine-rand": "workspace:*",
         "engine-string": "workspace:*",
@@ -312,13 +325,19 @@
     "src/spec": {
       "name": "engine-spec",
       "dependencies": {
+        "engine-api": "workspace:*",
         "engine-auth": "workspace:*",
+        "engine-device": "workspace:*",
         "engine-error": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-list": "workspace:*",
+        "engine-log": "workspace:*",
         "engine-parse": "workspace:*",
+        "engine-seo": "workspace:*",
         "engine-string": "workspace:*",
+        "engine-translate": "workspace:*",
         "engine-validate": "workspace:*",
         "engine-world": "workspace:*",
       },
@@ -327,8 +346,8 @@
       "name": "engine-state",
       "dependencies": {
         "engine-cache": "workspace:*",
-        "engine-error": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "zustand": "catalog:",
       },
@@ -336,13 +355,14 @@
     "src/string": {
       "name": "engine-string",
       "dependencies": {
+        "engine-exception": "workspace:*",
         "unicode-segmenter": "catalog:",
       },
     },
     "src/test": {
       "name": "engine-test",
       "dependencies": {
-        "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-log": "workspace:*",
         "engine-socket": "workspace:*",
@@ -352,9 +372,11 @@
     "src/tool": {
       "name": "engine-tool",
       "dependencies": {
-        "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-fs": "workspace:*",
         "engine-json": "workspace:*",
+        "engine-net": "workspace:*",
+        "engine-spec": "workspace:*",
         "engine-translate": "workspace:*",
         "engine-world": "workspace:*",
       },
@@ -363,7 +385,7 @@
       "name": "engine-translate",
       "dependencies": {
         "engine-date": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-number": "workspace:*",
         "engine-string": "workspace:*",
@@ -375,6 +397,7 @@
       "dependencies": {
         "engine-date": "workspace:*",
         "engine-error": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-value": "workspace:*",
         "zod": "catalog:",
       },
@@ -383,6 +406,7 @@
       "name": "engine-value",
       "dependencies": {
         "engine-date": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-json": "workspace:*",
         "engine-number": "workspace:*",
         "engine-string": "workspace:*",
@@ -391,16 +415,17 @@
     "src/virtual": {
       "name": "engine-virtual",
       "dependencies": {
+        "engine-exception": "workspace:*",
         "engine-number": "workspace:*",
       },
     },
     "src/world": {
       "name": "engine-world",
       "dependencies": {
-        "engine-adapter": "workspace:*",
         "engine-cache": "workspace:*",
-        "engine-error": "workspace:*",
+        "engine-device": "workspace:*",
         "engine-event": "workspace:*",
+        "engine-exception": "workspace:*",
         "engine-list": "workspace:*",
         "engine-number": "workspace:*",
         "engine-string": "workspace:*",
@@ -497,8 +522,6 @@
 
     "engine": ["engine@workspace:src/engine"],
 
-    "engine-adapter": ["engine-adapter@workspace:src/adapter"],
-
     "engine-api": ["engine-api@workspace:src/api"],
 
     "engine-auth": ["engine-auth@workspace:src/auth"],
@@ -514,6 +537,8 @@
     "engine-error": ["engine-error@workspace:src/error"],
 
     "engine-event": ["engine-event@workspace:src/event"],
+
+    "engine-exception": ["engine-exception@workspace:src/exception"],
 
     "engine-fake": ["engine-fake@workspace:src/fake"],
 
@@ -532,6 +557,8 @@
     "engine-list": ["engine-list@workspace:src/list"],
 
     "engine-log": ["engine-log@workspace:src/log"],
+
+    "engine-media": ["engine-media@workspace:src/media"],
 
     "engine-net": ["engine-net@workspace:src/net"],
 

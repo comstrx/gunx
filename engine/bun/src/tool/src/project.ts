@@ -1,17 +1,18 @@
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
+import * as spec from "engine-spec";
 import * as translate from "engine-translate";
-import type { Act, Compiled, Context, CopyOptions, Defined, Each, Env, Flagged, Joined, Loose, Needs, Outcome, Planned, Played, Project, Role, Roles, Scope, Step, Steps, Tasks, Vars, View } from "./arch.ts";
-import { counted, writeJson, writeText } from "./core.ts";
+import type { Act, Context, CopyOptions, Defined, Each, Env, Flagged, Joined, Needs, Outcome, Planned, Played, Project, Scope, Step, Steps, Tasks, Vars, View } from "./arch.ts";
+import { counted, worded, writeJson, writeText } from "./core.ts";
 
 const projects = new WeakSet<object>();
 const nodes = new WeakSet<object>();
 const named = /^[a-z][\w:-]{0,63}$/i;
 const variable = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const parts: readonly string[] = ["specs", "tasks"];
+const parts: readonly string[] = ["specs", "part", "tasks", "deploy"];
 const config = "tool.config.ts";
 
 function isStep ( value: unknown ): value is Step {
@@ -38,11 +39,13 @@ function isSteps ( value: unknown ): value is Steps {
 }
 function told ( caught: unknown ): string {
 
-    if ( error.is(caught) ) return caught.message || caught.reason || caught.code;
+    const held = exception.isError(caught) ? [(caught as { errors?: unknown }).errors, caught.cause].find(Array.isArray) as unknown[] | undefined : undefined;
 
-    if ( caught instanceof AggregateError && caught.errors.length ) return [caught.message, ...caught.errors.map(( one ) => String(( one as { message?: unknown } )?.message ?? one))].join("\n    ");
+    if ( exception.isError(caught) && held?.length ) return [caught.message, ...held.map(( one ) => String(( one as { message?: unknown } )?.message ?? one))].join("\n    ");
 
-    return caught instanceof Error ? caught.message : String(caught);
+    if ( exception.is(caught) ) return caught.message || caught.reason || caught.code;
+
+    return exception.isError(caught) ? caught.message : String(caught);
 
 }
 function defined ( env: Vars ): Record<string, string> {
@@ -66,7 +69,7 @@ function copied ( from: string, to: string, options: CopyOptions ): number {
 
     const held = statSync(from, { throwIfNoEntry: false });
 
-    if ( held === undefined ) throw error.fault("not_found", "tool.copy", { message: `${from}: nothing to copy` });
+    if ( held === undefined ) throw exception.fault("not_found", "tool.copy", { message: `${from}: nothing to copy` });
 
     if ( held.isFile() ) return copiedFile(from, to) ? 1 : 0;
 
@@ -76,15 +79,18 @@ function copied ( from: string, to: string, options: CopyOptions ): number {
     return sources.filter(( source ) => copiedFile(source, join(to, relative(from, source)))).length;
 
 }
-function looseOf ( specs: unknown ): Loose | undefined {
+function staged ( project: Project<never>, env: Vars ): spec.Deploy {
 
-    if ( specs === undefined ) return undefined;
+    return { url: env.API_URL, release: env.ENGINE_ENV === "production", config: project.deploy?.(env) };
 
-    const given = specs as Partial<Loose>;
+}
+function buildOf ( project: Project<never>, context: Context ): spec.Build | undefined {
 
-    if ( !json.isRecord(given.roles) || typeof given.current !== "string" || !Object.hasOwn(given.roles, given.current) || typeof given.compile !== "function" || typeof given.serialize !== "function" ) throw error.fault("internal", "tool.project", { message: "specs name their roles, the current one, compile and serialize, such as spec.roles({ roles, current, compile })" });
+    if ( project.specs === undefined || project.part === undefined ) return undefined;
 
-    return given as Loose;
+    context.held.build ??= spec.build(project.specs, project.part, staged(project, context.env));
+
+    return context.held.build;
 
 }
 function shown ( text: string, role: string | undefined ): string {
@@ -94,37 +100,63 @@ function shown ( text: string, role: string | undefined ): string {
 }
 function expanded ( text: string, role: string | undefined ): string {
 
-    if ( role === undefined && text.includes("{role}") ) throw error.fault("internal", "tool.path", { message: `${text}: {role} names a role, so the project needs specs` });
+    if ( role === undefined && text.includes("{role}") ) throw exception.fault("internal", "tool.path", { message: `${text}: {role} names a role, so the project needs specs` });
 
     return shown(text, role);
 
 }
-function chosen ( specs: Loose | undefined, argv: readonly string[], fixed: readonly string[] | undefined ): string[] {
+function located ( specs: spec.Spec, written: string, reason: string ): string {
 
-    if ( specs === undefined ) throw error.fault("internal", "tool.each", { message: "each plays steps per role, so the project needs specs: define({ specs, tasks })" });
+    const found = spec.locate(specs, written);
 
-    const names = Object.keys(specs.roles);
-    const asked = fixed ?? (argv.includes("--all") ? names : argv.filter(( word ) => !word.startsWith("-")));
+    if ( found.issue ) throw exception.fault("not_found", reason, { message: `${worded({ ...found.issue, fix: undefined })}; roles: ${specs.names.join(", ")}` });
 
-    for ( const word of asked ) if ( !names.includes(word) ) throw error.fault("not_found", "tool.each", { message: `no role named ${word}; roles: ${names.join(", ")}` });
-
-    return asked.length ? [...new Set(asked)] : [specs.current];
+    return found.name;
 
 }
-function viewOf ( specs: Loose, name: string, views: Map<string, View> ): View {
+function chosen ( specs: spec.Spec | undefined, argv: readonly string[], fixed: readonly string[] | undefined ): string[] {
+
+    if ( specs === undefined ) throw exception.fault("internal", "tool.each", { message: "each plays steps per role, so the project needs specs: define({ specs, part, tasks })" });
+
+    const asked = fixed ?? (argv.includes("--all") ? specs.names : argv.filter(( word ) => !word.startsWith("-")));
+    const names = asked.map(( word ) => located(specs, word, "tool.each"));
+
+    return names.length ? [...new Set(names)] : [specs.current];
+
+}
+function entered ( specs: spec.Spec | undefined, given: readonly string[] ): { argv: string[]; role: string | undefined } {
+
+    const argv = [...given];
+    const at = argv.indexOf("--role");
+
+    if ( at === -1 ) return { argv, role: undefined };
+
+    const [, written] = argv.splice(at, 2);
+
+    if ( specs === undefined || written === undefined ) throw exception.fault("internal", "tool.role", { message: "--role names the surface a build enters, such as --role client, so the project needs specs" });
+
+    return { argv, role: located(specs, written, "tool.role") };
+
+}
+function viewOf ( build: spec.Build, name: string, views: Map<string, View> ): View {
 
     const known = views.get(name);
 
     if ( known !== undefined ) return known;
 
-    const compiled = specs.compile(name);
-    const problems = compiled.issues.length;
+    const built = build.surface(name);
+    const problems = built.compiled.issues.length;
 
-    if ( problems ) throw error.fault("validation", "tool.specs", { message: `${name}: ${counted(problems, "problem")} in the spec; the specs step shows them` });
+    if ( problems ) throw exception.fault("validation", "tool.specs", { message: `${name}: ${counted(problems, "problem")} in the spec; the specs step shows them` });
 
-    const { config } = specs.roles[name] as Role;
-    const locale = compiled.surface.locale;
-    const view = { ...compiled, name, settings: config.settings, themes: config.themes, locale, dir: translate.direction(locale) } as View;
+    const locale = built.compiled.surface.locale;
+    const reached = build.reach(name).map(( one ) => build.surface(one));
+    const lost = reached.find(( one ) => one.compiled.issues.length > 0);
+
+    if ( lost ) throw exception.fault("validation", "tool.specs", { message: `${lost.name}: ${counted(lost.compiled.issues.length, "problem")} in a spec ${name} transfers to; the specs step shows them` });
+
+    const reach = { names: reached.map(( one ) => one.name), addresses: [...new Set(reached.flatMap(( one ) => (one.address === undefined ? [] : [one.address])))], world: [...new Set(reached.flatMap(( one ) => one.config.settings.world))], surfaces: reached.map(( one ) => ({ name: one.name, id: one.id, settings: one.config.settings, themes: one.config.themes, media: one.config.contracts.media.flatMap(( address ) => (URL.canParse(address) ? [new URL(address).origin] : [])) })) };
+    const view: View = { ...built.compiled, name, id: built.id, address: built.address, config: built.config, settings: built.config.settings, themes: built.config.themes, locale, dir: translate.direction(locale), index: reached.map(( one ) => build.listed(one.name)), reach };
 
     views.set(name, view);
 
@@ -132,26 +164,32 @@ function viewOf ( specs: Loose, name: string, views: Map<string, View> ): View {
 
 }
 
-export function define<R extends Roles, C extends Compiled> ( project: Defined<R, C> ): Project<View<R, C>>;
+export function define<D extends object> ( project: Defined<D> ): Project<View<D>>;
 export function define ( project: { tasks: Tasks<undefined> } ): Project<undefined>;
-export function define ( project: { specs?: unknown; tasks: unknown } ): Project<never> {
+export function define ( project: { specs?: unknown; part?: unknown; tasks: unknown; deploy?: unknown } ): Project<never> {
 
-    if ( !json.isRecord(project) ) throw error.fault("internal", "tool.project", { message: "a project is { tasks } or { specs, tasks }" });
+    if ( !json.isRecord(project) ) throw exception.fault("internal", "tool.project", { message: "a project is { tasks } or { specs, part, tasks }" });
 
-    for ( const key of Object.keys(project) ) if ( !parts.includes(key) ) throw error.fault("internal", "tool.project", { message: `${key}: a project holds ${parts.join(" and ")}` });
+    for ( const key of Object.keys(project) ) if ( !parts.includes(key) ) throw exception.fault("internal", "tool.project", { message: `${key}: a project holds ${parts.join(" and ")}` });
 
     const { tasks } = project;
 
-    if ( !json.isRecord(tasks) ) throw error.fault("internal", "tool.project", { message: "tasks are an object of named steps, such as { build: [...] }" });
+    if ( !json.isRecord(tasks) ) throw exception.fault("internal", "tool.project", { message: "tasks are an object of named steps, such as { build: [...] }" });
 
     for ( const [name, steps] of Object.entries(tasks) ) {
 
-        if ( !named.test(name) ) throw error.fault("internal", "tool.project", { message: `${name}: a task name is a word, such as build or check:all` });
-        if ( !isSteps(steps) ) throw error.fault("internal", "tool.project", { message: `${name}: a task is a step, a function, each, env, another task's name or a list of them` });
+        if ( !named.test(name) ) throw exception.fault("internal", "tool.project", { message: `${name}: a task name is a word, such as build or check:all` });
+        if ( !isSteps(steps) ) throw exception.fault("internal", "tool.project", { message: `${name}: a task is a step, a function, each, env, another task's name or a list of them` });
 
     }
 
-    const made: Project<never> = Object.freeze({ tasks: Object.freeze({ ...tasks }) as Tasks<never>, specs: looseOf(project.specs) });
+    const { specs, part, deploy } = project;
+
+    if ( deploy !== undefined && (typeof deploy !== "function" || specs === undefined) ) throw exception.fault("internal", "tool.project", { message: "deploy is a function of the environment that answers config for the specs, such as ( env ) => ({ contracts: { maps: { key: env.MAPS_KEY ?? \"\" } } })" });
+
+    if ( (specs !== undefined || part !== undefined) && (!spec.isSpec(specs) || !spec.isPart(part)) ) throw exception.fault("internal", "tool.project", { message: "specs and part come together: specs is spec.define({ ...surfaces }) and part is spec.part({ platform, ... })" });
+
+    const made: Project<never> = Object.freeze({ tasks: Object.freeze({ ...tasks }) as Tasks<never>, specs: specs as spec.Spec | undefined, part: part as spec.Part | undefined, deploy: deploy as Project<never>["deploy"] });
 
     projects.add(made);
 
@@ -165,15 +203,15 @@ export function isProject ( value: unknown ): value is Project<never> {
 }
 export function step<V = unknown> ( name: string, act: Act<V> ): Step<V> {
 
-    if ( typeof name !== "string" || name.trim() === "" || typeof act !== "function" ) throw error.fault("internal", "tool.step", { message: "a step has a name and an act" });
+    if ( typeof name !== "string" || name.trim() === "" || typeof act !== "function" ) throw exception.fault("internal", "tool.step", { message: "a step has a name and an act" });
 
     return Object.freeze({ name, act });
 
 }
 export function each<S extends Steps<never>> ( steps: S, roles?: readonly string[] ): Each<Joined<Needs<S>>> {
 
-    if ( !isSteps(steps) ) throw error.fault("internal", "tool.each", { message: "each plays steps for every chosen role" });
-    if ( roles !== undefined && (!Array.isArray(roles) || roles.length === 0 || !roles.every(( role ) => typeof role === "string" && role !== "")) ) throw error.fault("internal", "tool.each", { message: "each names the roles it plays, or plays the ones the arguments choose" });
+    if ( !isSteps(steps) ) throw exception.fault("internal", "tool.each", { message: "each plays steps for every chosen role" });
+    if ( roles !== undefined && (!Array.isArray(roles) || roles.length === 0 || !roles.every(( role ) => typeof role === "string" && role !== "")) ) throw exception.fault("internal", "tool.each", { message: "each names the roles it plays, or plays the ones the arguments choose" });
 
     const made = Object.freeze({ each: steps, roles: roles === undefined ? undefined : Object.freeze([...roles]) }) as Each<Joined<Needs<S>>>;
 
@@ -184,8 +222,8 @@ export function each<S extends Steps<never>> ( steps: S, roles?: readonly string
 }
 export function env<S extends Steps<never>> ( vars: Vars, steps: S ): Env<Joined<Needs<S>>> {
 
-    if ( !json.isRecord(vars) || Object.keys(vars).length === 0 || !Object.entries(vars).every(([name, value]) => variable.test(name) && (value === undefined || typeof value === "string")) ) throw error.fault("internal", "tool.env", { message: "env sets named variables to text, such as { ENGINE_ENV: \"production\" }" });
-    if ( !isSteps(steps) ) throw error.fault("internal", "tool.env", { message: "env plays steps under its variables" });
+    if ( !json.isRecord(vars) || Object.keys(vars).length === 0 || !Object.entries(vars).every(([name, value]) => variable.test(name) && (value === undefined || typeof value === "string")) ) throw exception.fault("internal", "tool.env", { message: "env sets named variables to text, such as { ENGINE_ENV: \"production\" }" });
+    if ( !isSteps(steps) ) throw exception.fault("internal", "tool.env", { message: "env plays steps under its variables" });
 
     const made = Object.freeze({ env: Object.freeze({ ...vars }), steps }) as Env<Joined<Needs<S>>>;
 
@@ -197,7 +235,7 @@ export function env<S extends Steps<never>> ( vars: Vars, steps: S ): Env<Joined
 export async function play ( project: Project<never>, names: readonly string[], given: Played ): Promise<Outcome> {
 
     const root = resolve(given.root);
-    const argv = [...(given.argv ?? [])];
+    const { argv, role: asked } = entered(project.specs, given.argv ?? []);
     const out = given.out ?? (( line: string ) => { process.stdout.write(`${line}\n`); });
     const bin = join(root, "node_modules", ".bin");
     const { specs } = project;
@@ -220,7 +258,7 @@ export async function play ( project: Project<never>, names: readonly string[], 
             const target = at(path);
             const within = relative(root, target);
 
-            if ( within === "" || within === ".." || within.startsWith(`..${sep}`) || isAbsolute(within) ) throw error.fault("forbidden", "tool.path", { message: `${path}: a step writes inside the project, never the project itself or beyond it` });
+            if ( within === "" || within === ".." || within.startsWith(`..${sep}`) || isAbsolute(within) ) throw exception.fault("forbidden", "tool.path", { message: `${path}: a step writes inside the project, never the project itself or beyond it` });
 
             return target;
 
@@ -230,10 +268,16 @@ export async function play ( project: Project<never>, names: readonly string[], 
             root,
             argv,
             env: context.env,
-            specs,
+            get build (): spec.Build | undefined {
+
+                return buildOf(project, context);
+
+            },
             get role (): never {
 
-                return (specs === undefined || context.role === undefined ? undefined : viewOf(specs, context.role, context.views)) as never;
+                const build = buildOf(project, context);
+
+                return (build === undefined || context.role === undefined ? undefined : viewOf(build, context.role, context.held.views)) as never;
 
             },
             at,
@@ -282,8 +326,8 @@ export async function play ( project: Project<never>, names: readonly string[], 
 
             const found = project.tasks[value];
 
-            if ( found === undefined ) throw error.fault("not_found", "tool.task", { message: `${task}: no task named ${value}` });
-            if ( trail.includes(value) ) throw error.fault("conflict", "tool.task", { message: `a task cycle: ${[...trail, value].join(" → ")}` });
+            if ( found === undefined ) throw exception.fault("not_found", "tool.task", { message: `${task}: no task named ${value}` });
+            if ( trail.includes(value) ) throw exception.fault("conflict", "tool.task", { message: `a task cycle: ${[...trail, value].join(" → ")}` });
 
             return perform(found, value, [...trail, value], context);
 
@@ -323,7 +367,7 @@ export async function play ( project: Project<never>, names: readonly string[], 
 
             try {
 
-                return await perform(value.steps, task, trail, { role: context.role, env: { ...context.env, ...value.env }, views: new Map() });
+                return await perform(value.steps, task, trail, { role: context.role, env: { ...context.env, ...value.env }, held: { build: undefined, views: new Map() } });
 
             } finally {
 
@@ -338,31 +382,32 @@ export async function play ( project: Project<never>, names: readonly string[], 
         const said: string[] = [];
         const before = flagged.length;
 
-        try {
+        const moved = await exception.rescueAsync(async () => {
 
             const more = await current.act(scopeOf(task, name, said, context));
 
-            if ( more !== undefined && more !== null ) {
+            if ( more === undefined || more === null ) return undefined;
+            if ( !isSteps(more) ) throw exception.fault("internal", "tool.step", { message: `${name}: a step returns nothing or more steps` });
 
-                if ( !isSteps(more) ) throw error.fault("internal", "tool.step", { message: `${name}: a step returns nothing or more steps` });
+            for ( const line of said ) out(`  ${line}`);
 
-                for ( const line of said ) out(`  ${line}`);
+            return { more };
 
-                return perform(more as Steps<never>, task, trail, context);
-
-            }
-
-        } catch ( caught ) {
+        }, ( caught ) => {
 
             steps += 1;
             out(`✗ ${task} › ${name}`);
             for ( const line of said ) out(`  ${line}`);
+            for ( const one of flagged.slice(before) ) out(`  ${one.where}  ${one.message} (${one.rule})`);
             out(`  ${told(caught)}`);
             flagged.push({ task, step: name, where: name, message: told(caught), rule: "failed" });
 
-            return false;
+            return false as const;
 
-        }
+        });
+
+        if ( moved === false ) return false;
+        if ( moved ) return perform(moved.more as Steps<never>, task, trail, context);
 
         steps += 1;
         out(`${flagged.length > before ? "✗" : "✓"} ${task} › ${name}`);
@@ -372,11 +417,11 @@ export async function play ( project: Project<never>, names: readonly string[], 
         return true;
 
     };
-    const start: Context = { role: specs?.current, env: { ...process.env, ...(given.env ?? {}) }, views: new Map() };
+    const start: Context = { role: asked ?? specs?.current, env: { ...process.env, ...(given.env ?? {}) }, held: { build: undefined, views: new Map() } };
 
     for ( const name of names ) {
 
-        if ( project.tasks[name] === undefined ) throw error.fault("not_found", "tool.task", { message: `no task named ${name}; tasks: ${Object.keys(project.tasks).join(", ")}` });
+        if ( project.tasks[name] === undefined ) throw exception.fault("not_found", "tool.task", { message: `no task named ${name}; tasks: ${Object.keys(project.tasks).join(", ")}` });
         if ( !(await perform(name, name, [], start)) ) break;
 
     }
@@ -384,9 +429,10 @@ export async function play ( project: Project<never>, names: readonly string[], 
     return { tasks: [...names], steps, written, flagged, failed: flagged.length > 0 };
 
 }
-export function plan ( project: Project<never>, names: readonly string[], argv: readonly string[] = [] ): Planned {
+export function plan ( project: Project<never>, names: readonly string[], given: readonly string[] = [] ): Planned {
 
     const { specs } = project;
+    const { argv, role: asked } = entered(specs, given);
     const lines: string[] = [];
     let steps = 0;
 
@@ -398,8 +444,8 @@ export function plan ( project: Project<never>, names: readonly string[], argv: 
 
             const found = project.tasks[value];
 
-            if ( found === undefined ) throw error.fault("not_found", "tool.task", { message: `${trail.at(-1) ?? value}: no task named ${value}` });
-            if ( trail.includes(value) ) throw error.fault("conflict", "tool.task", { message: `a task cycle: ${[...trail, value].join(" → ")}` });
+            if ( found === undefined ) throw exception.fault("not_found", "tool.task", { message: `${trail.at(-1) ?? value}: no task named ${value}` });
+            if ( trail.includes(value) ) throw exception.fault("conflict", "tool.task", { message: `a task cycle: ${[...trail, value].join(" → ")}` });
 
             lines.push(`${pad}${value}`);
             draw(found, [...trail, value], role, depth + 1);
@@ -445,10 +491,10 @@ export function plan ( project: Project<never>, names: readonly string[], argv: 
 
     for ( const name of names ) {
 
-        if ( project.tasks[name] === undefined ) throw error.fault("not_found", "tool.task", { message: `no task named ${name}; tasks: ${Object.keys(project.tasks).join(", ")}` });
+        if ( project.tasks[name] === undefined ) throw exception.fault("not_found", "tool.task", { message: `no task named ${name}; tasks: ${Object.keys(project.tasks).join(", ")}` });
 
         lines.push(name);
-        draw(project.tasks[name] as Steps<never>, [name], specs?.current, 1);
+        draw(project.tasks[name] as Steps<never>, [name], asked ?? specs?.current, 1);
 
     }
 
@@ -463,19 +509,17 @@ export async function main ( argv: readonly string[], cwd: string = process.cwd(
     const pointed = asked.indexOf("--config");
     const file = pointed === -1 ? config : asked.splice(pointed, 2)[1] ?? config;
     const path = resolve(cwd, file);
-    let project: unknown;
-
-    try {
-
-        project = (await import(pathToFileURL(path).href) as { default?: unknown }).default;
-
-    } catch ( caught ) {
+    const loaded = await exception.rescueAsync(async () => ({ project: (await import(pathToFileURL(path).href) as { default?: unknown }).default }), ( caught ) => {
 
         out(`tool: ${relative(cwd, path) || file} did not load: ${told(caught)}`);
 
-        return 1;
+        return undefined;
 
-    }
+    });
+
+    if ( loaded === undefined ) return 1;
+
+    const { project } = loaded;
 
     if ( !isProject(project) ) {
 
@@ -500,7 +544,7 @@ export async function main ( argv: readonly string[], cwd: string = process.cwd(
 
     }
 
-    try {
+    return await exception.rescueAsync(async () => {
 
         if ( planning ) {
 
@@ -519,12 +563,12 @@ export async function main ( argv: readonly string[], cwd: string = process.cwd(
 
         return outcome.failed ? 1 : 0;
 
-    } catch ( caught ) {
+    }, ( caught ) => {
 
         out(`tool: ${told(caught)}`);
 
         return 1;
 
-    }
+    });
 
 }

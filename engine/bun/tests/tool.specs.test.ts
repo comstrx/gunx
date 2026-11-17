@@ -4,26 +4,26 @@ import * as spec from "engine/spec";
 import * as stage from "engine/test";
 import * as tool from "engine/tool";
 
-const roles = {
-    admin: { config: { settings: { locale: "ar", world: ["countries"], scheme: "dark", app: { name: "Shop Admin", identifier: "test.shop.admin" }, budget: { js: "1 kB" } }, themes: { brand: "#ff4500" } } },
-    courier: { config: { settings: { locale: "en", world: [], scheme: "light", budget: { js: 10 } }, themes: { brand: "#0055ff" } } },
-} as const;
+const defaults = { settings: { budget: { js: 0 as number | string }, app: { name: "", identifier: "" } }, themes: { brand: "#000000" } };
+const part = spec.part({ platform: "web", defaults });
+const quiet = { API_URL: undefined, ENGINE_ENV: undefined };
 
-type Name = keyof typeof roles;
+function home ( locale: string, path = "/" ): spec.Screen {
 
-const broken = new Set<Name>();
+    return spec.screen("home", { path, title: { [locale]: "Home" }, blocks: [] });
 
-function compileRole ( name: Name ): spec.Compiled {
+}
+function surfaced ( name: string, settings: object, brand: string, path?: string ): spec.Surface {
 
-    const { locale, world } = roles[name].config.settings;
-    const address = process.env.TOOL_TEST_API ?? `https://${name}.example.test`;
-    const path = broken.has(name) ? "jobs" : "/";
+    const locale = (settings as { locale: string }).locale;
 
-    return spec.compile(spec.surface({ name: `web-${name}`, role: name, platform: "web", world: [...world], locales: [locale], locale, address, screens: [spec.screen({ name: "home", path, role: name, title: { [locale]: "Home" }, blocks: [] })] }));
+    return spec.surface({ config: { settings: { ...settings, locales: [locale] }, themes: { brand }, contracts: { baseUrl: `https://${name}.example.test` } }, schema: [home(locale, path)] });
 
 }
 
-const specs = spec.roles({ roles, current: "admin", compile: compileRole });
+const admin = surfaced("admin", { locale: "ar", world: ["countries"], scheme: "dark", app: { name: "Shop Admin", identifier: "test.shop.admin" }, budget: { js: "1 kB" } }, "#ff4500");
+const specs = spec.define({ admin, courier: surfaced("courier", { locale: "en", scheme: "light", budget: { js: 10 } }, "#0055ff") });
+const broken = spec.define({ admin, courier: surfaced("courier", { locale: "en" }, "#0055ff", "jobs") });
 
 function themed ( role: { name: string; themes: { brand: string } } ): string {
 
@@ -33,33 +33,40 @@ function themed ( role: { name: string; themes: { brand: string } } ): string {
 
 describe("tool specs", () => {
 
-    it("specs writes every role and the current one with the settings it carries, and stops on a role's problems", async () => {
+    it("specs writes every surface's artifact and the current one, settled config included, and stops on a surface's problems", async () => {
 
         const temp = stage.tmp();
         const lines: string[] = [];
 
         try {
 
-            const project = tool.define({ specs, tasks: { compile: [tool.specs(".cache/spec", { settings: ["app"] }), tool.emit("after.txt", "ran")] } });
-            const played = await tool.play(project, ["compile"], { root: temp.path, out: ( line ) => lines.push(line) });
-            const admin = JSON.parse(readFileSync(temp.file(".cache/spec/admin.json"), "utf8"));
-            const courier = JSON.parse(readFileSync(temp.file(".cache/spec/courier.json"), "utf8"));
+            const tasks = { compile: [tool.specs(".cache/spec"), tool.emit("after.txt", "ran")] };
+            const played = await tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, env: quiet, out: ( line ) => lines.push(line) });
+            const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
+            const light = JSON.parse(read(".cache/spec/current.json"));
+            const carried = JSON.parse(read(".cache/spec/surface/admin.json"));
+            const courier = JSON.parse(read(".cache/spec/surface/courier.json"));
 
-            expect([played.failed, admin.app, courier.app, admin.surface.address, spec.revive(courier).surface.role]).toEqual([false, roles.admin.config.settings.app, undefined, "https://admin.example.test", "courier"]);
-            expect(readFileSync(temp.file(".cache/spec/current.json"), "utf8")).toBe(readFileSync(temp.file(".cache/spec/admin.json"), "utf8"));
+            expect([played.failed, light.version, light.entry, light.surfaces.admin.id, light.index.map(( one: { name: string } ) => one.name), carried.config.settings.app, courier.config.settings.app, carried.address]).toEqual([false, spec.version, "admin", "admin", ["admin"], { name: "Shop Admin", identifier: "test.shop.admin" }, defaults.settings.app, "https://admin.example.test"]);
+            expect(spec.boot<typeof defaults>({ ...light, entry: "courier", index: [], surfaces: { courier } }, { sinks: [] }).app.compiled.surface.role).toBe("courier");
+            expect(read(".cache/spec/current.ts")).toBe(`import entry from "./surface/admin.json" with { type: "json" };\n\nexport const artifact = ${JSON.stringify({ ...light, surfaces: "@" }).replace('"@"', '{ "admin": entry }')};\n\nexport const load = {};\n`);
             expect(lines).toContain("  courier: 1 screen, 0 features, 0 topics");
 
-            broken.add("courier");
+            const entered = await tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, argv: ["--role", "courier"], env: quiet, out: () => undefined });
 
-            const failed = await tool.play(project, ["compile"], { root: temp.path, out: () => undefined });
+            expect([entered.failed, JSON.parse(read(".cache/spec/current.json")).entry, tool.plan(tool.define({ specs, part, tasks: { build: tool.emit("{role}.txt", "x") } }), ["build"], ["--role", "courier"]).lines]).toEqual([false, "courier", ["build", "  emit courier.txt"]]);
+            await expect(tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, argv: ["--role", "ghost"], env: quiet, out: () => undefined })).rejects.toMatchObject({ reason: "tool.role" });
+            await expect(tool.play(tool.define({ tasks: { compile: [] } }), ["compile"], { root: temp.path, argv: ["--role", "admin"], out: () => undefined })).rejects.toMatchObject({ reason: "tool.role" });
+
+            const failed = await tool.play(tool.define({ specs: broken, part, tasks }), ["compile"], { root: temp.path, env: quiet, out: () => undefined });
             const bare = await tool.play(tool.define({ tasks: { compile: tool.specs(".cache/spec") } }), ["compile"], { root: temp.path, out: () => undefined });
 
             expect([failed.failed, failed.flagged.map(( one ) => one.rule), failed.flagged.at(-1)?.message, failed.steps]).toEqual([true, ["shape", "failed"], "1 problem in the specs; nothing after them runs", 1]);
-            expect(bare.flagged[0]?.message).toBe("specs writes the project's roles, so the project needs specs: define({ specs, tasks })");
+            expect(bare.flagged[0]?.message).toBe("specs writes the project's surfaces, so the project needs specs: define({ specs, part, tasks })");
+            expect([() => tool.define({ specs, tasks: {} } as never), () => tool.define({ specs: {}, part, tasks: {} } as never)].map(( run ) => { try { run(); return ""; } catch ( caught ) { return (caught as { reason?: string }).reason; } })).toEqual(["tool.project", "tool.project"]);
 
         } finally {
 
-            broken.clear();
             temp.remove();
 
         }
@@ -72,36 +79,32 @@ describe("tool specs", () => {
 
         try {
 
-            const project = tool.define({
-                specs,
-                tasks: {
+            const tasks = {
                     build: tool.each([
                         tool.emit("dist/{role}/theme.txt", themed),
-                        tool.emit("dist/{role}/view.json", ( role: { name: string; locale: string; dir: string; surface: { address?: string | undefined } } ) => ({ name: role.name, locale: role.locale, dir: role.dir, address: role.surface.address })),
+                        tool.emit("dist/{role}/view.json", ( role: { name: string; id: string; locale: string; dir: string; address: string | undefined; index: { name: string; settings: object }[]; surface: { address?: string | undefined } } ) => ({ name: role.name, id: role.id, locale: role.locale, dir: role.dir, address: role.address === role.surface.address ? role.address : "", index: role.index.map(( one ) => [one.name, Object.keys(one.settings)]) })),
                         tool.run("echo {role} > dist/{role}/shell.txt"),
                         tool.step("seen {role}", ( scope: tool.Scope<{ name: string }> ) => { seen.push(scope.role.name); }),
                     ]),
                     pinned: tool.each(tool.step("pinned {role}", ( scope: tool.Scope<{ name: string }> ) => { seen.push(`pinned ${scope.role.name}`); }), ["courier"]),
                     current: tool.emit("current.txt", themed),
-                },
-            });
+            };
+            const project = tool.define({ specs, part, tasks });
             const lines: string[] = [];
-            const play = ( argv: string[], task = "build" ): Promise<tool.Outcome> => tool.play(project, [task], { root: temp.path, argv, out: ( line ) => lines.push(line) });
+            const play = ( argv: string[], task = "build", given = project ): Promise<tool.Outcome> => tool.play(given, [task], { root: temp.path, argv, env: quiet, out: ( line ) => lines.push(line) });
 
             expect((await play([])).failed).toBe(false);
-            expect([readFileSync(temp.file("dist/admin/theme.txt"), "utf8"), JSON.parse(readFileSync(temp.file("dist/admin/view.json"), "utf8")), readFileSync(temp.file("dist/admin/shell.txt"), "utf8")]).toEqual(["admin #ff4500\n", { name: "admin", locale: "ar", dir: "rtl", address: "https://admin.example.test" }, "admin\n"]);
+            expect([readFileSync(temp.file("dist/admin/theme.txt"), "utf8"), JSON.parse(readFileSync(temp.file("dist/admin/view.json"), "utf8")), readFileSync(temp.file("dist/admin/shell.txt"), "utf8")]).toEqual(["admin #ff4500\n", { name: "admin", id: "admin", locale: "ar", dir: "rtl", address: "https://admin.example.test", index: [["admin", ["locales", "locale", "scheme", "world"]]] }, "admin\n"]);
             expect(lines).toContain("✓ build › emit dist/admin/theme.txt");
             expect(lines).toContain("✓ build › seen admin");
             expect((await play(["courier", "--verbose"])).failed).toBe(false);
             expect((await play(["--all"])).failed).toBe(false);
             expect((await play(["admin"], "pinned")).failed).toBe(false);
             expect((await play([], "current")).failed).toBe(false);
-            expect([seen, readFileSync(temp.file("current.txt"), "utf8"), JSON.parse(readFileSync(temp.file("dist/courier/view.json"), "utf8")).dir]).toEqual([["admin", "courier", "admin", "courier", "pinned courier"], "admin #ff4500\n", "ltr"]);
-            await expect(play(["ghost"])).rejects.toMatchObject({ reason: "tool.each", message: "no role named ghost; roles: admin, courier" });
+            expect([seen, readFileSync(temp.file("current.txt"), "utf8"), JSON.parse(readFileSync(temp.file("dist/courier/view.json"), "utf8")).dir, JSON.parse(readFileSync(temp.file("dist/courier/view.json"), "utf8")).index]).toEqual([["admin", "courier", "admin", "courier", "pinned courier"], "admin #ff4500\n", "ltr", [["courier", ["locales", "locale", "scheme", "world"]]]]);
+            await expect(play(["ghost"])).rejects.toMatchObject({ reason: "tool.each", message: "ghost: no surface carries this name; roles: admin, courier" });
 
-            broken.add("courier");
-
-            const refused = await play(["courier"]);
+            const refused = await play(["courier"], "build", tool.define({ specs: broken, part, tasks }));
 
             expect([refused.failed, refused.flagged[0]?.message, seen.length]).toEqual([true, "courier: 1 problem in the spec; the specs step shows them", 5]);
 
@@ -112,7 +115,6 @@ describe("tool specs", () => {
 
         } finally {
 
-            broken.clear();
             temp.remove();
 
         }
@@ -124,10 +126,11 @@ describe("tool specs", () => {
 
         try {
 
-            const project = tool.define({ specs, tasks: { release: tool.env({ TOOL_TEST_API: "https://release.example.test" }, [tool.specs("spec"), tool.each(tool.emit("{role}.txt", ( role: { surface: { address?: string | undefined } } ) => role.surface.address ?? ""))]) } });
+            const project = tool.define({ specs, part, tasks: { release: tool.env({ API_URL: "https://release.example.test", ENGINE_ENV: "production" }, [tool.specs("spec"), tool.each(tool.emit("{role}.txt", ( role: { address: string | undefined } ) => role.address ?? ""))]), plain: tool.emit("plain.txt", ( role: { address: string | undefined } ) => role.address ?? "") } });
+            const held = process.env.API_URL;
 
-            expect((await tool.play(project, ["release"], { root: temp.path, out: () => undefined })).failed).toBe(false);
-            expect([JSON.parse(readFileSync(temp.file("spec/courier.json"), "utf8")).surface.address, readFileSync(temp.file("admin.txt"), "utf8"), process.env.TOOL_TEST_API]).toEqual(["https://release.example.test", "https://release.example.test", undefined]);
+            expect((await tool.play(project, ["release", "plain"], { root: temp.path, env: quiet, out: () => undefined })).failed).toBe(false);
+            expect([JSON.parse(readFileSync(temp.file("spec/surface/courier.json"), "utf8")).address, readFileSync(temp.file("admin.txt"), "utf8"), readFileSync(temp.file("plain.txt"), "utf8"), process.env.API_URL]).toEqual(["https://release.example.test", "https://release.example.test", "https://admin.example.test", held]);
 
         } finally {
 
@@ -149,6 +152,7 @@ describe("tool specs", () => {
 
             const project = tool.define({
                 specs,
+                part,
                 tasks: {
                     build: tool.each([
                         tool.bundle("src/app.ts", "dist/{role}"),
@@ -159,10 +163,10 @@ describe("tool specs", () => {
                 },
             });
             const lines: string[] = [];
-            const played = await tool.play(project, ["build"], { root: temp.path, argv: ["--all"], out: ( line ) => lines.push(line) });
+            const played = await tool.play(project, ["build"], { root: temp.path, argv: ["--all"], env: quiet, out: ( line ) => lines.push(line) });
             const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
 
-            expect(read("dist/admin/index.html")).toBe("<html lang=\"ar\" dir=\"rtl\"><meta content=\"default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; style-src &#x27;self&#x27;; font-src &#x27;self&#x27;; img-src &#x27;self&#x27; data:; connect-src &#x27;self&#x27; https://admin.example.test wss://admin.example.test; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;\"><body data-scheme=\"dark\" data-locales=\"ar\" data-title=\"Shop\"></body></html>\n");
+            expect(read("dist/admin/index.html")).toBe("<html lang=\"ar\" dir=\"rtl\"><meta content=\"default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; style-src &#x27;self&#x27;; font-src &#x27;self&#x27;; img-src &#x27;self&#x27; data: https://admin.example.test; media-src &#x27;self&#x27; blob: https://admin.example.test; connect-src &#x27;self&#x27; https://admin.example.test wss://admin.example.test; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;\"><body data-scheme=\"dark\" data-locales=\"ar\" data-title=\"Shop\"></body></html>\n");
             expect([read("dist/admin/app.js").includes("Egypt"), read("dist/admin/app.js").includes("grin"), read("dist/courier/app.js").includes("Egypt"), read("dist/courier/all/app.js").includes("grin")]).toEqual([true, false, false, true]);
             expect([played.failed, played.flagged.map(( one ) => `${one.rule} ${one.where}`)]).toEqual([true, ["budget.total js"]]);
             expect(lines.some(( line ) => /^ {2}js: 1 file, \d+ B of 1 kB, app: /.test(line))).toBe(false);
@@ -177,10 +181,68 @@ describe("tool specs", () => {
         }
 
     });
+    it("a project says what its environment deploys: the config lands on every surface, and the media origins a surface names join the page's policy", async () => {
+
+        const temp = stage.tmp();
+
+        try {
+
+            temp.write("src/index.html", "<meta content=\"{{csp}}\">\n");
+
+            const mapped = spec.surface({ config: { settings: { locales: ["en"] }, contracts: { baseUrl: "https://desk.example.test", media: ["https://maps.example.test/staticmap"] } }, schema: [spec.screen("home", { path: "/", title: "Home" })] });
+            const keyed = spec.part({ platform: "web", defaults: { contracts: { maps: { key: "" } } } });
+            const tasks = { build: [tool.specs("spec"), tool.page("src/index.html", "dist/index.html")] };
+            const project = tool.define({ specs: spec.define({ desk: mapped }), part: keyed, tasks, deploy: ( env ) => ({ contracts: { maps: { key: env.MAPS_KEY ?? "" } } }) });
+            const played = await tool.play(project, ["build"], { root: temp.path, env: { ...quiet, MAPS_KEY: "k-123" }, out: () => undefined });
+            const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
+
+            expect([played.failed, JSON.parse(read("spec/surface/desk.json")).config.contracts.maps, read("dist/index.html").includes("img-src &#x27;self&#x27; data: https://desk.example.test https://maps.example.test;")]).toEqual([false, { key: "k-123" }, true]);
+            expect(() => tool.define({ tasks: {}, deploy: () => ({}) } as never)).toThrow("deploy is a function of the environment");
+
+        } finally {
+
+            temp.remove();
+
+        }
+
+    });
+    it("a role that transfers carries what it reaches: one artifact, every address in its policy, every world catalog in its bundle", async () => {
+
+        const temp = stage.tmp();
+
+        try {
+
+            temp.write("src/index.html", "<meta content=\"{{csp}}\">\n");
+            temp.write("src/world/data/countries.json", "{\"eg\":\"Egypt\"}");
+            temp.write("src/app.ts", "import countries from \"./world/data/countries.json\";\nconsole.log(JSON.stringify(countries));\n");
+
+            const desk = spec.surface({ config: { settings: { locales: ["en"] }, contracts: { baseUrl: "https://desk.example.test" } }, schema: [spec.screen("home", { path: "/", title: "Home", on: { load: spec.transfer("admin") } })] });
+            const lost = spec.surface({ schema: [spec.screen("home", { path: "/", title: "Home", on: { load: spec.transfer("ghost") } })] });
+            const tasks = { build: [tool.specs("spec"), tool.each([tool.bundle("src/app.ts", "dist/{role}"), tool.page("src/index.html", "dist/{role}/index.html"), tool.emit("dist/{role}/reach.json", ( role: { reach: tool.Reach } ) => role.reach)], ["desk"])] };
+            const played = await tool.play(tool.define({ specs: spec.define({ admin, desk }), part, tasks }), ["build"], { root: temp.path, env: quiet, out: () => undefined });
+            const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
+
+            expect([played.failed, JSON.parse(read("spec/current.json")).index.map(( one: { name: string } ) => one.name), JSON.parse(read("spec/surface/desk.json")).links, read("spec/current.ts").includes('"admin": () => import("./surface/admin.json"),'), (( { surfaces: _surfaces, ...rest }: tool.Reach ) => rest)(JSON.parse(read("dist/desk/reach.json")))]).toEqual([false, ["admin"], { admin: "admin" }, false, { names: ["desk", "admin"], addresses: ["https://desk.example.test", "https://admin.example.test"], world: ["countries"] }]);
+            expect((JSON.parse(read("dist/desk/reach.json")) as tool.Reach).surfaces.map(( one: tool.Reached ) => [one.name, one.id, one.themes.brand, one.settings.locale])).toEqual([["desk", "desk", "#000000", "en"], ["admin", "admin", "#ff4500", "ar"]]);
+            expect([read("dist/desk/index.html").includes("connect-src &#x27;self&#x27; https://desk.example.test wss://desk.example.test https://admin.example.test wss://admin.example.test;"), read("dist/desk/app.js").includes("Egypt"), tool.csp(["https://a.example.test/v1", "https://a.example.test/v2"]).includes("connect-src 'self' https://a.example.test wss://a.example.test;")]).toEqual([true, true, true]);
+
+            const refused = await tool.play(tool.define({ specs: spec.define({ admin, desk: lost }), part, tasks: { build: tool.each(tool.emit("x.txt", ( role: { name: string } ) => role.name), ["desk"]), compile: tool.specs("spec") } }), ["compile"], { root: temp.path, env: quiet, out: () => undefined });
+
+            expect([refused.failed, refused.flagged.map(( one ) => [one.where, one.rule])]).toEqual([true, [["desk: screens.home.on.load[0]", "surface.unknown"], ["specs spec", "failed"]]]);
+            expect(() => tool.csp([])).toThrow("the API uses http or https");
+
+        } finally {
+
+            temp.remove();
+
+        }
+
+    });
     it("plan draws the tree a task would play, roles and env included, without playing it", () => {
 
         const project = tool.define({
             specs,
+            part,
             tasks: {
                 compile: tool.specs(".cache/spec"),
                 build: ["compile", tool.each([tool.bundle("src/app.ts", "dist/{role}"), tool.budget({ js: "dist/{role}/*.js" })])],
@@ -196,7 +258,7 @@ describe("tool specs", () => {
         });
         expect(tool.plan(project, ["build"]).lines.filter(( line ) => line.includes("role"))).toEqual(["  role admin"]);
         expect(() => tool.plan(project, ["loop"])).toThrow("a task cycle: loop → again → loop");
-        expect(() => tool.plan(project, ["build"], ["ghost"])).toThrow("no role named ghost; roles: admin, courier");
+        expect(() => tool.plan(project, ["build"], ["ghost"])).toThrow("ghost: no surface carries this name; roles: admin, courier");
         expect(() => tool.plan(project, ["nothing"])).toThrow("no task named nothing");
 
     });

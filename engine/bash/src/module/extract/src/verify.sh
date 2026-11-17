@@ -1,12 +1,10 @@
 module:extract:words () {
 
-    local word="${1}" own="${2:-}" root="" directory="" words="${1}" name=""
+    local word="${1}" own="${2:-}" directory="" words="${1}" name=""
 
-    root="$(core:git:root "${TOOL_ENGINE}")" || return
+    for directory in "${TOOL_ROOT}/${EXTRACT_PRODUCTS}"/*/; do
 
-    for directory in "${root}"/product/*/; do
-
-        [[ -d "${directory}" ]] || continue
+        [[ -n "${EXTRACT_PRODUCTS}" && -d "${directory}" ]] || continue
 
         directory="${directory%/}"
         name="${directory##*/}"
@@ -24,43 +22,42 @@ module:extract:words () {
 }
 module:extract:manifest () {
 
-    local tree="${1}" name=""
+    local tree="${1}" kind="${2}" part="${3}"
 
-    for name in ${2}; do
-        [[ ! -f "${tree}/${name}" ]] || return 0
-    done
-
-    @err "verify: no manifest (${2}) at the root of ${tree}"
+    case "${kind}" in
+        tutor)   [[ -f "${tree}/index.md" ]] || @err "verify: no index.md at the root of ${tree}" ;;
+        product) [[ -d "${tree}/${part}" ]] || @err "verify: no ${part} in ${tree}" ;;
+        *)       module:extract:language "${tree}" || @err "verify: no manifest of a language at the root of ${tree}" ;;
+    esac
 
 }
 module:extract:verify () {
 
-    local tree="${1}" kind="${2}" name="${3:-}" file="" failed=0 manifest="" word="" words="" cache=""
+    local tree="${1}" kind="${2}" name="${3:-}" file="" failed=0 word="" words="" cache="" part="" left=""
 
     word="$(module:extract:source)" || return
     cache="$(config:paths:cache)" || return
 
-    case "${kind}" in
-        engine)   manifest="Cargo.toml pyproject.toml go.work package.json infra.toml" ;;
-        fragment) manifest="Cargo.toml pyproject.toml package.json" ;;
-        tutor)    manifest="index.md" ;;
-        product)  manifest="AGENTS.md" ;;
-    esac
+    [[ -z "${name}" ]] || part="$(config:targets:get "${name}" path)" || return
 
-    module:extract:manifest "${tree}" "${manifest}" || failed=1
+    module:extract:manifest "${tree}" "${kind}" "${part}" || failed=1
 
     if [[ "${kind}" == product ]]; then
 
-        words="$(module:extract:words '' "${name#product/}")" || return
-        module:extract:scan "${tree}" "${words}" "another product's name" || failed=1
+        words="$(module:extract:words "${word}" "${part##*/}")" || return
+        left="$(module:extract:left "${name}")" || return
+
+        module:extract:scan "${tree}" "${words}" "the monorepo name or another product's name" || failed=1
+
+        [[ -z "${left}" ]] || module:extract:scan "${tree}/.github" "(^|[^A-Za-z0-9_-])(${left})(/|[^A-Za-z0-9_/-]|\$)" 'an engine that stayed behind' sensitive || failed=1
 
     else
 
         words="$(module:extract:words "${word}")" || return
 
-        module:extract:scan "${tree}/.github" '(^|[^A-Za-z0-9_./-]|[$]/|[.]/|[.][.]/)(engine|product|tutor)/|main[.]sh' 'a monorepo path' sensitive || failed=1
+        module:extract:scan "${tree}/.github" "(^|[^A-Za-z0-9_./-]|[$]/|[.]/|[.][.]/)(${EXTRACT_HOMES})/|main[.]sh" 'a monorepo path' sensitive || failed=1
         module:extract:scan "${tree}" "${words}" 'a monorepo or product name' || failed=1
-        module:extract:scan "${tree}" '\.\./(\.\./)*(engine|product|tutor)/' 'a path out of the tree' sensitive || failed=1
+        module:extract:scan "${tree}" "\.\./(\.\./)*(${EXTRACT_HOMES})/" 'a path out of the tree' sensitive || failed=1
 
     fi
 
@@ -92,7 +89,7 @@ module:extract:scan () {
 
         [[ -n "${file}" ]] || continue
 
-        @err "verify: ${what} in ${file#"${tree%/.github}/"}: $(grep -IoE "${flags[@]:3}" -- "${pattern}" "${file}" | sort -u | tr '\n' ' ')" || failed=1
+        @err "verify: ${what} in ${file#"${tree%/.github}/"}: $(grep -IoE "${flags[@]:2}" -- "${pattern}" "${file}" | sort -u | tr '\n' ' ')" || failed=1
 
     done < <(grep "${flags[@]}" -- "${pattern}" "${tree}" 2>/dev/null || true)
 

@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as validate from "engine/validate";
 
 describe("api.openapi", () => {
@@ -8,7 +8,7 @@ describe("api.openapi", () => {
     it("edges answer, refuse and page in the house envelope; contracts are linted and documented", () => {
 
         expect(api.unwrap(api.answer({ id: 1 }, { requestId: "r1" })).data).toEqual({ id: 1 });
-        expect(api.unwrap(api.refuse(error.fault("not_found", "orders.missing"))).code).toBe("not_found");
+        expect(api.unwrap(api.refuse(exception.fault("not_found", "orders.missing"))).code).toBe("not_found");
         expect(api.pageOf(api.paged([1, 2], { page: 2, limit: 2, total: 5 }))).toEqual({ page: 2, limit: 2, total: 5, pages: 3 });
 
         const row = validate.object({ id: validate.string(), total: validate.number() });

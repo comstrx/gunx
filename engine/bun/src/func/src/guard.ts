@@ -1,13 +1,13 @@
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Breaker, BreakerOptions, BreakerState, Lane, LaneOptions } from "./arch.ts";
 import { whole } from "./flow.ts";
 
 const crowded = 1024;
 
-function stopped ( signal: AbortSignal | undefined ): error.Fault {
+function stopped ( signal: AbortSignal | undefined ): exception.Fault {
 
-    return error.fault("timeout", "lane.aborted", { cause: signal?.reason });
+    return exception.fault("timeout", "lane.aborted", { cause: signal?.reason });
 
 }
 
@@ -58,11 +58,11 @@ export function breaker ( options: BreakerOptions = {} ): Breaker {
         if ( was ) onChange?.("closed");
 
     };
-    const refused = (): error.Fault => {
+    const refused = (): exception.Fault => {
 
         const left = Math.max(1, Math.ceil((cooldown - waited()) / 1000));
 
-        return error.fault("unavailable", "breaker.open", Number.isFinite(left) ? { retryAfter: left } : {});
+        return exception.fault("unavailable", "breaker.open", Number.isFinite(left) ? { retryAfter: left } : {});
 
     };
 
@@ -86,7 +86,7 @@ export function breaker ( options: BreakerOptions = {} ): Breaker {
 
             }
 
-            try {
+            return await exception.rescueAsync(async () => {
 
                 const result = await work();
 
@@ -95,7 +95,7 @@ export function breaker ( options: BreakerOptions = {} ): Breaker {
 
                 return result;
 
-            } catch ( caught ) {
+            }, ( caught ) => {
 
                 if ( era !== turn ) throw caught;
                 if ( probe ) probing = false;
@@ -107,7 +107,7 @@ export function breaker ( options: BreakerOptions = {} ): Breaker {
 
                 throw caught;
 
-            }
+            });
 
         },
     };
@@ -118,9 +118,9 @@ export function lane ( width = 1, options: LaneOptions = {} ): Lane {
     const slots = whole(width, 1, 1);
     const limit = options.pending ?? 4096;
 
-    if ( !Number.isSafeInteger(slots) ) throw new RangeError("not a lane width");
+    if ( !Number.isSafeInteger(slots) ) throw exception.misuse("not a lane width");
 
-    if ( !Number.isSafeInteger(limit) || limit < 0 ) throw new RangeError("not a pending limit");
+    if ( !Number.isSafeInteger(limit) || limit < 0 ) throw exception.misuse("not a pending limit");
     const queue: ((() => void) | undefined)[] = [];
     const watched = new Map<() => void, () => void>();
     let idle: PromiseWithResolvers<void> | undefined;
@@ -246,7 +246,7 @@ export function lane ( width = 1, options: LaneOptions = {} ): Lane {
             if ( active < slots ) active += 1;
             else {
 
-                if ( parked >= limit ) throw error.fault("too_many_requests", "lane.full");
+                if ( parked >= limit ) throw exception.fault("too_many_requests", "lane.full");
 
                 await park(signal);
 

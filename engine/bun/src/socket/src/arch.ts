@@ -1,5 +1,5 @@
-import type * as error from "engine-error";
 import type * as event from "engine-event";
+import type * as exception from "engine-exception";
 import type * as func from "engine-func";
 
 export type Frame = { event: string; data?: unknown; channel?: string | undefined; id?: string | undefined };
@@ -31,9 +31,9 @@ export type Protocol = {
     encode: ( frame: Frame, command?: Command ) => string;
     decode: ( text: string ) => Frame | undefined;
     kind: ( frame: Frame ) => "ping" | "quiet" | "error" | "hello" | undefined;
-    fault: ( frame: Frame ) => error.Fault;
+    fault: ( frame: Frame ) => exception.Fault;
     identity: ( frame: Frame ) => string | undefined;
-    ending?: (( code: number, reason: string ) => error.Fault) | undefined;
+    ending?: (( code: number, reason: string ) => exception.Fault) | undefined;
     retry?: (( code: number, reason: string ) => boolean) | undefined;
 };
 export type Options = {
@@ -54,7 +54,7 @@ export type Options = {
 export type Connection = {
     status: () => Status;
     id: () => string | undefined;
-    cause: () => error.Fault | undefined;
+    cause: () => exception.Fault | undefined;
     attempts: () => number;
     stats: () => Stats;
     channels: () => string[];

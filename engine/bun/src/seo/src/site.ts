@@ -1,4 +1,5 @@
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as string from "engine-string";
 import type { Entry, Icon, Listed, Manifest, Robots, Rule, Shape, Site } from "./arch.ts";
@@ -91,7 +92,7 @@ export function sitemap ( site: Site, entries: readonly Entry[] ): string {
 
     for ( const entry of entries ) rows(shape, entry, urls);
 
-    if ( urls.length > most ) throw new RangeError("not a sitemap");
+    if ( urls.length > most ) throw exception.misuse("not a sitemap");
 
     return `${head}${urls.join("")}</urlset>`;
 

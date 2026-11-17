@@ -1,5 +1,6 @@
 import * as crypto from "engine-crypto";
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as string from "engine-string";
 import type { CookieDocument, CookieOptions, HeaderJar, Jar, } from "./arch.ts";
@@ -22,28 +23,28 @@ function encoded ( value: string ): string {
 
     if ( valuePattern.test(value) ) return value;
 
-    try {
+    return exception.rescue(() => {
 
         return encodeURIComponent(value);
 
-    } catch {
+    }, () => {
 
-        throw new RangeError("not a cookie value");
+        throw exception.misuse("not a cookie value");
 
-    }
+    });
 
 }
 function checked ( name: string, options: CookieOptions, path: string, sameSite: string ): void {
 
     const { maxAge, expires, domain } = options;
 
-    if ( !namePattern.test(name) || !json.safeKey(name) ) throw new RangeError(`not a cookie name: ${name}`);
-    if ( !pathPattern.test(path) ) throw new RangeError("not a cookie path");
-    if ( domain !== undefined && domain !== "" && !domainPattern.test(domain) ) throw new RangeError("not a cookie domain");
-    if ( !sites.has(sameSite) ) throw new RangeError("not a cookie site");
-    if ( maxAge !== undefined && !Number.isFinite(maxAge) ) throw new RangeError("not a cookie age");
-    if ( expires !== undefined && Number.isNaN(expires.getTime()) ) throw new RangeError("not a cookie expiry");
-    if ( name.startsWith("__Host-") && (domain || path !== "/") ) throw new RangeError("not a host cookie");
+    if ( !namePattern.test(name) || !json.safeKey(name) ) throw exception.misuse(`not a cookie name: ${name}`);
+    if ( !pathPattern.test(path) ) throw exception.misuse("not a cookie path");
+    if ( domain !== undefined && domain !== "" && !domainPattern.test(domain) ) throw exception.misuse("not a cookie domain");
+    if ( !sites.has(sameSite) ) throw exception.misuse("not a cookie site");
+    if ( maxAge !== undefined && !Number.isFinite(maxAge) ) throw exception.misuse("not a cookie age");
+    if ( expires !== undefined && Number.isNaN(expires.getTime()) ) throw exception.misuse("not a cookie expiry");
+    if ( name.startsWith("__Host-") && (domain || path !== "/") ) throw exception.misuse("not a host cookie");
 
 }
 
@@ -65,15 +66,15 @@ export function parseCookies ( header: string | null | undefined ): Record<strin
         if ( name === "" || !json.safeKey(name) || Object.hasOwn(out, name) ) continue;
         if ( value.length > 1 && value.startsWith('"') && value.endsWith('"') ) value = value.slice(1, -1);
 
-        try {
+        exception.rescue(() => {
 
             out[name] = decodeURIComponent(value);
 
-        } catch {
+        }, () => {
 
             out[name] = value;
 
-        }
+        });
 
     }
 
@@ -89,7 +90,7 @@ export function serializeCookie ( name: string, value: string, options: CookieOp
     const pair = `${name}=${encoded(value)}`;
     const parts = [pair];
 
-    if ( pair.length > largest ) throw new RangeError("cookie too large");
+    if ( pair.length > largest ) throw exception.misuse("cookie too large");
 
     if ( maxAge !== undefined ) parts.push(`Max-Age=${Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.trunc(maxAge)))}`);
     if ( expires ) parts.push(`Expires=${expires.toUTCString()}`);

@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as virtual from "engine/virtual";
 
 describe("virtual", () => {
@@ -93,7 +94,7 @@ describe("virtual", () => {
         expect(virtual.layout({ count: 3, size: -40 }).total).toBe(0);
         expect(virtual.layout({ count: 3, size: Number.POSITIVE_INFINITY }).total).toBe(0);
 
-        for ( const count of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] ) expect(() => virtual.layout({ count, size: 10 })).toThrow(new RangeError("not a count"));
+        for ( const count of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY] ) expect(() => virtual.layout({ count, size: 10 })).toThrow(exception.misuse("not a count"));
 
         const lazy = virtual.layout({ count: 5, size: 10 });
 
@@ -174,9 +175,9 @@ describe("virtual", () => {
         expect(cells.cells([{ index: 1, offset: 110, size: 100 }]).map(( cell ) => [cell.index, cell.column, cell.offset])).toEqual([[3, 0, 0], [4, 1, 110], [5, 2, 220]]);
         expect([virtual.grid(0, 3, 10).rows, virtual.grid(9.5, 3, 10).rows, virtual.grid(10, 0, 10).columns, virtual.grid(10, -2, 10).columns, virtual.grid(10, 2.9, 10).columns, virtual.grid(5, 3, Number.NaN, -4).cells([{ index: 0, offset: 0, size: 1 }]).map(( cell ) => cell.offset)]).toEqual([0, 3, 1, 1, 2, [0, 0, 0]]);
 
-        for ( const count of [Number.NaN, Number.POSITIVE_INFINITY] ) expect(() => virtual.grid(count, 3, 10)).toThrow(new RangeError("not a count"));
+        for ( const count of [Number.NaN, Number.POSITIVE_INFINITY] ) expect(() => virtual.grid(count, 3, 10)).toThrow(exception.misuse("not a count"));
 
-        expect(() => virtual.grid(10, Number.NaN, 10)).toThrow(new RangeError("not a count"));
+        expect(() => virtual.grid(10, Number.NaN, 10)).toThrow(exception.misuse("not a count"));
         expect([virtual.fit(1000, 200, 10), virtual.fit(1000, 200), virtual.fit(100, 200), virtual.fit(0, 200), virtual.fit(1000, 0), virtual.fit(1000, 0, 10), virtual.fit(Number.NaN, 200, 10), virtual.fit(1000, Number.NaN), virtual.fit(1000, 300, Number.POSITIVE_INFINITY)]).toEqual([{ columns: 4, width: 242.5 }, { columns: 5, width: 200 }, { columns: 1, width: 100 }, { columns: 1, width: 0 }, { columns: 1, width: 1000 }, { columns: 101, width: 0 }, { columns: 1, width: 0 }, { columns: 1, width: 1000 }, { columns: 3, width: 1000 / 3 }]);
 
         const sizes = virtual.measures(( index ) => `row-${index % 2}`);

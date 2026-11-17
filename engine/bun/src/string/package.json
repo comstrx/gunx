@@ -8,6 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "engine-exception": "workspace:*",
     "unicode-segmenter": "catalog:"
   }
 }

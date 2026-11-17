@@ -1,11 +1,11 @@
 from engine.auth import auth
 from engine.http import Group, Route
 
-from ..app.controllers import SessionsController
+from ..app.controllers import AvatarsController, SessionsController
 from ..app.requests import CodeRequest, EndRequest, MeRequest, RefreshRequest, SessionRequest
 from ..app.utils.cycle import api
 
-def routes ( sessions: SessionsController ) -> Group:
+def routes ( sessions: SessionsController, avatars: AvatarsController ) -> Group:
 
     return api(
         "iam",
@@ -14,4 +14,7 @@ def routes ( sessions: SessionsController ) -> Group:
         Route.post("/sessions/refresh", RefreshRequest.to(sessions.refresh), "sessions.refresh").throttled("refresh"),
         Route.delete("/sessions", EndRequest.to(sessions.destroy), "sessions.destroy").guarded(auth.guard()),
         Route.get("/me", MeRequest.to(sessions.me), "me").guarded(auth.guard()),
+        Route.put("/me/avatar", avatars.store, "avatar.store").guarded(auth.guard()).throttled("start"),
+        Route.delete("/me/avatar", avatars.destroy, "avatar.destroy").guarded(auth.guard()),
+        Route.get("/users/<user>/avatar", avatars.show, "avatar.show"),
     )

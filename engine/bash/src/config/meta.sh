@@ -1,25 +1,35 @@
+declare -g META_NAME=bash-engine META_VERSION=0.1.0
+
 config:meta:get () {
 
-    local key="${1}"
+    local key="${1:-}"
 
-    [[ -n "${MANIFEST[meta.${key}]+x}" ]] || { core:error:fail "No [meta] ${key} in the manifest"; return; }
-
-    core:log:print "${MANIFEST[meta.${key}]}"
+    [[ -z "${key}" ]] || core:log:print "${MANIFEST[meta.${key}]:-}"
 
 }
 config:meta:name () {
 
-    config:meta:get name
+    core:log:print "${MANIFEST[meta.name]:-${META_NAME}}"
+
+}
+config:meta:alias () {
+
+    core:log:print "${MANIFEST[meta.alias]:-$(config:meta:name)}"
 
 }
 config:meta:version () {
 
-    config:meta:get version
+    core:log:print "${MANIFEST[meta.version]:-${META_VERSION}}"
+
+}
+config:meta:msrv () {
+
+    config:meta:get bash_version
 
 }
 config:meta:description () {
 
-    core:log:print "${MANIFEST[meta.description]:-}"
+    config:meta:get description
 
 }
 config:meta:license () {
@@ -29,7 +39,7 @@ config:meta:license () {
 }
 config:meta:readme () {
 
-    core:log:print "${MANIFEST[meta.readme]:-README.md}"
+    config:meta:get readme
 
 }
 config:meta:repo () {
@@ -44,13 +54,30 @@ config:meta:authors () {
 }
 config:meta:author () {
 
-    config:manifest:counted meta.authors || { core:error:fail "No [meta] authors in the manifest"; return; }
-
-    core:log:print "${MANIFEST[meta.authors.0]}"
+    core:log:print "${MANIFEST[meta.authors.0]:-}"
 
 }
 config:meta:owner () {
 
     config:meta:author
+
+}
+config:meta:build () {
+
+    core:log:print "${MANIFEST[meta.build]:-dev}"
+
+}
+config:meta:src () {
+
+    config:meta:get src
+
+}
+config:meta:install () {
+
+    local folder="${MANIFEST[meta.install]:-}" home="~"
+
+    [[ "${folder}" != "${home}/"* ]] || folder="${HOME}/${folder#"${home}/"}"
+
+    core:log:print "${folder:-${XDG_BIN_HOME:-${HOME}/.local/bin}}"
 
 }

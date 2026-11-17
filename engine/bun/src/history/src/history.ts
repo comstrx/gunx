@@ -1,8 +1,8 @@
-import * as adapter from "engine-adapter";
-import * as error from "engine-error";
+import * as device from "engine-device";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as parse_ from "engine-parse";
-import type { Action, Adapter, Block, Entry, Failed, Held, History, Href, Listener, Memory, Saved, Seen, Snapshot, Target } from "./arch.ts";
+import type { Action, Adapter, Block, Entry, Failed, Held, History, Host, Href, Listener, Memory, Saved, Seen, Snapshot, Target } from "./arch.ts";
 
 const plain = /^(?:\/[A-Za-z0-9_~-]+)+$/;
 const blanks = /[\t\n\r]/g;
@@ -29,15 +29,9 @@ function encoded ( text: string, unsafe: RegExp ): string {
 
     return text.replace(unsafe, ( run ) => {
 
-        try {
+        const made = exception.run(encodeURIComponent, run);
 
-            return encodeURIComponent(run);
-
-        } catch {
-
-            return Array.from(run, ( point ) => (point.length === 1 && point >= "\ud800" && point <= "\udfff" ? lost : encodeURIComponent(point))).join("");
-
-        }
+        return exception.threw(made) ? Array.from(run, ( point ) => (point.length === 1 && point >= "\ud800" && point <= "\udfff" ? lost : encodeURIComponent(point))).join("") : made;
 
     });
 
@@ -46,15 +40,9 @@ function decoded ( text: string ): string {
 
     if ( !text.includes("%") ) return text;
 
-    try {
+    const read = exception.run(decodeURIComponent, text);
 
-        return decodeURIComponent(text);
-
-    } catch {
-
-        return text;
-
-    }
+    return exception.threw(read) ? text : read;
 
 }
 function pathOf ( text: string ): string {
@@ -102,15 +90,15 @@ function each<T> ( items: ReadonlySet<T>, tell: ( item: T ) => void ): void {
 
     for ( const item of [...items] ) {
 
-        try {
+        exception.rescue(() => {
 
             tell(item);
 
-        } catch ( failure ) {
+        }, ( failure ) => {
 
             failed ??= { failure };
 
-        }
+        });
 
     }
 
@@ -239,7 +227,7 @@ export function memoryAdapter ( initial: string | Snapshot = "/", limit = 100 ):
     };
 
 }
-export function webAdapter ( host: adapter.Host = adapter.host() ): Adapter | undefined {
+export function webAdapter ( host: Host = device.host<Host>() ): Adapter | undefined {
 
     const place = host.location;
     const stack = host.history;
@@ -257,7 +245,7 @@ export function webAdapter ( host: adapter.Host = adapter.host() ): Adapter | un
         },
         listen: ( onPop ) => {
 
-            const handler = (( event: { state: unknown } ): void => onPop(event.state)) as adapter.Handler;
+            const handler = ( event: { state: unknown } ): void => onPop(event.state);
 
             host.addEventListener?.("popstate", handler);
 
@@ -267,7 +255,7 @@ export function webAdapter ( host: adapter.Host = adapter.host() ): Adapter | un
     };
 
 }
-export const port: adapter.Port<Adapter> = adapter.port<Adapter>("history", { fallback: adapter.web<Adapter>("history", webAdapter, () => memoryAdapter()) });
+export const port: exception.Slot<Adapter> = exception.slot<Adapter>("history", { fallback: () => exception.probe(() => webAdapter()) ?? memoryAdapter() });
 
 export function create ( given: Adapter = port.get(), base = "" ): History {
 
@@ -360,17 +348,17 @@ export function create ( given: Adapter = port.get(), base = "" ): History {
 
         if ( refused(next, from, action) ) return from;
 
-        try {
+        exception.rescue(() => {
 
             if ( action === "push" && unwrap(read.state).at === undefined ) given.replace(read.href, wrap(from.index, null, read.state));
 
             given[action](`${prefix}${href}`, wrap(next.index, state, action === "replace" ? read.state : undefined));
 
-        } catch ( cause ) {
+        }, ( cause ) => {
 
-            throw error.isFault(cause) ? cause : error.fault("unavailable", "history.refused", { cause });
+            throw exception.isFault(cause) ? cause : exception.fault("unavailable", "history.refused", { cause });
 
-        }
+        });
 
         return settle(action, from);
 
@@ -385,15 +373,15 @@ export function create ( given: Adapter = port.get(), base = "" ): History {
 
             if ( !run ) break;
 
-            try {
+            exception.rescue(() => {
 
                 run();
 
-            } catch ( failure ) {
+            }, ( failure ) => {
 
                 failed ??= { failure };
 
-            }
+            });
 
         }
 
@@ -410,19 +398,21 @@ export function create ( given: Adapter = port.get(), base = "" ): History {
 
         }
 
-        owed = last.index - spot;
+        const delta = last.index - spot;
 
-        try {
+        owed = delta;
 
-            given.go(owed);
+        exception.rescue(() => {
 
-        } catch ( failure ) {
+            given.go(delta);
+
+        }, ( failure ) => {
 
             owed = undefined;
 
             throw failure;
 
-        }
+        });
 
     };
     const arrive = (): void => {
@@ -449,16 +439,16 @@ export function create ( given: Adapter = port.get(), base = "" ): History {
 
         if ( !echo && next.index !== last.index ) {
 
-            try {
+            exception.rescue(() => {
 
                 blocked = refused(next, last, "pop");
 
-            } catch ( failure ) {
+            }, ( failure ) => {
 
                 failed = { failure };
                 blocked = true;
 
-            }
+            });
 
         }
 

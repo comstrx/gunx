@@ -1,4 +1,5 @@
-import * as adapter from "engine-adapter";
+import * as device from "engine-device";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as rand from "engine-rand";
 import * as string from "engine-string";
@@ -7,8 +8,8 @@ import type { Algorithm, Bytes, Kept, Source } from "./arch.ts";
 const hexPattern = /^[0-9a-fA-F]+$/;
 const algorithms = new Set<string>(["SHA-256", "SHA-384", "SHA-512", "SHA-1"]);
 
-export const engine: adapter.Port<Source> = adapter.port<Source>("crypto.engine", {
-    fallback: adapter.web<Source>("crypto.engine", ( host ) => host.crypto),
+export const engine: exception.Slot<Source> = exception.slot<Source>("crypto.engine", {
+    fallback: () => device.host<{ crypto?: Source }>().crypto,
     check: ( value ) => Boolean(value.subtle) && typeof value.subtle.digest === "function",
 });
 
@@ -16,7 +17,7 @@ function known ( algorithm: Algorithm ): Algorithm {
 
     if ( algorithms.has(algorithm) ) return algorithm;
 
-    throw new RangeError("not an algorithm");
+    throw exception.misuse("not an algorithm");
 
 }
 function given ( signature: unknown ): Bytes | undefined {
@@ -31,7 +32,7 @@ export function view ( data: string | ArrayBufferView ): Bytes {
 
     const found = typeof data === "string" ? string.bytes(data) : data;
 
-    if ( !ArrayBuffer.isView(found) ) throw new RangeError("not data");
+    if ( !ArrayBuffer.isView(found) ) throw exception.misuse("not data");
 
     const buffer = found.buffer;
 
@@ -44,7 +45,7 @@ export function keyed ( secret: string | Uint8Array ): Bytes {
 
     if ( found && found.length > 0 ) return typeof secret === "string" ? found : found.slice();
 
-    throw new RangeError("not a secret");
+    throw exception.misuse("not a secret");
 
 }
 const identities = new WeakMap<Source, Promise<CryptoKey>>();
@@ -58,7 +59,7 @@ export async function label ( source: Source, material: Bytes ): Promise<string>
         const made = source.subtle.generateKey({ name: "HMAC", hash: "SHA-256", length: 256 }, false, ["sign"]) as Promise<CryptoKey>;
 
         identities.set(source, made);
-        void made.catch(() => {
+        void exception.mend(made, () => {
 
             if ( identities.get(source) === made ) identities.delete(source);
 
@@ -88,7 +89,7 @@ export function kept<T> ( most: number ): Kept<T> {
 
         if ( found ) return found;
 
-        const made = make(source.subtle).catch(( cause: unknown ) => {
+        const made: Promise<T> = exception.mend(make(source.subtle), ( cause ) => {
 
             if ( source === owner && held.get(name) === made ) held.delete(name);
 
@@ -179,7 +180,7 @@ export function key ( size = 32 ): string {
 
     if ( size >= 16 ) return rand.token(size);
 
-    throw new RangeError("not a size");
+    throw exception.misuse("not a size");
 
 }
 export function nonce ( size = 16 ): string {
@@ -189,8 +190,8 @@ export function nonce ( size = 16 ): string {
 }
 export async function derive ( secret: string | Uint8Array, purpose: string, size = 32 ): Promise<string> {
 
-    if ( typeof purpose !== "string" || purpose === "" ) throw new RangeError("not a purpose");
-    if ( !(Number.isInteger(size) && size >= 16 && size <= 64) ) throw new RangeError("not a size");
+    if ( typeof purpose !== "string" || purpose === "" ) throw exception.misuse("not a purpose");
+    if ( !(Number.isInteger(size) && size >= 16 && size <= 64) ) throw exception.misuse("not a size");
 
     const subtle = engine.get().subtle;
     const material = await subtle.importKey("raw", keyed(secret), "HKDF", false, ["deriveBits"]);

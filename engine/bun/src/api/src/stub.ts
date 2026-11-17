@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as net from "engine-net";
 import * as parse from "engine-parse";
@@ -17,7 +17,7 @@ function keyed ( key: string ): { key: string; method: string; pattern: string }
     const method = at === -1 ? "*" : text.slice(0, at).toUpperCase();
     const pattern = at === -1 ? text : text.slice(at).trim();
 
-    if ( !pattern.startsWith("/") || gap.test(pattern) || (method !== "*" && !methods.includes(method)) ) throw error.fault("internal", "api.route", { message: `${text.slice(0, 120)}: a route is keyed as a method and a path` });
+    if ( !pattern.startsWith("/") || gap.test(pattern) || (method !== "*" && !methods.includes(method)) ) throw exception.fault("internal", "api.route", { message: `${text.slice(0, 120)}: a route is keyed as a method and a path` });
 
     return { key: `${method} ${pattern}`, method, pattern };
 
@@ -36,7 +36,7 @@ function reply ( status: number, body: unknown, headers: Record<string, string> 
     return new Response(json.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 
 }
-function refused ( fault: error.Fault, wire: Wire, trace: string ): Response {
+function refused ( fault: exception.Fault, wire: Wire, trace: string ): Response {
 
     if ( fault.status < 200 || fault.status > 599 ) throw fault;
 
@@ -53,7 +53,7 @@ function waited ( ms: number, signal: AbortSignal | undefined ): Promise<void> {
         const stop = (): void => {
 
             clearTimeout(timer);
-            reject(signal?.reason ?? error.fault("timeout", "api.aborted"));
+            reject(signal?.reason ?? exception.fault("timeout", "api.aborted"));
 
         };
 
@@ -101,12 +101,12 @@ export function stub ( routes: Routes, wire: Wire = house ): Stub {
 
         const named = keyed(key);
 
-        if ( typeof handler !== "function" ) throw error.fault("internal", "api.route", { message: `${named.key}: a route answers with a function` });
+        if ( typeof handler !== "function" ) throw exception.fault("internal", "api.route", { message: `${named.key}: a route answers with a function` });
 
         table = table.filter(( row ) => row.key !== named.key).concat({ ...named, handler, rank: ranked(named.method, named.pattern) }).sort(( left, right ) => left.rank - right.rank);
 
     }
-    function planned ( method: string, path: string ): error.Fault | undefined {
+    function planned ( method: string, path: string ): exception.Fault | undefined {
 
         for ( const plan of plans ) {
 
@@ -153,7 +153,7 @@ export function stub ( routes: Routes, wire: Wire = house ): Stub {
             plans.length = 0;
             plans.push(...kept);
 
-            if ( left > 0 ) plans.push({ method: named.method, pattern: named.pattern, fault: typeof fault === "string" ? error.fault(fault, "stub.refused") : fault, left });
+            if ( left > 0 ) plans.push({ method: named.method, pattern: named.pattern, fault: typeof fault === "string" ? exception.fault(fault, "stub.refused") : fault, left });
 
         },
         fetcher: async ( url, init ) => {
@@ -180,7 +180,7 @@ export function stub ( routes: Routes, wire: Wire = house ): Stub {
 
                 if ( !params ) continue;
 
-                try {
+                return await exception.rescueAsync(async () => {
 
                     const result = await row.handler({ params, query, body, headers, method, path });
 
@@ -188,15 +188,15 @@ export function stub ( routes: Routes, wire: Wire = house ): Stub {
 
                     return reply(200, isEnvelope(result, wire.envelope) ? result : envelope(result, {}, wire.envelope, wire.ok));
 
-                } catch ( caught ) {
+                }, ( caught ) => {
 
-                    return refused(error.of(caught), wire, trace);
+                    return refused(exception.of(caught), wire, trace);
 
-                }
+                });
 
             }
 
-            return refused(error.fault("not_found", "stub.route"), wire, trace);
+            return refused(exception.fault("not_found", "stub.route"), wire, trace);
 
         },
     };

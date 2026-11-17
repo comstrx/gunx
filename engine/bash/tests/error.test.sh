@@ -10,7 +10,7 @@ test:core:error:prints-on-stderr () {
 
     @eq "$(core:error:fail broken 2>&1 >/dev/null)" '[-] broken'
     @eq "$(core:error:fail broken 2>/dev/null)" ''
-    @contains "$(core:error:usage 'gate PART' 2>&1)" 'see infra help'
+    @contains "$(core:error:usage 'gate PART' 2>&1)" "see $(config:meta:alias) help"
     @contains "$(LOG_LEVEL=debug core:error:fail here 2>&1)" 'raised 1 in'
 
 }

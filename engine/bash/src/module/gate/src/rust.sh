@@ -15,25 +15,25 @@ module:gate:rust:host () {
 }
 module:gate:rust:deps () {
 
-    module:gate:install:rust && core:proc:io cargo fetch --locked
+    module:gate:install:rust && core:proc:io cargo fetch "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:check () {
 
-    cargo check --workspace --all-targets --all-features --locked \
-        && cargo hack check --workspace --feature-powerset --locked
+    cargo check --workspace --all-targets --all-features "${GATE_ARGS[@]}" \
+        && cargo hack check --workspace --feature-powerset "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:lint () {
 
-    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings \
-        && RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --all-features --locked
+    cargo clippy --workspace --all-targets --all-features "${GATE_ARGS[@]}" -- -D warnings \
+        && RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --all-features "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:test () {
 
-    cargo nextest run --workspace --all-features --locked \
-        && cargo test --doc --workspace --all-features --locked
+    cargo nextest run --workspace --all-features "${GATE_ARGS[@]}" \
+        && cargo test --doc --workspace --all-features "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:safety () {
@@ -76,7 +76,7 @@ module:gate:rust:sanitize () {
 }
 module:gate:rust:audit () {
 
-    cargo deny --all-features check && cargo vet --locked
+    cargo deny --all-features check && cargo vet "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:semver () {
@@ -106,8 +106,8 @@ module:gate:rust:build () {
 
     shift
 
-    if (( dev == 1 )); then cargo build --locked "$@"
-    else cargo build --release --locked "$@"
+    if (( dev == 1 )); then cargo build "$@"
+    else cargo build --release "$@"
     fi
 
 }
@@ -117,14 +117,14 @@ module:gate:rust:run () {
 
     shift
 
-    if (( dev == 1 )); then cargo run --locked "$@"
-    else cargo run --release --locked "$@"
+    if (( dev == 1 )); then cargo run "$@"
+    else cargo run --release "$@"
     fi
 
 }
 module:gate:rust:bench () {
 
-    cargo bench --workspace --locked
+    cargo bench --workspace "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:fuzz () {

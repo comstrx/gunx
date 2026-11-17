@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as number from "engine-number";
 import type { Grid, Held, Input, Parts, Span, Unit } from "./arch.ts";
 import { add, daysIn, from, isSame, mod, startOf, strict, today, tomorrow, utc, yesterday } from "./calendar.ts";
@@ -45,15 +46,7 @@ function hosted ( tag: string ): string | undefined {
 
     return held(hosts, tag, () => {
 
-        try {
-
-            return "Locale" in Intl ? new Intl.Locale(tag).maximize().region : undefined;
-
-        } catch {
-
-            return undefined;
-
-        }
+        return exception.probe(() => "Locale" in Intl ? new Intl.Locale(tag).maximize().region : undefined);
 
     });
 

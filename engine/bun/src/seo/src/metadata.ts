@@ -1,4 +1,5 @@
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import type { Alternate, Directives, Metadata, Page, Shape, Site, Tag } from "./arch.ts";
 
@@ -41,7 +42,7 @@ function hyphened ( locale: string ): string {
 }
 function named ( locale: string ): string {
 
-    if ( typeof locale !== "string" || !tagged.test(locale) ) throw new RangeError("not a locale");
+    if ( typeof locale !== "string" || !tagged.test(locale) ) throw exception.misuse("not a locale");
 
     return locale;
 
@@ -61,7 +62,7 @@ function rooted ( base: string ): string {
     const text = typeof base === "string" ? base.trim() : "";
     let end = text.length;
 
-    if ( !sound(text) || !schemed.test(text) ) throw new RangeError("not a site url");
+    if ( !sound(text) || !schemed.test(text) ) throw exception.misuse("not a site url");
 
     while ( text.charCodeAt(end - 1) === 47 ) end -= 1;
 
@@ -217,7 +218,7 @@ export function shaped ( site: Site ): Shape {
     const name = plain(site.name);
 
     if ( known && known.name === name && known.url === site.url && known.locale === site.locale && known.chosen === site.default && known.hide === site.hide && same(known.locales, site.locales) ) return known;
-    if ( name === "" ) throw new RangeError("not a site name");
+    if ( name === "" ) throw exception.misuse("not a site name");
 
     const main = hyphened(named(site.default ?? site.locale)).toLowerCase();
     const lead = ( locale: string ): string => (site.hide === true && hyphened(locale).toLowerCase() === main ? "" : `/${locale}`);

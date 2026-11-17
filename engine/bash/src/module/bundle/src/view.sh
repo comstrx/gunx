@@ -1,6 +1,6 @@
 module:bundle:view:version () {
 
-    core:log:print "${MANIFEST[meta.name]} ${MANIFEST[meta.version]} (${TOOL_BUILD} build, bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]})"
+    core:log:print "$(config:meta:name) $(config:meta:version) (${TOOL_BUILD} build, bash ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]})"
 
 }
 module:bundle:view:config () {
@@ -29,12 +29,16 @@ module:bundle:view:meta () {
     {
         printf 'name\t%s\n' "$(config:meta:name)"
         printf 'version\t%s\n' "$(config:meta:version)"
+        printf 'msrv\t%s\n' "bash $(config:meta:msrv)"
         printf 'description\t%s\n' "$(config:meta:description)"
         printf 'license\t%s\n' "$(config:meta:license)"
         printf 'readme\t%s\n' "$(config:meta:readme)"
         printf 'owner\t%s\n' "$(config:meta:owner)"
         printf 'authors\t%s\n' "$(config:meta:authors | tr '\n' ' ')"
-        printf 'build\t%s\n' "${TOOL_BUILD}"
+        printf 'build\t%s\n' "$(config:meta:build)"
+        printf 'src\t%s\n' "$(config:meta:src)"
+        printf 'repo\t%s\n' "$(config:meta:repo)"
+        printf 'install\t%s\n' "$(config:meta:install)"
         printf 'bash\t%s\n' "${BASH_VERSION}"
     } | core:ui:table
 

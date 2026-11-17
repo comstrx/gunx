@@ -1,7 +1,7 @@
 import { describe, expect, test as it } from "bun:test";
 import * as cache from "engine/cache";
-import * as error from "engine/error";
 import * as event from "engine/event";
+import * as exception from "engine/exception";
 import * as state from "engine/state";
 import * as fc from "fast-check";
 
@@ -56,7 +56,7 @@ const saved = fc.oneof({ weight: 1, arbitrary: junk }, { weight: 4, arbitrary: f
 
 function told ( failure: unknown ): string {
 
-    if ( error.is(failure) ) return `${failure.code}/${failure.reason}`;
+    if ( exception.is(failure) && failure.reason !== "misuse" ) return `${failure.code}/${failure.reason}`;
 
     return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
 

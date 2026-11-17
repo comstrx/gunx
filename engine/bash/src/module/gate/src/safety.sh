@@ -1,6 +1,3 @@
-declare -ga GATE_MIRI=( stacked tree )
-declare -ga GATE_SANITIZERS=( address thread memory leak )
-
 module:gate:safety:picked () {
 
     [[ "$(core:cli:command)" == safety ]] && core:cli:given --type

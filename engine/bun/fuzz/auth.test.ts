@@ -1,7 +1,7 @@
 import { describe, expect, test as it } from "bun:test";
 import * as auth from "engine/auth";
 import * as cache from "engine/cache";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as fc from "fast-check";
 
 type User = { id: string };
@@ -57,8 +57,8 @@ describe("fuzz auth", () => {
 
             } catch ( failure ) {
 
-                expect(error.is(failure) && failure.code === "forbidden" && failure.reason === "auth.denied").toBe(true);
-                expect(error.is(failure) ? failure.errors : {}).toEqual({ abilities: missing });
+                expect(exception.is(failure) && failure.code === "forbidden" && failure.reason === "auth.denied").toBe(true);
+                expect(exception.is(failure) ? failure.errors : {}).toEqual({ abilities: missing });
                 expect(required.length === 0 || granted).toBe(false);
 
             }
@@ -157,7 +157,7 @@ describe("fuzz auth", () => {
 
                     } else {
 
-                        refusals[refusals.length - 1]?.(error.fault(step.final ? "unauthorized" : "unavailable", "x"));
+                        refusals[refusals.length - 1]?.(exception.fault(step.final ? "unauthorized" : "unavailable", "x"));
 
                         if ( step.final ) {
 

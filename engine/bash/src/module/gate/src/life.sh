@@ -8,6 +8,21 @@ module:gate:launch () {
     module:gate:life run "$@"
 
 }
+module:gate:install () {
+
+    module:gate:life install "$@"
+
+}
+module:gate:update () {
+
+    module:gate:life update "$@"
+
+}
+module:gate:remove () {
+
+    module:gate:life remove "$@"
+
+}
 module:gate:life () {
 
     local action="${1}" dev=0 paths="" list="" row="" chain="" dir=""

@@ -8,10 +8,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "engine-adapter": "workspace:*",
     "engine-cache": "workspace:*",
-    "engine-error": "workspace:*",
+    "engine-device": "workspace:*",
     "engine-event": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-list": "workspace:*",
     "engine-number": "workspace:*",
     "engine-string": "workspace:*",

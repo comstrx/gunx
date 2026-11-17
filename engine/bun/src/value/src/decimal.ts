@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Decimal, Exact, Input, Rounding } from "./arch.ts";
 import { deepest, divided, factor, longest, power, read, rescaled, safe, scaled, write } from "./exact.ts";
 
@@ -5,14 +6,14 @@ function exact ( value: Input ): Exact {
 
     const found = read(value);
 
-    if ( !found ) throw new RangeError(`not a decimal: ${String(value).slice(0, longest)}`);
+    if ( !found ) throw exception.misuse(`not a decimal: ${String(value).slice(0, longest)}`);
 
     return found;
 
 }
 function places ( digits: number, lowest = 0 ): number {
 
-    if ( !Number.isInteger(digits) || digits < lowest || digits > deepest ) throw new RangeError(`not a count of fraction digits: ${digits}`);
+    if ( !Number.isInteger(digits) || digits < lowest || digits > deepest ) throw exception.misuse(`not a count of fraction digits: ${digits}`);
 
     return digits;
 
@@ -31,7 +32,7 @@ function made ( units: bigint, scale: number ): Decimal {
 
     const text = write(rest, cut);
 
-    if ( text.length > longest ) throw new RangeError("decimal out of range");
+    if ( text.length > longest ) throw exception.misuse("decimal out of range");
 
     return text as Decimal;
 
@@ -56,15 +57,7 @@ export function parse ( value: unknown ): Decimal | undefined {
 
     const found = read(value);
 
-    try {
-
-        return found ? made(found.units, found.scale) : undefined;
-
-    } catch {
-
-        return undefined;
-
-    }
+    return exception.probe(() => found ? made(found.units, found.scale) : undefined);
 
 }
 export function is ( value: unknown ): value is Decimal {
@@ -212,14 +205,14 @@ export function units ( value: Input, digits = 0, rounding: Rounding = "half-eve
 
     const found = factor(value);
 
-    if ( !found ) throw new RangeError(`not a decimal: ${String(value).slice(0, longest)}`);
+    if ( !found ) throw exception.misuse(`not a decimal: ${String(value).slice(0, longest)}`);
 
     return safe(scaled(found, places(digits), rounding));
 
 }
 export function fromUnits ( count: number | bigint, digits = 0 ): Decimal {
 
-    if ( typeof count === "number" && !Number.isSafeInteger(count) ) throw new RangeError(`not a whole count of units: ${count}`);
+    if ( typeof count === "number" && !Number.isSafeInteger(count) ) throw exception.misuse(`not a whole count of units: ${count}`);
 
     return made(BigInt(count), places(digits));
 

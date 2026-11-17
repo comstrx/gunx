@@ -1,4 +1,4 @@
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as func from "engine/func";
 import { bench, do_not_optimize, run } from "mitata";
 
@@ -19,7 +19,7 @@ const tripped = func.breaker({ failures: 1, cooldown: 3_600_000 });
 const jobs = Array.from({ length: 64 }, ( _, at ) => at);
 let miss = 0;
 
-await tripped.run(async () => Promise.reject(error.fault("unavailable", "bench"))).catch(func.noop);
+await tripped.run(async () => Promise.reject(exception.fault("unavailable", "bench"))).catch(func.noop);
 
 bench("func.memo.hit", () => do_not_optimize(square(7)));
 bench("func.memo.hit.string", () => do_not_optimize(named("a longer argument than seven")));

@@ -1,4 +1,4 @@
-import type * as error from "engine-error";
+import type * as exception from "engine-exception";
 import * as json from "engine-json";
 import type { Envelope, Meta, Page, Paths, Routed } from "./arch.ts";
 import { house } from "./wire.ts";
@@ -118,7 +118,7 @@ export function envelope<T> ( data: T, meta: Meta = {}, paths: Paths = house.env
     return made;
 
 }
-export function refusal ( fault: error.Fault, meta: Meta = {}, paths: Paths = house.envelope ): json.Dictionary {
+export function refusal ( fault: exception.Fault, meta: Meta = {}, paths: Paths = house.envelope ): json.Dictionary {
 
     let made = envelope(null, { requestId: fault.requestId, retryAfter: fault.retryAfter, ...meta }, paths, fault.code);
 

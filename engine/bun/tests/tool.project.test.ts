@@ -173,12 +173,15 @@ describe("tool project", () => {
             temp.write("src/app.ts", "import { shown } from \"./shown.ts\";\nconsole.log(shown, process.env.API_URL, process.env.MODE);\n");
             temp.write("src/shown.ts", "export const shown = 42;\n");
             temp.write("dist/stale.js", "stale");
+            temp.write("src/hello.ts", "export function hello (): void { document.title = \"called\"; }\n");
 
             const project = tool.define({ tasks: {
                 build: [tool.script("src/boot.ts", "public/boot.js"), tool.bundle("src/app.ts", "dist", { target: "browser", minify: true, inline: { API_URL: "https://api.example.test", MODE: undefined } })],
                 kept: tool.bundle(["src/app.ts"], "kept", { clean: false }),
                 root: tool.bundle("src/app.ts", "."),
                 wrong: tool.script("src/missing.ts", "public/x.js"),
+                called: tool.call("../../src/hello.ts", "hello", "public/hello.js"),
+                absent: tool.call("../../src/hello.ts", "bye", "public/bye.js"),
             } });
             const played = await tool.play(project, ["build"], { root: temp.path, out: () => undefined });
             const boot = readFileSync(temp.file("public/boot.js"), "utf8");
@@ -186,6 +189,12 @@ describe("tool project", () => {
             const app = readFileSync(temp.file("dist/app.js"), "utf8");
 
             expect([played.failed, boot.includes("boot"), boot.trimStart().startsWith("("), existsSync(temp.file("dist/stale.js")), app.includes("42"), app.includes("https://api.example.test"), app.includes("process")]).toEqual([false, true, true, false, true, true, false]);
+
+            const called = await tool.play(project, ["called"], { root: temp.path, out: () => undefined });
+            const hello = readFileSync(temp.file("public/hello.js"), "utf8");
+
+            expect([called.failed, hello.includes("called"), hello.trimStart().startsWith("("), (await tool.play(project, ["absent"], { root: temp.path, out: () => undefined })).failed]).toEqual([false, true, true, true]);
+            expect(() => tool.call("engine/world", "not a name", "public/x.js")).toThrow("not the name of an export");
 
             temp.write("kept/old.js", "old");
 
@@ -287,8 +296,8 @@ describe("tool project", () => {
     });
     it("csp names the api and its socket, render fills a template safely, and catalogs keep only the chosen world data", async () => {
 
-        expect(tool.csp("http://localhost:8100/api")).toBe("default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' http://localhost:8100 ws://localhost:8100; object-src 'none'; base-uri 'none'; form-action 'none'");
-        expect(tool.csp("https://api.example.test:8443/v1", { "img-src": "'self' https://cdn.example.test" })).toContain("img-src 'self' https://cdn.example.test; connect-src 'self' https://api.example.test:8443 wss://api.example.test:8443;");
+        expect(tool.csp("http://localhost:8100/api")).toBe("default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: http://localhost:8100; media-src 'self' blob: http://localhost:8100; connect-src 'self' http://localhost:8100 ws://localhost:8100; object-src 'none'; base-uri 'none'; form-action 'none'");
+        expect(tool.csp("https://api.example.test:8443/v1", { "img-src": "'self' https://cdn.example.test" })).toContain("img-src 'self' https://cdn.example.test; media-src 'self' blob: https://api.example.test:8443; connect-src 'self' https://api.example.test:8443 wss://api.example.test:8443;");
         expect(["file:///x", "nope", "ws://x.test"].map(( api ) => reasonOf(() => tool.csp(api)))).toEqual(["tool.csp", "tool.csp", "tool.csp"]);
         expect(tool.render("<html lang=\"{{lang}}\"><title>{{ title }}</title><i>{{count}}</i></html>", { lang: "ar", title: "<b>\"x\" & 'y'</b>", count: 3 })).toBe("<html lang=\"ar\"><title>&lt;b&gt;&quot;x&quot; &amp; &#x27;y&#x27;&lt;/b&gt;</title><i>3</i></html>");
         expect(tool.render("{{ a.b.c }}|{{list}}|{{mixed}}|{{flag}}", { a: { b: { c: "deep" } }, list: ["x", 2, true], mixed: ["x", { y: 1 }], flag: false })).toBe("deep|x 2 true|[&quot;x&quot;,{&quot;y&quot;:1}]|false");

@@ -115,7 +115,7 @@ describe("fuzz tool", () => {
         }
 
     });
-    it("render carries every given value escaped and leaves no placeholder; a csp always names the api's origin and its socket", () => {
+    it("render carries every given value escaped in its own place and never expands what a value carries; a csp always names the api's origin and its socket", () => {
 
         fc.assert(fc.property(fc.dictionary(fc.stringMatching(/^[a-z][a-z0-9-]{0,8}$/), fc.string(), { minKeys: 1, maxKeys: 6 }), ( values ) => {
 
@@ -123,7 +123,7 @@ describe("fuzz tool", () => {
             const filled = tool.render(template, values);
             const inner = filled.replace(/<\/?i>/g, "");
 
-            expect(filled.includes("{{")).toBe(false);
+            expect(filled).toBe(Object.keys(values).map(( key ) => `<i>${Bun.escapeHTML(values[key] ?? "")}</i>`).join(""));
             expect(/[<>"']/.test(inner)).toBe(false);
 
         }));

@@ -1,6 +1,6 @@
 import * as date from "engine-date";
-import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as string from "engine-string";
 import type { Event, EventsOptions, Feed, Held, PollOptions } from "./arch.ts";
@@ -11,9 +11,9 @@ const digits = /^\d{1,9}$/;
 const longest = 2_147_483_647;
 const slowest = 30_000;
 
-function over ( limit: number ): error.Fault {
+function over ( limit: number ): exception.Fault {
 
-    return error.fault("too_large", "net.event", { errors: { event: [`max:${limit}`] } });
+    return exception.fault("too_large", "net.event", { errors: { event: [`max:${limit}`] } });
 
 }
 function feed ( limit: number, initial?: string ): Feed {
@@ -139,14 +139,14 @@ function feed ( limit: number, initial?: string ): Feed {
 }
 function tries ( value: number | undefined ): number {
 
-    if ( Number.isNaN(value) ) throw new RangeError("not a count");
+    if ( Number.isNaN(value) ) throw exception.misuse("not a count");
 
     return Math.max(0, Math.trunc(value ?? 0));
 
 }
 async function within<T> ( work: PromiseLike<T>, link: event.Abortable, idle: number ): Promise<T> {
 
-    const timer = idle === Number.POSITIVE_INFINITY ? undefined : setTimeout(() => link.abort(error.fault("timeout", "net.idle")), Math.min(Math.max(0, idle), longest));
+    const timer = idle === Number.POSITIVE_INFINITY ? undefined : setTimeout(() => link.abort(exception.fault("timeout", "net.idle")), Math.min(Math.max(0, idle), longest));
 
     try {
 
@@ -159,7 +159,7 @@ async function within<T> ( work: PromiseLike<T>, link: event.Abortable, idle: nu
     }
 
 }
-async function refusal ( response: Response, signal: AbortSignal ): Promise<error.Fault> {
+async function refusal ( response: Response, signal: AbortSignal ): Promise<exception.Fault> {
 
     const text = await readBytes(response, 65_536, signal).then(( bytes ) => new TextDecoder().decode(bytes), () => "");
     const after = response.headers.get("retry-after");
@@ -185,14 +185,14 @@ export async function* events ( url: string, options: EventsOptions = {} ): Asyn
     let wait = Math.max(0, retry);
     let failures = 0;
 
-    if ( Number.isNaN(idle) || Number.isNaN(retry) ) throw new RangeError("not a duration");
-    if ( Number.isNaN(maxBytes) ) throw new RangeError("not a size");
+    if ( Number.isNaN(idle) || Number.isNaN(retry) ) throw exception.misuse("not a duration");
+    if ( Number.isNaN(maxBytes) ) throw exception.misuse("not a size");
 
     for ( const [name, value] of Object.entries(options.headers ?? {}) ) if ( value !== undefined ) headers[header(name, value)] = value;
 
     for ( ;; ) {
 
-        if ( signal?.aborted ) throw error.fault("timeout", "net.aborted", { cause: signal.reason });
+        if ( signal?.aborted ) throw exception.fault("timeout", "net.aborted", { cause: signal.reason });
         if ( last !== undefined && last !== "" ) headers[header("last-event-id", last)] = last;
         else if ( last === "" ) delete headers["last-event-id"];
 
@@ -214,11 +214,11 @@ export async function* events ( url: string, options: EventsOptions = {} ): Asyn
 
             final = true;
 
-            if ( kind !== null && !/^text\/event-stream(?:\s*;|$)/i.test(kind.trim()) ) throw error.fault("internal", "net.stream", { status: 502, message: "the reply is not an event stream" });
+            if ( kind !== null && !/^text\/event-stream(?:\s*;|$)/i.test(kind.trim()) ) throw exception.fault("internal", "net.stream", { status: 502, message: "the reply is not an event stream" });
 
             const body = response.body?.getReader();
 
-            if ( !body ) throw error.fault("unavailable", "net.refused", { message: "the host does not stream a reply body" });
+            if ( !body ) throw exception.fault("unavailable", "net.refused", { message: "the host does not stream a reply body" });
 
             const decoder = new TextDecoder();
 
@@ -245,7 +245,7 @@ export async function* events ( url: string, options: EventsOptions = {} ): Asyn
 
             const fault = gone(caught, signal, link.signal, "net.idle");
 
-            if ( final || signal?.aborted || failures >= allowed || !error.retryable(fault) ) throw fault;
+            if ( final || signal?.aborted || failures >= allowed || !exception.retryable(fault) ) throw fault;
 
             asked = (fault.retryAfter ?? 0) * 1000;
 
@@ -265,9 +265,9 @@ export async function* events ( url: string, options: EventsOptions = {} ): Asyn
         wait = reader.retry() ?? wait;
         failures += 1;
 
-        await date.sleep(Math.min(Math.max(wait * 2 ** (failures - 1), asked), Math.max(wait, slowest)), signal).catch(( cause: unknown ) => {
+        await exception.mend(date.sleep(Math.min(Math.max(wait * 2 ** (failures - 1), asked), Math.max(wait, slowest)), signal), ( cause ) => {
 
-            throw error.fault("timeout", "net.aborted", { cause });
+            throw exception.fault("timeout", "net.aborted", { cause });
 
         });
 
@@ -278,30 +278,38 @@ export async function poll<T> ( work: ( attempt: number, signal: AbortSignal ) =
 
     const { every = 1000, until = () => true, limit = 60, timeout = Number.POSITIVE_INFINITY, signal } = options;
 
-    if ( Number.isNaN(limit) ) throw new RangeError("not a count");
-    if ( typeof every === "number" && Number.isNaN(every) ) throw new RangeError("not a duration");
+    if ( Number.isNaN(limit) ) throw exception.misuse("not a count");
+    if ( typeof every === "number" && Number.isNaN(every) ) throw exception.misuse("not a duration");
 
     const span = event.deadline(timeout, signal);
-    const halted = (): error.Fault | undefined => signal?.aborted ? error.fault("timeout", "net.aborted", { cause: signal.reason }) : span.signal.aborted ? error.fault("timeout", "net.timeout") : undefined;
+    const halted = (): exception.Fault | undefined => signal?.aborted ? exception.fault("timeout", "net.aborted", { cause: signal.reason }) : span.signal.aborted ? exception.fault("timeout", "net.timeout") : undefined;
 
     try {
 
-        for ( let attempt = 1; attempt <= limit; attempt += 1 ) {
+        const found = await exception.rescueAsync(async () => {
 
-            const halt = halted();
+            for ( let attempt = 1; attempt <= limit; attempt += 1 ) {
 
-            if ( halt ) throw halt;
+                const halt = halted();
 
-            const value = await event.race(Promise.resolve(work(attempt, span.signal)), span.signal);
+                if ( halt ) throw halt;
 
-            if ( until(value, attempt) ) return value;
-            if ( attempt < limit ) await date.sleep(Math.max(0, typeof every === "function" ? every(attempt, value) : every) || 0, span.signal);
+                const value = await event.race(Promise.resolve(work(attempt, span.signal)), span.signal);
 
-        }
+                if ( until(value, attempt) ) return { value };
+                if ( attempt < limit ) await date.sleep(Math.max(0, typeof every === "function" ? every(attempt, value) : every) || 0, span.signal);
 
-    } catch ( caught ) {
+            }
 
-        throw halted() ?? caught;
+            return undefined;
+
+        }, ( caught ) => {
+
+            throw halted() ?? caught;
+
+        });
+
+        if ( found ) return found.value;
 
     } finally {
 
@@ -309,6 +317,6 @@ export async function poll<T> ( work: ( attempt: number, signal: AbortSignal ) =
 
     }
 
-    throw error.fault("timeout", "net.exhausted");
+    throw exception.fault("timeout", "net.exhausted");
 
 }

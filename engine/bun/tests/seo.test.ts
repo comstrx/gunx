@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as seo from "engine/seo";
 
 const site: seo.Site = { name: "Acme", url: "https://acme.test/", locale: "ar", locales: ["ar", "en"], description: "Store", image: "https://acme.test/og.png", twitter: "acme" };
@@ -76,7 +77,7 @@ describe("seo", () => {
         expect([made.title, made.description, made.openGraph["og:site_name"], made.openGraph["og:type"], made.keywords, made.openGraph["article:author"], made.openGraph["article:section"]]).toEqual(["Cart · Acme Store", "Store here", "Acme Store", "website", ["a", "b"], undefined, "S"]);
         expect([seo.organization(dirty).name, seo.website(dirty).name, (seo.article(dirty, { title: "T", path: "/t" }).publisher as { name: string }).name, seo.business(dirty).name]).toEqual(["Acme Store", "Acme Store", "Acme Store", "Acme Store"]);
         expect([seo.titleOf(["Acme", "Acme"]), seo.titleOf([]), seo.titleOf(["a", "b"], " | "), seo.metadata({ ...site, separator: " - " }, { title: "Cart" }).title, seo.metadata(site, { title: "Acme" }).title]).toEqual(["Acme", "", "a | b", "Cart - Acme", "Acme"]);
-        expect(() => seo.metadata({ ...site, name: " \u0000 " })).toThrow(RangeError);
+        expect(() => seo.metadata({ ...site, name: " \u0000 " })).toThrow(exception.Fault);
 
     });
     it("paths are cleaned: traversal, dots, backslashes, loose percents, fragments, control characters and protocol-relative paths", () => {
@@ -88,7 +89,7 @@ describe("seo", () => {
         ]);
         expect(seo.canonical(root, "/x", "en-US")).toBe(`${root}/en-US/x`);
         expect(seo.canonical(root, "/a\uD800b/\uDC00")).toBe(`${root}/a%EF%BF%BDb/%EF%BF%BD`);
-        expect(() => seo.canonical(root, "/", "e n")).toThrow(RangeError);
+        expect(() => seo.canonical(root, "/", "e n")).toThrow(exception.Fault);
 
     });
     it("images and links refuse foreign schemes, accept absolute and protocol-relative targets and encode the rest", () => {
@@ -121,7 +122,7 @@ describe("seo", () => {
 
         const many = Array.from({ length: 25_001 }, ( _, index ) => ({ path: `/p/${index}` }));
 
-        expect(() => seo.sitemap(site, many)).toThrow(RangeError);
+        expect(() => seo.sitemap(site, many)).toThrow(exception.Fault);
         expect((seo.sitemap(site, many.slice(0, 25_000)).match(/<url>/g) ?? []).length).toBe(50_000);
         expect(seo.sitemap(site, [{ path: "/", priority: 7, localized: false }, { path: "/", priority: -1, localized: false }, { path: "/", priority: Number.NaN, localized: false }, { path: "/", frequency: "sometimes" as never, localized: false }, { path: "/", modified: "2026-03-01T10:00:00Z", localized: false }])).toBe(`${seo.sitemap(site, []).slice(0, -9)}<url><loc>https://acme.test</loc><priority>1.0</priority></url><url><loc>https://acme.test</loc><priority>0.0</priority></url><url><loc>https://acme.test</loc></url><url><loc>https://acme.test</loc></url><url><loc>https://acme.test</loc><lastmod>2026-03-01</lastmod></url></urlset>`);
         expect(seo.sitemap(site, [{ path: "/", localized: false, images: ["/a.png", "//cdn.test/b.png", "", "<x>", "javascript:x"] }])).toContain('<url><loc>https://acme.test</loc><image:image><image:loc>https://acme.test/a.png</image:loc></image:image><image:image><image:loc>https://cdn.test/b.png</image:loc></image:image><image:image><image:loc>https://acme.test/%3Cx%3E</image:loc></image:image></url>');
@@ -137,7 +138,7 @@ describe("seo", () => {
     it("structured data validates prices, currencies, ratings and coordinates, appends search terms and escapes line separators", () => {
 
         expect(seo.product(site, { name: "T", path: "/t", price: 12.5, currency: "egp", image: ["/a.png", "/a.png", "javascript:x"], brand: "B", rating: { value: 4.5, count: 3, best: Number.NaN } })).toMatchObject({ image: ["https://acme.test/a.png"], brand: { "@type": "Brand", name: "B" }, aggregateRating: { ratingValue: 4.5, reviewCount: 3 }, offers: { price: "12.5", priceCurrency: "EGP", availability: "https://schema.org/InStock", url: "https://acme.test/ar/t" } });
-        expect([() => seo.product(site, { name: "T", path: "/t", price: "1e3", currency: "EGP" }), () => seo.product(site, { name: "T", path: "/t", price: 1, currency: "EG" }), () => seo.product(site, { name: "T", path: "/t", price: -1, currency: "EGP" })].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof RangeError ? String((caught as Error).message) : "?"; } })).toEqual(["not a price", "not a currency", "not a price"]);
+        expect([() => seo.product(site, { name: "T", path: "/t", price: "1e3", currency: "EGP" }), () => seo.product(site, { name: "T", path: "/t", price: 1, currency: "EG" }), () => seo.product(site, { name: "T", path: "/t", price: -1, currency: "EGP" })].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof exception.Fault ? String((caught as Error).message) : "?"; } })).toEqual(["not a price", "not a currency", "not a price"]);
         expect([seo.product(site, { name: "T", path: "/t", price: 1, currency: "EGP", rating: { value: 4.5, count: 0 } }).aggregateRating, seo.product(site, { name: "T", path: "/t", price: 1, currency: "EGP", rating: { value: Number.NaN, count: 2 } }).aggregateRating, seo.product(site, { name: "T", path: "/t", price: 1, currency: "EGP", image: [] }).image]).toEqual([undefined, undefined, undefined]);
         expect([seo.website(site, "/s?x=1").potentialAction, seo.website(site, "").potentialAction]).toEqual([{ "@type": "SearchAction", target: "https://acme.test/s?x=1&q={search_term_string}", "query-input": "required name=search_term_string" }, undefined]);
         expect(seo.business(site, { type: " Store ", point: { lat: 91, lng: 0 }, address: { city: "Cairo" }, hours: [], phone: "+201000000000" })).toEqual({ "@type": "Store", name: "Acme", url: "https://acme.test/ar", image: "https://acme.test/og.png", telephone: "+201000000000", address: { "@type": "PostalAddress", addressLocality: "Cairo" } });
@@ -161,14 +162,14 @@ describe("seo", () => {
         expect(seo.languageLinks({ ...hidden, default: "ar" }, "/p")).toEqual([{ locale: "en-US", href: "https://x.io/en-US/p" }, { locale: "ar", href: "https://x.io/p" }, { locale: "fr-ca", href: "https://x.io/fr-ca/p" }, { locale: "x-default", href: "https://x.io/p" }]);
         expect([seo.metadata(hidden).openGraph["og:locale"], seo.metadata({ ...hidden, locale: "ar_EG" }).openGraph["og:locale"], seo.metadata({ ...hidden, locale: "zh-Hant-TW" }).openGraph["og:locale"]]).toEqual(["en_US", "ar_EG", "zh_TW"]);
         expect(seo.tags(seo.metadata(hidden)).filter(( tag ) => "property" in tag && tag.property === "og:locale:alternate").map(( tag ) => ("content" in tag ? tag.content : ""))).toEqual(["ar", "fr_CA"]);
-        expect(() => seo.metadata({ ...hidden, locales: ["en-US", "e n"] })).toThrow(RangeError);
-        expect(() => seo.metadata({ ...hidden, default: "x y" })).toThrow(RangeError);
+        expect(() => seo.metadata({ ...hidden, locales: ["en-US", "e n"] })).toThrow(exception.Fault);
+        expect(() => seo.metadata({ ...hidden, default: "x y" })).toThrow(exception.Fault);
 
     });
     it("site urls: trailing slashes trimmed, base paths kept and encoded, credentials, spaces, queries and foreign schemes refused; the shape cache refreshes on any field change", () => {
 
         expect([seo.metadata({ name: "X", url: "https://x.io/base//", locale: "en" }, { path: "/p" }).canonical, seo.metadata({ name: "X", url: " https://x.io/ba%20se/ ", locale: "en" }).canonical, seo.metadata({ name: "X", url: "https://x.io/ba%zz/", locale: "en" }).canonical]).toEqual(["https://x.io/base/en/p", "https://x.io/ba%20se/en", "https://x.io/ba%25zz/en"]);
-        expect(["ftp://x.io", "https://user:pw@x.io", "https://x.io?x=1", "https://x.io#x", "x.io", "https://", "https://x.io\u0000", "https://x.io/ba se"].map(( url ) => { try { seo.metadata({ name: "X", url, locale: "en" }); return "ok"; } catch ( caught ) { return caught instanceof RangeError ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused", "refused", "refused", "refused", "refused"]);
+        expect(["ftp://x.io", "https://user:pw@x.io", "https://x.io?x=1", "https://x.io#x", "x.io", "https://", "https://x.io\u0000", "https://x.io/ba se"].map(( url ) => { try { seo.metadata({ name: "X", url, locale: "en" }); return "ok"; } catch ( caught ) { return caught instanceof exception.Fault ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused", "refused", "refused", "refused", "refused"]);
 
         const first = seo.metadata({ name: "X", url: "https://x.io", locale: "en", locales: ["en", "ar"] });
         const second = seo.metadata({ name: "Y", url: "https://x.io", locale: "en", locales: ["en", "fr"], hide: true });

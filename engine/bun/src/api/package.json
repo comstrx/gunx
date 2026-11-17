@@ -11,6 +11,7 @@
     "engine-date": "workspace:*",
     "engine-error": "workspace:*",
     "engine-event": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-fake": "workspace:*",
     "engine-func": "workspace:*",
     "engine-json": "workspace:*",

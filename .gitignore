@@ -147,5 +147,3 @@
 !**/storage/logs/**/
 !**/storage/app/**/.gitkeep
 !**/storage/logs/**/.gitkeep
-!**/storage/app/**/.gitignore
-!**/storage/logs/**/.gitignore

@@ -1,20 +1,20 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
 import * as event from "engine/event";
+import * as exception from "engine/exception";
 import * as spec from "engine/spec";
 import * as validate from "engine/validate";
 
 const context: spec.Context = { ...spec.empty(), form: { a: 1, b: "x y", c: [1, "2"], d: null, e: "", s: "a=b" }, user: { abilities: ["orders.*"] } };
-const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return error.isFault(caught) ? caught.reason ?? "?" : "?"; } };
+const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return exception.isFault(caught) ? caught.reason ?? "?" : "?"; } };
 const tick = (): Promise<void> => new Promise(( resolve ) => setTimeout(resolve, 0));
-const surface = spec.surface({ name: "s", role: "admin", screens: [
-    spec.screen({ name: "home", path: "/", title: "Home" }),
-    spec.screen({ name: "dupe", path: "/d/{id}/{id}", title: "D" }),
-    spec.screen({ name: "star", path: "/*/x", title: "S" }),
-    spec.screen({ name: "one", path: "/a/{id}", title: "One" }),
-    spec.screen({ name: "two", path: "/a/{id}", title: "Two" }),
-    spec.screen({ name: "fixed", path: "/a/b", title: "Fixed", menu: false }),
-    spec.screen({ name: "deep", path: "/a/b/c", title: "Deep", flow: ["x", "x"] }),
+const surface = spec.plan({ name: "s", role: "admin", screens: [
+    spec.screen("home", { path: "/", title: "Home" }),
+    spec.screen("dupe", { path: "/d/{id}/{id}", title: "D" }),
+    spec.screen("star", { path: "/*/x", title: "S" }),
+    spec.screen("one", { path: "/a/{id}", title: "One" }),
+    spec.screen("two", { path: "/a/{id}", title: "Two" }),
+    spec.screen("fixed", { path: "/a/b", title: "Fixed", menu: false }),
+    spec.screen("deep", { path: "/a/b/c", title: "Deep", flow: ["x", "x"] }),
 ] });
 const compiled = spec.compile(surface);
 
@@ -41,7 +41,7 @@ describe("spec.edges", () => {
         expect(spec.when("form.a=1 | form.a=2 & form.b=z")).toEqual({ any: [{ is: "form.a", eq: 1 }, { all: [{ is: "form.a", eq: 2 }, { is: "form.b", eq: "z" }] }] });
         expect(["form.a=1 | form.a=2 & form.b=z", "form.zz=null", "form.d=null", "form.b like x*z", "form.b like x y*y", "params.id in 7,8", "params.id=7", "form.zz", "form.a"].map(( text ) => spec.evaluate(spec.when(text), routed))).toEqual([true, true, true, false, false, true, true, false, true]);
         expect([spec.evaluate({ is: "form.zz" }, routed), spec.evaluate({ is: "form.a" }, routed), spec.not(""), spec.not(true), spec.not("form.a")]).toEqual([false, true, false, false, { not: { is: "form.a", empty: false } }]);
-        expect([spec.surface({ name: "s", role: "r", locales: ["ar", "en"], screens: [] }).locale, spec.surface({ name: "s", role: "r", screens: [] }).locale]).toEqual(["ar", "en"]);
+        expect([spec.plan({ name: "s", role: "r", locales: ["ar", "en"], screens: [] }).locale, spec.plan({ name: "s", role: "r", screens: [] }).locale]).toEqual(["ar", "en"]);
         expect([spec.fromDevice("online"), spec.fromFlow("step"), spec.resolve(spec.fromDevice("online"), { ...routed, device: { online: false } }), spec.resolve(spec.fromFlow("last"), routed)]).toEqual([{ path: "device.online" }, { path: "flow.step" }, false, true]);
 
     });
@@ -53,9 +53,9 @@ describe("spec.edges", () => {
         };
         const catalogue: spec.Catalogue = { "orders.list": { many: true, write: false, input: [], output: ["id", "status"] }, "orders.show": { many: false, write: false, input: ["id"], output: ["id", "status"] }, "orders.update": { many: false, write: true, input: ["id", "status"] } };
         const stack = validate.strictObject({ gap: validate.optional(validate.enum(["sm", "lg"])) });
-        const made = spec.surface({ name: "s", role: "r", screens: [
-            spec.screen({ name: "orders", path: "/orders", title: "Orders", flow: ["a", "b"], features: [spec.feature("list", {}, { id: "rows", ports: { rows: spec.read("orders.list") }, on: { load: [spec.set("user.name", "x"), spec.hide("list"), spec.navigate("/orders/42"), spec.navigate("/orders?status=open"), spec.step("c"), spec.step("next")] } })], blocks: [spec.block("stack", { gap: "huge" })] }),
-            spec.screen({ name: "order", path: "/orders/{id}", title: "Order", features: [spec.feature("show", {}, { ports: { row: spec.read("orders.show", { id: spec.param("id") }) } }), spec.feature("show", {}, { id: "editor", ports: { row: spec.read("orders.show", { id: spec.param("id") }), save: spec.write("orders.update", { id: spec.param("id") }, ["status", "bogus"]) } })] }),
+        const made = spec.plan({ name: "s", role: "r", screens: [
+            spec.screen("orders", { path: "/orders", title: "Orders", flow: ["a", "b"], features: [spec.feature("list", { id: "rows", ports: { rows: spec.read("orders.list") }, on: { load: [spec.set("user.name", "x"), spec.hide("list"), spec.navigate("/orders/42"), spec.navigate("/orders?status=open"), spec.step("c"), spec.step("next")] } })], blocks: [spec.block("stack", { gap: "huge" })] }),
+            spec.screen("order", { path: "/orders/{id}", title: "Order", features: [spec.feature("show", { ports: { row: spec.read("orders.show", { id: spec.param("id") }) } }), spec.feature("show", { id: "editor", ports: { row: spec.read("orders.show", { id: spec.param("id") }), save: spec.write("orders.update", { id: spec.param("id") }, ["status", "bogus"]) } })] }),
         ] });
 
         expect(spec.compile(made, { features: manifests, catalogue, blocks: { stack } }).issues.map(( issue ) => `${issue.path} | ${issue.rule} | ${issue.message}`)).toEqual([
@@ -65,7 +65,7 @@ describe("spec.edges", () => {
             "screens.orders.features[0].on.load[4] | flow.step | c: not a step of this flow",
             "screens.order.features[1].ports.save | port.fields | orders.update: lacks bogus",
         ]);
-        expect(spec.compile(spec.surface({ name: "s", role: "r", screens: [spec.screen({ name: "Bad Name", path: "/x", title: "x" }), spec.screen({ name: "ok", path: "/ok", title: "ok", features: [spec.feature("Bad Feature")], blocks: [spec.block("Bad Kind")] })] })).issues.map(( issue ) => `${issue.path} | ${issue.rule}`)).toEqual(["screens.Bad Name | shape", "screens.ok.features[0] | shape", "screens.ok.blocks[0] | shape"]);
+        expect(spec.compile(spec.plan({ name: "s", role: "r", screens: [spec.screen("Bad Name", { path: "/x", title: "x" }), spec.screen("ok", { path: "/ok", title: "ok", features: [spec.feature("Bad Feature")], blocks: [spec.block("Bad Kind")] })] })).issues.map(( issue ) => `${issue.path} | ${issue.rule}`)).toEqual(["screens.Bad Name | shape", "screens.ok.features[0] | shape", "screens.ok.blocks[0] | shape"]);
 
     });
     it("the runtime refuses a namespace that is not a record, finds a handler by a feature's id or name, stops a retired chain, queues only offline, declines an unanswered confirmation, honours trigger conditions, drops a superseded mount, runs failure hooks and keeps a session screen closed without a user", async () => {
@@ -74,10 +74,10 @@ describe("spec.edges", () => {
         const calls: string[] = [];
         const queued: string[] = [];
         let release: (() => void) | undefined;
-        const made = spec.surface({ name: "s", role: "r", screens: [
-            spec.screen({ name: "a", path: "/a", title: "A", auth: true, signals: ["armed"], features: [spec.feature("list", {}, { id: "rows", on: { failure: [spec.set("signals.failed", true)] } })], triggers: [spec.trigger("ui.refresh", [spec.refresh("rows")]), spec.trigger("ui.slow", [spec.call("list.slow"), spec.set("signals.after", true)]), spec.trigger("ui.armed", [spec.set("signals.hit", true)], "signals.armed")] }),
-            spec.screen({ name: "b", path: "/b", title: "B", triggers: [spec.trigger("ui.b", [spec.set("signals.b", true)])] }),
-            spec.screen({ name: "c", path: "/c", title: "C" }),
+        const made = spec.plan({ name: "s", role: "r", screens: [
+            spec.screen("a", { path: "/a", title: "A", auth: true, signals: ["armed"], features: [spec.feature("list", { id: "rows", on: { failure: [spec.set("signals.failed", true)] } })], triggers: [spec.trigger("ui.refresh", [spec.refresh("rows")]), spec.trigger("ui.slow", [spec.call("list.slow"), spec.set("signals.after", true)]), spec.trigger("ui.armed", [spec.set("signals.hit", true)], "signals.armed")] }),
+            spec.screen("b", { path: "/b", title: "B", triggers: [spec.trigger("ui.b", [spec.set("signals.b", true)])] }),
+            spec.screen("c", { path: "/c", title: "C" }),
         ] });
         const compiled = spec.compile(made, { features: { list: { name: "list", actions: ["refresh", "slow", "save"] } }, topics: ["ui.refresh", "ui.slow", "ui.armed", "ui.b"] });
         const live = spec.runtime(compiled, { bus, queue: ( action ) => { queued.push(action); }, handlers: { "list.refresh": () => { calls.push("refresh"); }, "list.slow": () => new Promise<void>(( resolve ) => { release = resolve; }), "list.save": () => { calls.push("save"); } } });
@@ -150,27 +150,13 @@ describe("spec.edges", () => {
     });
     it("a surface carries the api address it talks to through serialize and revive, and refuses one that is not http or https", () => {
 
-        const addressed = spec.compile(spec.surface({ name: "s", role: "admin", address: "https://api.example.test/v1", screens: [spec.screen({ name: "home", path: "/", title: "Home" })] }));
+        const addressed = spec.compile(spec.plan({ name: "s", role: "admin", address: "https://api.example.test/v1", screens: [spec.screen("home", { path: "/", title: "Home" })] }));
         const again = spec.revive(JSON.parse(JSON.stringify(spec.serialize(addressed))));
 
         expect([addressed.issues, again.surface.address, "address" in compiled.surface, spec.revive(JSON.parse(JSON.stringify(spec.serialize(compiled)))).surface.address]).toEqual([[], "https://api.example.test/v1", false, undefined]);
-        expect(spec.compile(spec.surface({ name: "s", role: "admin", address: "file:///etc", screens: [] })).issues.map(( issue ) => issue.rule)).toEqual(["surface.address"]);
-        expect(reasonOf(() => spec.compile({ name: "s", role: "admin", platform: "web", world: [], locales: ["en"], locale: "en", address: "file:///etc", screens: [], signals: [] }))).toBe("spec.surface");
+        expect(spec.compile(spec.plan({ name: "s", role: "admin", address: "file:///etc", screens: [] })).issues.map(( issue ) => issue.rule)).toEqual(["surface.address"]);
+        expect(reasonOf(() => spec.compile({ name: "s", role: "admin", platform: "web", world: [], locales: ["en"], locale: "en", address: "file:///etc", screens: [], signals: [], on: {}, triggers: [] }))).toBe("spec.surface");
         expect(reasonOf(() => spec.revive({ ...spec.serialize(addressed), surface: { ...(spec.serialize(addressed).surface as object), address: 7 } }))).toBe("spec.revive");
-
-    });
-    it("roles name the units a product compiles, its current one and how each is written", () => {
-
-        const units = { admin: { brand: "a" }, courier: { brand: "c" } };
-        const compileUnit = ( name: keyof typeof units ): spec.Compiled => spec.compile(spec.surface({ name: `web-${name}`, role: name, screens: [] }));
-        const made = spec.roles({ roles: units, current: "courier", compile: compileUnit });
-
-        expect([made.names, made.current, spec.roles({ roles: units, compile: compileUnit }).current, made.serialize === spec.serialize, Object.isFrozen(made), made.compile("admin").surface.name]).toEqual([["admin", "courier"], "courier", "admin", true, true, "web-admin"]);
-        expect([
-            () => spec.roles({ roles: {}, compile: compileUnit as never }),
-            () => spec.roles({ roles: units, compile: 1 as never }),
-            () => spec.roles({ roles: units, current: "ghost" as never, compile: compileUnit }),
-        ].map(reasonOf)).toEqual(["spec.roles", "spec.roles", "spec.roles"]);
 
     });
     it("the runtime refuses paths outside the namespaces, deep or unsafe keys and mistyped namespaces; effects must be objects and nest at most 64 deep; navigation fills params and appends the rest", async () => {

@@ -6,7 +6,7 @@ import { Link } from "@/elements/link.tsx";
 import { navigate, usePath } from "@/hooks/use-path.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
 import { useMenu } from "@/hooks/use-session.ts";
-import { labels } from "@/specs/runtime.ts";
+import { host } from "@/specs/app.ts";
 import { useTheme } from "@/styles/theme.ts";
 
 export function Nav ({ path }: { path: string } ) {
@@ -14,7 +14,7 @@ export function Nav ({ path }: { path: string } ) {
     const { locale, toggleLocale } = usePreferences();
     const look = useTheme();
     const at = usePath(path);
-    const text = labels(locale, "nav");
+    const text = host.app.labels(locale, "nav");
     const items = useMenu(locale, at);
 
     return (

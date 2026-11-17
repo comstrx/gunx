@@ -1,5 +1,5 @@
-import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import type { Feed, FeedOptions, FeedState, FeedFlight as Flight, Page, Settled } from "./arch.ts";
 import { createStore } from "./zustand.ts";
 
@@ -14,7 +14,7 @@ function page<T> ( found: unknown ): Page<T> {
 
     const { items, next } = (typeof found === "object" && found !== null ? found : {}) as { items?: unknown; next?: unknown };
 
-    if ( !Array.isArray(items) || (next !== null && typeof next !== "string") ) throw error.fault("internal", "feed.page", { message: "not a page" });
+    if ( !Array.isArray(items) || (next !== null && typeof next !== "string") ) throw exception.fault("internal", "feed.page", { message: "not a page" });
 
     return { items: items as T[], next };
 
@@ -57,32 +57,25 @@ export function feed<T> ( options: FeedOptions<T> ): Feed<T> {
     };
     const work = async ( mine: Flight, fresh: boolean ): Promise<void> => {
 
-        let found: Page<T>;
-        let added: T[];
-        let known: Set<string>;
-
-        try {
+        const taken = await exception.attempt(async () => {
 
             const loaded = await event.race(load(fresh ? null : store.getState().next, mine.controller.signal), mine.controller.signal);
 
-            if ( current !== mine ) {
+            if ( current !== mine ) return undefined;
 
-                mine.settle();
+            const read = page<T>(loaded);
+            const held = fresh ? new Set<string>() : new Set(seen);
 
-                return;
+            return { found: read, known: held, added: unseen(read.items, held) };
 
-            }
+        });
 
-            found = page<T>(loaded);
-            known = fresh ? new Set<string>() : new Set(seen);
-            added = unseen(found.items, known);
-
-        } catch ( thrown ) {
+        if ( !taken.ok ) {
 
             if ( current === mine ) {
 
                 current = undefined;
-                store.setState({ status: "failed", failure: error.of(thrown) });
+                store.setState({ status: "failed", failure: taken.fault });
 
             }
 
@@ -91,6 +84,16 @@ export function feed<T> ( options: FeedOptions<T> ): Feed<T> {
             return;
 
         }
+
+        if ( taken.value === undefined ) {
+
+            mine.settle();
+
+            return;
+
+        }
+
+        const { found, known, added } = taken.value;
 
         if ( current !== mine ) {
 

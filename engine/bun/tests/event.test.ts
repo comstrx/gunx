@@ -1,6 +1,6 @@
 import { describe, expect, test as it, jest } from "bun:test";
-import * as error from "engine/error";
 import * as event from "engine/event";
+import * as exception from "engine/exception";
 
 type Tally = { signal: AbortSignal; fire: ( reason?: unknown ) => void; held: () => number };
 
@@ -183,7 +183,7 @@ describe("event", () => {
         const failing = event.aborted(child.signal);
 
         parent.abort();
-        await expect(failing).rejects.toBeInstanceOf(error.Fault);
+        await expect(failing).rejects.toBeInstanceOf(exception.Fault);
         expect(child.signal.aborted).toBe(true);
 
     });
@@ -390,7 +390,7 @@ describe("event", () => {
 
             const late = await slow;
 
-            expect(late).toBeInstanceOf(error.Fault);
+            expect(late).toBeInstanceOf(exception.Fault);
             expect(late).toMatchObject({ code: "timeout", reason: "event.wait", message: "hit did not arrive within 50ms" });
             expect(made.count("hit")).toBe(0);
 
@@ -402,8 +402,8 @@ describe("event", () => {
             expect(await waiting).toMatchObject({ code: "timeout", reason: "event.aborted", cause: "left" });
             expect([made.count("hit"), gate.held(), jest.getTimerCount()]).toEqual([0, 0, 0]);
             expect(await rejected(made.wait("hit", { signal: AbortSignal.abort("early") }))).toMatchObject({ reason: "event.aborted", cause: "early" });
-            expect(await rejected(made.wait("hit", Number.NaN))).toEqual(new RangeError("not a duration"));
-            expect(await rejected(made.wait("hit", { timeout: Number.NaN }))).toBeInstanceOf(RangeError);
+            expect(await rejected(made.wait("hit", Number.NaN))).toEqual(exception.misuse("not a duration"));
+            expect(await rejected(made.wait("hit", { timeout: Number.NaN }))).toBeInstanceOf(exception.Fault);
             expect([made.count("hit"), jest.getTimerCount()]).toEqual([0, 0]);
 
             const kept = tally();
@@ -645,7 +645,7 @@ describe("event", () => {
             gate.fire("gone");
             expect(await left).toMatchObject({ reason: "event.aborted", cause: "gone" });
             expect([bus.count(), gate.held()]).toEqual([0, 0]);
-            expect(await rejected(bus.once("never", Number.NaN))).toBeInstanceOf(RangeError);
+            expect(await rejected(bus.once("never", Number.NaN))).toBeInstanceOf(exception.Fault);
 
             const door = tally();
             const heard: unknown[] = [];
@@ -868,7 +868,7 @@ describe("event", () => {
 
             expect(await rejected(made.until(() => { throw broke; }))).toBe(broke);
             expect(await rejected(made.until(() => { asked += 1; return true; }, { signal: AbortSignal.abort("early") }))).toMatchObject({ reason: "event.aborted", cause: "early" });
-            expect(await rejected(made.until(() => { asked += 1; return true; }, Number.NaN))).toBeInstanceOf(RangeError);
+            expect(await rejected(made.until(() => { asked += 1; return true; }, Number.NaN))).toBeInstanceOf(exception.Fault);
             expect([asked, made.count()]).toEqual([0, 0]);
 
             const failing = rejected(made.until(( value ) => {
@@ -1068,7 +1068,7 @@ describe("event", () => {
 
         await faked(() => {
 
-            expect(refused(() => event.deadline(Number.NaN))).toBeInstanceOf(RangeError);
+            expect(refused(() => event.deadline(Number.NaN))).toBeInstanceOf(exception.Fault);
             expect(jest.getTimerCount()).toBe(0);
 
             const timed = event.deadline(50);
@@ -1077,7 +1077,7 @@ describe("event", () => {
             expect([timed.signal.aborted, jest.getTimerCount()]).toEqual([false, 1]);
             jest.advanceTimersByTime(1);
             expect(timed.signal.aborted).toBe(true);
-            expect(timed.signal.reason).toBeInstanceOf(error.Fault);
+            expect(timed.signal.reason).toBeInstanceOf(exception.Fault);
             expect(timed.signal.reason).toMatchObject({ code: "timeout", reason: "event.deadline" });
             timed.abort("late");
             timed.release();
@@ -1179,7 +1179,7 @@ describe("event", () => {
 
         expect(await Promise.race([pending, tick().then(() => "idle")])).toBe("idle");
         live.abort("now");
-        expect(await pending).toBeInstanceOf(error.Fault);
+        expect(await pending).toBeInstanceOf(exception.Fault);
         expect(await pending).toMatchObject({ reason: "event.aborted", cause: "now" });
 
     });

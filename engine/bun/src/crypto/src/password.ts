@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as rand from "engine-rand";
 import * as string from "engine-string";
 import type { Bytes, Read } from "./arch.ts";
@@ -19,7 +20,7 @@ function counted ( rounds: number ): number {
 
     if ( Number.isInteger(rounds) && rounds >= least && rounds <= most ) return rounds;
 
-    throw new RangeError("not a round count");
+    throw exception.misuse("not a round count");
 
 }
 function parts ( hashed: unknown ): Read | undefined {
@@ -43,7 +44,7 @@ async function stretch ( password: string, salt: Bytes, rounds: number ): Promis
 
 export async function hashPassword ( password: string, rounds = iterations ): Promise<string> {
 
-    if ( !worded(password) ) throw new RangeError("not a password");
+    if ( !worded(password) ) throw exception.misuse("not a password");
 
     const cost = counted(rounds);
     const salt = rand.bytes(16);

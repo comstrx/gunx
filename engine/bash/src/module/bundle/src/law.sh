@@ -1,7 +1,3 @@
-declare -ga LAW_LAYERS=( core config module app )
-declare -gA LAW_OWNERS=()
-declare -g LAW_MACROS=module/bundle/src/macro.sh
-
 module:bundle:law:layer () {
 
     local path="${1}" layer=""
@@ -181,6 +177,8 @@ module:bundle:law:call () {
 
     fi
 
+    [[ "${token}" != "${LAW_LOADER}" || "${relative}" != src/*/index.sh ]] || return 0
+
     callee="${token%%:*}"
     core:list:has "${callee}" "${LAW_LAYERS[@]}" || return 0
 
@@ -225,7 +223,7 @@ module:bundle:law:lines () {
     local root="${1}" relative="" line="" number=0 failed=0 layer="" token="" message="" cfg="" banned="ev" unsafe="sed -" owner=""
 
     banned+="al"
-    owner="${MANIFEST[meta.authors.0]:-}"
+    owner="$(config:meta:owner)"
     unsafe+="i|shuf|readlink -f|date -d|grep -P|g?timeout |sudo "
 
     while IFS= read -r relative; do
@@ -258,6 +256,9 @@ module:bundle:law:lines () {
 
             if [[ "${line}" =~ ^\#cfg\[(test|bench|fuzz)\]$ ]]; then cfg="${line}"; continue; fi
 
+            [[ "${relative}" != src/module/*/src/*.sh || "${relative}" == */arch.sh || "${relative}" == "src/${LAW_LOAD}" || "${line}" != 'declare '* ]] \
+                || { core:error:fail "${relative}:${number}: a module keeps its definitions in src/arch.sh"; failed=1; }
+
             [[ "${layer}" == test || ! "${line}" =~ ^[[:space:]]*\# ]] \
                 || { core:error:fail "${relative}:${number}: a comment; the code must say it"; failed=1; }
 
@@ -267,7 +268,7 @@ module:bundle:law:lines () {
             [[ "${layer}" != test && "${layer}" != bench && "${layer}" != fuzz || -z "${owner}" || "${line}" != *"${owner}"* ]] \
                 || { core:error:fail "${relative}:${number}: the owner is spelled; a proof reads config:meta:owner"; failed=1; }
 
-            [[ "${layer}" == core || "${layer}" == test || ! "${line}" =~ (^|[[:space:]\(])(${unsafe})(.*)$ ]] \
+            [[ "${layer}" == core || "${layer}" == test || "${relative}" == "src/${LAW_FIRST}" || ! "${line}" =~ (^|[[:space:]\(])(${unsafe})(.*)$ ]] \
                 || { core:error:fail "${relative}:${number}: ${BASH_REMATCH[2]%% *} is not portable or not guarded; call the core verb"; failed=1; }
 
             [[ "${line}" =~ ^(@?[a-z][a-z0-9:-]*)[[:space:]]\(\)[[:space:]]\{$ ]] && continue
@@ -301,7 +302,7 @@ module:bundle:law:lines () {
 }
 module:bundle:law:coverage () {
 
-    local root="${1}" relative="" prefix="" function="" failed=0
+    local root="${1}" relative="" prefix="" function="" kind="" home="" failed=0
     local -A domains=() proven=()
 
     while IFS= read -r relative; do
@@ -312,26 +313,44 @@ module:bundle:law:coverage () {
 
         domains["${prefix}"]="${relative}"
 
-        while IFS= read -r function; do
-            proven["${prefix}"]=1
-        done < <(module:bundle:cfg test "${root}/${relative}")
+        for kind in test bench fuzz; do
+
+            while IFS= read -r function; do
+                proven["${kind} ${prefix}"]=1
+            done < <(module:bundle:cfg "${kind}" "${root}/${relative}")
+
+        done
 
     done < <(module:bundle:law:sources "${root}")
 
     for function in "${!LAW_OWNERS[@]}"; do
 
-        [[ "${function}" == test:* ]] || continue
+        [[ "${function}" =~ ^(test|bench|fuzz):([a-z]+:[a-z][a-z0-9-]*): ]] || continue
 
-        for prefix in "${!domains[@]}"; do
-            [[ "${function}" != "test:${prefix}:"* ]] || proven["${prefix}"]=1
-        done
+        kind="${BASH_REMATCH[1]}"
+        prefix="${BASH_REMATCH[2]}"
+
+        [[ -n "${domains[${prefix}]:-}" ]] || { core:error:fail "${LAW_OWNERS[${function}]}: ${function} proves no domain of the source"; failed=1; continue; }
+
+        home="tests/${prefix##*:}.test.sh"
+        [[ "${kind}" != bench ]] || home="benches/${prefix##*:}.bench.sh"
+        [[ "${kind}" != fuzz ]] || home="fuzz/${prefix##*:}.fuzz.sh"
+
+        [[ "${LAW_OWNERS[${function}]}" == "${home}" ]] \
+            || { core:error:fail "${LAW_OWNERS[${function}]}: ${function} lives in ${home}; one proof file per domain"; failed=1; }
+
+        proven["${kind} ${prefix}"]=1
 
     done
 
     for prefix in "${!domains[@]}"; do
 
-        [[ -n "${proven[${prefix}]:-}" ]] \
-            || { core:error:fail "${domains[${prefix}]}: no test:${prefix}:* case and no #cfg[test] function"; failed=1; }
+        for kind in test bench fuzz; do
+
+            [[ -n "${proven[${kind} ${prefix}]:-}" ]] \
+                || { core:error:fail "${domains[${prefix}]}: no ${kind}:${prefix}:* case and no #cfg[${kind}] function"; failed=1; }
+
+        done
 
     done
 

@@ -1,5 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as translate from "engine/translate";
 import * as value from "engine/value";
 
@@ -94,17 +94,17 @@ describe("translate", () => {
         expect(local.money(value.money.of(10, "USD"))).toBe("$10.00");
         expect(local.date("2026-03-15T13:45:30Z", "clock")).toBe("15:45");
         expect(local.relative("2026-03-15T13:45:30Z", "2026-03-15T13:50:30Z")).toBe("5 minutes ago");
-        expect(local.reason(error.fault("not_found", "cart.empty"))).toBe("Your cart is empty");
-        expect(local.reason(error.fault("not_found", "other"))).toBe("Not here");
-        expect(local.reason(error.fault("conflict"))).toBe("The request conflicts with the current state");
+        expect(local.reason(exception.fault("not_found", "cart.empty"))).toBe("Your cart is empty");
+        expect(local.reason(exception.fault("not_found", "other"))).toBe("Not here");
+        expect(local.reason(exception.fault("conflict"))).toBe("The request conflicts with the current state");
         expect(local.reason("boom")).toBe("boom");
-        expect(local.field(error.fault("validation", "r", { errors: { email: ["required"] } }), "email")).toBe("email is required");
-        expect(local.field(error.fault("validation", "r", { errors: { email: ["min_length:3"] } }), "email")).toBe("min_length:3");
+        expect(local.field(exception.fault("validation", "r", { errors: { email: ["required"] } }), "email")).toBe("email is required");
+        expect(local.field(exception.fault("validation", "r", { errors: { email: ["min_length:3"] } }), "email")).toBe("min_length:3");
         expect(local.field(new Error("x"), "email")).toBeUndefined();
         expect(translate.formatNumber(1234.5, "ar-EG-u-nu-arab")).toBe("١٬٢٣٤٫٥");
         expect(translate.formatMoney(value.money.of(5, "EGP"), "en")).toBe("EGP 5.00");
         expect(translate.formatDate("2026-03-15", "en", "YYYY/MM/DD")).toBe("2026/03/15");
-        expect(translate.reason(error.fault("not_found", "cart.empty"), en)).toBe("Your cart is empty");
+        expect(translate.reason(exception.fault("not_found", "cart.empty"), en)).toBe("Your cart is empty");
 
     });
     it("localized routes carry the locale as a prefix except the default, and date ranges speak the locale", () => {
@@ -269,7 +269,7 @@ describe("translate", () => {
         expect(bare(local.range("2026-03-01T23:00:00Z", "2026-03-05T23:00:00Z", { month: "numeric", day: "numeric" }))).toMatch(/^2\/3\s*[–-]\s*6\/3$/);
         expect([local.list(["a", "b"]), local.list(["a", "b"], "or")]).toEqual(["a وb", "a أو b"]);
         expect(bare(local.percent(50))).toBe("50%");
-        expect(local.reason(error.fault("not_found"))).toBe("Not here");
+        expect(local.reason(exception.fault("not_found"))).toBe("Not here");
         expect(local.relative("2026-03-15T13:45:30Z", "2026-03-15T13:50:30Z")).toBe("منذ 5 دقائق");
 
     });
@@ -289,11 +289,11 @@ describe("translate", () => {
             validation: { required: "{field} is required", min_length: "one:{field} needs {value} character|other:{field} needs {value} characters", "max:9": "exact nine" },
             fields: { email: "E-mail" },
         });
-        const fault = error.fault("validation", "r", { errors: { email: ["required"], name: ["min_length:8"], one: ["min_length:1"], nine: ["max:9"], ten: ["max:10"], raw: ["weird thing"] } });
+        const fault = exception.fault("validation", "r", { errors: { email: ["required"], name: ["min_length:8"], one: ["min_length:1"], nine: ["max:9"], ten: ["max:10"], raw: ["weird thing"] } });
 
-        expect(translate.reason(error.fault("too_many_requests", undefined, { retryAfter: 30 }), made)).toBe("Wait 30s (too_many_requests)");
-        expect(translate.reason(error.fault("too_many_requests", "x.y", { retryAfter: 30 }), made)).toBe("Wait 30s (too_many_requests)");
-        expect(translate.reason(error.fault("not_found", "cart.empty"), made)).toBe("Empty (404)");
+        expect(translate.reason(exception.fault("too_many_requests", undefined, { retryAfter: 30 }), made)).toBe("Wait 30s (too_many_requests)");
+        expect(translate.reason(exception.fault("too_many_requests", "x.y", { retryAfter: 30 }), made)).toBe("Wait 30s (too_many_requests)");
+        expect(translate.reason(exception.fault("not_found", "cart.empty"), made)).toBe("Empty (404)");
         expect(translate.reason(new Error("plain"), made)).toBe("plain");
         expect(["email", "name", "one", "nine", "ten", "raw", "absent"].map(( name ) => translate.field(fault, name, made))).toEqual(["E-mail is required", "name needs 8 characters", "one needs 1 character", "exact nine", "max:10", "weird thing", undefined]);
 

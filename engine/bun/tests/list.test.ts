@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as list from "engine/list";
 
 type Row = { id: number; name: string; group: string; price: number | null };
@@ -208,7 +209,7 @@ describe("list", () => {
         expect(list.range(1, 3, Number.POSITIVE_INFINITY)).toEqual([1]);
         expect(list.range(0, Number.POSITIVE_INFINITY)).toEqual([]);
         expect(list.range(Number.NaN, 3)).toEqual([]);
-        expect(() => list.range(0, 1e9)).toThrow(RangeError);
+        expect(() => list.range(0, 1e9)).toThrow(exception.Fault);
 
     });
     it("an index or a size that is not whole is refused, never guessed", () => {

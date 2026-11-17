@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as validate from "engine-validate";
 import type { Endpoint, Features, Frame, Info, Meta, Node, Parameter, Paths, Split, TransportIssue, Wire } from "./arch.ts";
@@ -192,7 +192,7 @@ export function answer<T> ( data: T, meta: Meta = {}, paths: Paths = house.envel
 }
 export function refuse ( failure: unknown, meta: Meta = {}, paths: Paths = house.envelope ): json.Dictionary {
 
-    return refusal(error.of(failure), meta, paths);
+    return refusal(exception.of(failure), meta, paths);
 
 }
 export function paged<T> ( rows: readonly T[], page: { page: number; limit: number; total: number }, paths: Paths = house.envelope, ok = house.ok ): json.Dictionary {

@@ -1,4 +1,4 @@
-export type { Appearance, Assets, Axes, Browse, Catalog, Choice, ClassValue, ColorFormat, ContrastLevel, Countries, Country, Currencies, Currency, Curve, Direction, Display, Easing, Emoji, EmojiGroup, EmojiOptions, Emojis, Face, Family, FlagFormat, FlagPlace, FontLink, Glyph, Grouped, Hsl, Icon, IconSet, Icons, Key, Keys, Language, Languages, Named, Oklch, Options, Path, Phone, Picked, Preference, Readable, Recipe, Region, Rgb, Root, Scheme, Schemes, Shade, Shades, Sheet, Spring, Theme, ThemeOptions, ThemeState, Tokens, Variants, When, World } from "./arch.ts";
+export type { Appearance, Assets, Axes, Browse, Catalog, Choice, ClassValue, ColorFormat, ContrastLevel, Countries, Country, Currencies, Currency, Curve, Direction, Display, Easing, Emoji, EmojiGroup, EmojiOptions, Emojis, Face, Family, FlagFormat, FlagPlace, FontLink, Glyph, Grouped, Hsl, Icon, IconSet, Icons, Key, Keys, Language, Languages, Look, Named, Oklch, Options, Page, Path, Phone, Picked, Preference, Readable, Recipe, Region, Rgb, Root, Scheme, Schemes, Scope, Shade, Shades, Sheet, Spring, Theme, ThemeOptions, ThemeState, Tokens, Variants, When, World } from "./arch.ts";
 export { alpha, blend, channels, color, contrast, darken, ensureReadable, fromHsl, fromOklch, grayscale, hsl, isColor, isDark, lighten, luminance, mix, oklch, onColor, readable, rgb, rotate, saturate, shades, toCss, toHex, toHsl, toOklch } from "./color.ts";
 export { countries, defineCountries, defineKeys, dialings, everyCountry, isArabic, keys, nameIn, regionName, regionOf, regions } from "./country.ts";
 export { currencies, defineCurrencies, everyCurrency } from "./currency.ts";
@@ -8,8 +8,9 @@ export { families, fontFaces, fontFiles, fontFolder, fontFor, fontLinks, fontOf,
 export { icons } from "./icon.ts";
 export { defineLanguages, everyLanguage, languages } from "./language.ts";
 export { baseOf, catalogs } from "./lazy.ts";
+export { isPreference, paint, preferences } from "./look.ts";
 export { curves, durations, ease, easings, path, reduced, spring, stagger, toLinear, transition, tween } from "./motion.ts";
-export { appearance, isPreference, preferences, theme } from "./theme.ts";
+export { appearance, theme } from "./theme.ts";
 export { block, css, isToken, variables } from "./tokens.ts";
 export { classes, states, variants } from "./variants.ts";
 export { define, load, loaded } from "./world.ts";

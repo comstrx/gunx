@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as value from "engine/value";
 
 const text = ( given: value.Decimal ): string => given;
@@ -10,7 +11,7 @@ const failing = ( run: () => unknown ): string => {
 
     } catch ( thrown ) {
 
-        return thrown instanceof RangeError ? thrown.message : "not a RangeError";
+        return thrown instanceof exception.Fault ? thrown.message : "not a RangeError";
 
     }
 

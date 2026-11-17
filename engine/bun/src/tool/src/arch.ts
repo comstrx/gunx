@@ -1,3 +1,6 @@
+import type * as spec from "engine-spec";
+import type * as world from "engine-world";
+
 export type Walked = { path: string; relative: string; size: number };
 export type WalkOptions = { extensions?: readonly string[] | undefined; ignore?: readonly string[] | undefined };
 export type Member = { name: string; folder: string; description: string; dependencies: string[] };
@@ -35,27 +38,15 @@ export type Found = { target: string; line: number; typed: boolean; text: string
 export type Visit = { node: string; next: number };
 export type Kinded = { isFile: () => boolean; isDirectory: () => boolean; isSymbolicLink: () => boolean };
 export type Vars = Readonly<Record<string, string | undefined>>;
-export type Role = { readonly config: { readonly settings: object; readonly themes?: object | undefined } };
-export type Roles = Readonly<Record<string, Role>>;
-export type Name<R extends Roles> = Extract<keyof R, string>;
-export type Catalog = "countries" | "currencies" | "languages" | "emoji";
-export type Problem = { path: string; rule: string; message: string; near?: string | undefined; fix?: string | undefined };
-export type Compiled = {
-    surface: { locale: string; locales: readonly string[]; world: readonly Catalog[]; address?: string | undefined };
-    screens: readonly unknown[];
-    features: readonly unknown[];
-    topics: { emitted: readonly unknown[] };
-    issues: readonly Problem[];
-};
-export type Source<R extends Roles = Roles, C extends Compiled = Compiled> = { readonly roles: R; readonly current: Name<R>; compile: ( name: Name<R> ) => C; serialize: ( compiled: C ) => unknown };
-export type Loose = { readonly roles: Roles; readonly current: string; compile: ( name: string ) => Compiled; serialize: ( compiled: Compiled ) => unknown };
-export type View<R extends Roles = Roles, C extends Compiled = Compiled> = C & { name: Name<R>; settings: R[Name<R>]["config"]["settings"]; themes: R[Name<R>]["config"]["themes"]; locale: string; dir: "ltr" | "rtl" };
+export type Reached = { name: string; id: string; settings: spec.Settings; themes: spec.Config["themes"]; media: string[] };
+export type Reach = { names: string[]; addresses: string[]; world: world.Catalog[]; surfaces: Reached[] };
+export type View<D extends object = object> = D extends unknown ? spec.Compiled & { name: string; id: string; address: string | undefined; config: spec.Settled<D>; settings: spec.Settled<D>["settings"]; themes: spec.Settled<D>["themes"]; locale: string; dir: "ltr" | "rtl"; index: spec.Listed[]; reach: Reach } : never;
 export type Scope<V = unknown> = {
     readonly root: string;
     readonly argv: readonly string[];
     readonly env: Vars;
     readonly role: V;
-    readonly specs: Loose | undefined;
+    readonly build: spec.Build | undefined;
     at: ( path: string ) => string;
     into: ( path: string ) => string;
     expand: ( text: string ) => string;
@@ -73,9 +64,10 @@ export type Steps<V = unknown> = string | Step<V> | Act<V> | Each<V> | Env<V> | 
 export type Needs<S> = S extends Step<infer V> ? V : S extends Each<infer V> ? V : S extends Env<infer V> ? V : S extends Act<infer V> ? V : S extends readonly (infer T)[] ? Needs<T> : unknown;
 export type Joined<U> = (U extends unknown ? ( needs: U ) => void : never) extends ( needs: infer I ) => void ? I : never;
 export type Tasks<V = unknown> = Readonly<Record<string, Steps<V>>>;
-export type Project<V = unknown> = { readonly tasks: Tasks<V>; readonly specs: Loose | undefined };
-export type Context = { readonly role: string | undefined; readonly env: Vars; readonly views: Map<string, View> };
-export type Defined<R extends Roles, C extends Compiled> = { specs: Source<R, C>; tasks: Tasks<View<R, C>> };
+export type Deployed = ( env: Vars ) => Record<string, unknown>;
+export type Project<V = unknown> = { readonly tasks: Tasks<V>; readonly specs: spec.Spec | undefined; readonly part: spec.Part | undefined; readonly deploy: Deployed | undefined };
+export type Context = { readonly role: string | undefined; readonly env: Vars; readonly held: { build: spec.Build | undefined; views: Map<string, View> } };
+export type Defined<D extends object> = { specs: spec.Spec; part: spec.Part<D>; tasks: Tasks<View<D>>; deploy?: Deployed | undefined };
 export type Made<V> = ( role: V, scope: Scope<V> ) => unknown;
 export type CopyOptions = { extensions?: readonly string[] | undefined; clean?: boolean | undefined };
 export type RunOptions = { env?: Vars | undefined; cwd?: string | undefined };
@@ -96,4 +88,3 @@ export type Layers = Omit<Rules, "root">;
 export type Nameless = { ignore?: readonly string[] | undefined };
 export type Values = Readonly<Record<string, unknown>>;
 export type Directives = Readonly<Record<string, string>>;
-export type Written = { settings?: readonly string[] | undefined };

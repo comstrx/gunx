@@ -1,5 +1,6 @@
 import type * as error from "engine-error";
 import type * as event from "engine-event";
+import type * as exception from "engine-exception";
 import type * as fake from "engine-fake";
 import type * as json from "engine-json";
 import type * as net from "engine-net";
@@ -73,7 +74,7 @@ export type ClientOptions = {
     fetcher?: net.Fetcher | undefined;
     timeout?: number | undefined;
     retries?: number | undefined;
-    onFault?: (( fault: error.Fault, endpoint: Endpoint ) => void) | undefined;
+    onFault?: (( fault: exception.Fault, endpoint: Endpoint ) => void) | undefined;
     onReply?: (( reply: Reply<unknown>, endpoint: Endpoint ) => void) | undefined;
     fail?: (( cause: unknown ) => void) | undefined;
 };
@@ -85,10 +86,11 @@ export type Client = {
     forget: ( target?: Endpoint | string ) => void;
 };
 export type Kept = { value: Reply<unknown>; until: number; owner: string; id: string; feature: string };
-export type Sent = { path: string; query: parse.QueryInput; body: Record<string, unknown> | undefined };
+export type Sent = { path: string; query: parse.QueryInput; body: Record<string, unknown> | Blob | Uint8Array | undefined };
+export type FileRule = { max?: number | undefined; accept?: readonly string[] | undefined };
 export type Ambient = { locale: string; currency: string; tenant: string; scope: string };
 export type Ready = { record: Record<string, unknown>; ambient: Ambient; bearer: string; owner: string; key: string; life: number; shared: boolean; kept: Reply<unknown> | undefined };
-export type Refusal = ( status: number, body: unknown, headers: Record<string, string> ) => error.Fault;
+export type Refusal = ( status: number, body: unknown, headers: Record<string, string> ) => exception.Fault;
 export type Route = ( context: { params: Record<string, string>; query: parse.Query; body: unknown; headers: Record<string, string>; method: string; path: string } ) => unknown | Promise<unknown>;
 export type Routes = Record<string, Route>;
 export type Recorded = { method: string; path: string; query: parse.Query; body: unknown; headers: Record<string, string> };
@@ -98,10 +100,10 @@ export type Stub = {
     reset: () => void;
     latency: ( ms: number ) => void;
     route: ( key: string, handler: Route ) => void;
-    refuse: ( key: string, fault: error.Fault | error.Code, times?: number ) => void;
+    refuse: ( key: string, fault: exception.Fault | error.Code, times?: number ) => void;
 };
 export type Row = { key: string; method: string; pattern: string; handler: Route; rank: number };
-export type Plan = { method: string; pattern: string; fault: error.Fault; left: number };
+export type Plan = { method: string; pattern: string; fault: exception.Fault; left: number };
 export type Bound = Readonly<Record<string, string | number>>;
 export type FakeOptions = fake.Options & { seed?: fake.Seed | undefined; rows?: number | undefined; wire?: Wire | undefined; latency?: number | undefined };
 export type Fakes = Stub & { routes: Routes; rows: ( endpoint: Endpoint, params?: Bound ) => json.Dictionary[] };
@@ -174,4 +176,4 @@ export type Presence = {
 
 export type Connect = Omit<socket.Options, "protocol" | "prepare"> & { auth?: string | (() => string | undefined | Promise<string | undefined>) | undefined };
 
-export type CallScope = Call & { interruption?: (() => error.Fault) | undefined };
+export type CallScope = Call & { interruption?: (() => exception.Fault) | undefined };

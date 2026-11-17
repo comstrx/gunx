@@ -1,3 +1,5 @@
+import * as exception from "engine-exception";
+
 const pairs: Record<string, string> = {
     person: "people", man: "men", woman: "women", child: "children", tooth: "teeth", foot: "feet", mouse: "mice", goose: "geese",
     ox: "oxen", leaf: "leaves", life: "lives", knife: "knives", wife: "wives", half: "halves", datum: "data", medium: "media",
@@ -76,7 +78,7 @@ export function pluralize ( count: number, one: string, many?: string, locale = 
         if ( amount === 1 ) return one;
         if ( amount === 2 ) return dual(one);
 
-        if ( many === undefined ) throw new RangeError("a plural form is required");
+        if ( many === undefined ) throw exception.misuse("a plural form is required");
 
         return many;
 
@@ -84,7 +86,7 @@ export function pluralize ( count: number, one: string, many?: string, locale = 
 
     if ( amount === 1 ) return one;
     if ( many !== undefined ) return many;
-    if ( language !== "en" && language !== "" ) throw new RangeError("a plural form is required");
+    if ( language !== "en" && language !== "" ) throw exception.misuse("a plural form is required");
 
     return plural(one);
 

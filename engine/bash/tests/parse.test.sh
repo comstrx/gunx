@@ -59,3 +59,15 @@ test:core:parse:counts-only-numbers () {
     @eq "$(core:parse:list table word)" ''
 
 }
+test:core:parse:reads-a-table-by-any-key () {
+
+    local -A table=( [list]=2 [list.0]=one [list.1]=two [word]=text )
+
+    @fails core:parse:has table ''
+    @eq "$(core:parse:get table '' fallback)" fallback
+    @errors 'Missing key: ' core:parse:get table ''
+    @eq "$(core:parse:count table '')" 0
+    @eq "$(core:parse:list table '')" ''
+    @eq "$(core:parse:list table list | tr '\n' ' ')" 'one two '
+
+}

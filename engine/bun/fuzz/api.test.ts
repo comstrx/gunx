@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as validate from "engine/validate";
 import * as fc from "fast-check";
 
@@ -70,7 +70,7 @@ describe("fuzz api", () => {
 
                     } catch ( caught ) {
 
-                        return caught instanceof error.Fault ? "fault" : "throw";
+                        return caught instanceof exception.Fault ? "fault" : "throw";
 
                     }
 

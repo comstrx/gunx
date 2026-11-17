@@ -91,3 +91,14 @@ test:core:yaml:sets-a-value () {
     @eq "$(cat "${file}")" $'a:\n  list: [.]\n  next: 1\n\nb: [z]'
 
 }
+test:core:yaml:sets-a-value-as-it-is-written () {
+
+    local file="${TMPDIR}/set.yml" value='a\nb \\ & "q" [x]'
+
+    printf 'top:\n  path:\n    - one\n  keep: yes\n' > "${file}"
+
+    core:parse:yaml:set "${file}" path "${value}"
+
+    @eq "$(cat "${file}")" "$(printf 'top:\n  path: %s\n  keep: yes' "${value}")"
+
+}

@@ -1,5 +1,5 @@
-import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import { isLoopback } from "./address.ts";
 import type { Body, Fetcher, Policy, Reader, Wild } from "./arch.ts";
 import { originOf, parseUrl } from "./url.ts";
@@ -9,19 +9,19 @@ const moved = new Set([301, 302, 303, 307, 308]);
 const secret = new Set(["authorization", "cookie", "proxy-authorization"]);
 const framed = new Set(["content-type", "content-length", "content-encoding", "content-language", "content-location"]);
 
-function over ( maxBytes: number ): error.Fault {
+function over ( maxBytes: number ): exception.Fault {
 
-    return error.fault("too_large", "net.body", { errors: { body: [`max:${maxBytes}`] } });
+    return exception.fault("too_large", "net.body", { errors: { body: [`max:${maxBytes}`] } });
 
 }
 export function dropped ( stream: { cancel: () => Promise<void> } | null | undefined ): void {
 
-    if ( stream ) void stream.cancel().catch(() => undefined);
+    if ( stream ) exception.quiet(stream.cancel());
 
 }
-function refused ( url: string, reason: string, message: string ): error.Fault {
+function refused ( url: string, reason: string, message: string ): exception.Fault {
 
-    return error.fault("forbidden", reason, { message: `${originOf(url) ?? "the address"}: ${message}` });
+    return exception.fault("forbidden", reason, { message: `${originOf(url) ?? "the address"}: ${message}` });
 
 }
 function without ( headers: Record<string, string>, names: ReadonlySet<string> ): Record<string, string> {
@@ -35,15 +35,7 @@ function without ( headers: Record<string, string>, names: ReadonlySet<string> )
 }
 function resolved ( onward: string, base: string ): string {
 
-    try {
-
-        return new URL(onward, base).href;
-
-    } catch {
-
-        return "";
-
-    }
+    return exception.rescue(() => new URL(onward, base).href, () => "");
 
 }
 
@@ -84,13 +76,13 @@ async function drained ( reader: Reader, maxBytes: number ): Promise<Uint8Array>
 
 export function timeoutSignal ( ms: number ): AbortSignal {
 
-    if ( Number.isNaN(ms) ) throw new RangeError("not a duration");
+    if ( Number.isNaN(ms) ) throw exception.misuse("not a duration");
 
     const controller = new AbortController();
 
     if ( ms === Number.POSITIVE_INFINITY ) return controller.signal;
 
-    const timer: unknown = setTimeout(() => controller.abort(error.fault("timeout", "net.timeout")), Math.min(Math.max(0, ms), longest));
+    const timer: unknown = setTimeout(() => controller.abort(exception.fault("timeout", "net.timeout")), Math.min(Math.max(0, ms), longest));
 
     if ( typeof timer === "object" && timer !== null && "unref" in timer && typeof timer.unref === "function" ) timer.unref();
 
@@ -104,7 +96,7 @@ export function anySignal ( ...signals: readonly (AbortSignal | undefined)[] ): 
 }
 export async function readBytes ( response: Body, maxBytes = 5_000_000, signal?: AbortSignal ): Promise<Uint8Array> {
 
-    if ( Number.isNaN(maxBytes) ) throw new RangeError("not a size");
+    if ( Number.isNaN(maxBytes) ) throw exception.misuse("not a size");
 
     const declared = Number(response.headers?.get("content-length") ?? 0);
 
@@ -128,17 +120,17 @@ export async function readBytes ( response: Body, maxBytes = 5_000_000, signal?:
 
     }
 
-    try {
+    return await exception.rescueAsync(async () => {
 
         return await event.race(drained(reader, maxBytes), signal);
 
-    } catch ( caught ) {
+    }, ( caught ) => {
 
         dropped(reader);
 
         throw caught;
 
-    }
+    });
 
 }
 export function policy ( given: Policy ): ( url: string ) => boolean {
@@ -151,7 +143,7 @@ export function policy ( given: Policy ): ( url: string ) => boolean {
         const starred = entry.includes("://*.");
         const parts = parseUrl(starred ? entry.replace("://*.", "://x.") : entry);
 
-        if ( !parts || parts.origin === "null" || parts.path !== "/" || parts.hash !== "" || entry.includes("?") || entry.includes("@") || parts.hostname.includes("*") ) throw new RangeError("not an origin");
+        if ( !parts || parts.origin === "null" || parts.path !== "/" || parts.hash !== "" || entry.includes("?") || entry.includes("@") || parts.hostname.includes("*") ) throw exception.misuse("not an origin");
 
         if ( starred ) wild.push({ protocol: parts.protocol, suffix: parts.hostname.slice(1), port: parts.port });
         else exact.add(parts.origin);

@@ -1,6 +1,5 @@
-import * as adapter from "engine-adapter";
 import * as crypto from "engine-crypto";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as list from "engine-list";
 import * as string from "engine-string";
@@ -26,7 +25,7 @@ const hosts = new Map<string, Reason>([
     ["ENAMETOOLONG",   ["validation", "fs.path"]],
 ]);
 
-export const disk: adapter.Port<Disk> = adapter.port<Disk>("fs.disk");
+export const disk: exception.Slot<Disk> = exception.slot<Disk>("fs.disk");
 
 function fieldOf ( cause: unknown, key: "code" | "path" ): string {
 
@@ -35,18 +34,18 @@ function fieldOf ( cause: unknown, key: "code" | "path" ): string {
     return typeof found === "string" ? found : "";
 
 }
-function failed ( cause: unknown, path: string ): error.Fault {
+function failed ( cause: unknown, path: string ): exception.Fault {
 
-    if ( error.isFault(cause) ) return cause;
+    if ( exception.isFault(cause) ) return cause;
 
     const [code, reason] = hosts.get(fieldOf(cause, "code")) ?? other;
 
-    return error.fault(code, reason, { message: fieldOf(cause, "path") || path, cause });
+    return exception.fault(code, reason, { message: fieldOf(cause, "path") || path, cause });
 
 }
 function clean ( path: string ): string {
 
-    if ( typeof path !== "string" || path === "" || path.includes("\u0000") ) throw error.fault("validation", "fs.path", { message: "not a path" });
+    if ( typeof path !== "string" || path === "" || path.includes("\u0000") ) throw exception.fault("validation", "fs.path", { message: "not a path" });
 
     return normalize(path);
 
@@ -80,15 +79,15 @@ async function held<T> ( path: string, work: ( target: Disk, at: string ) => Pro
     const at = clean(path);
     const target = using ?? disk.get();
 
-    try {
+    return await exception.rescueAsync(async () => {
 
         return await work(target, at);
 
-    } catch ( cause ) {
+    }, ( cause ) => {
 
         throw failed(cause, at);
 
-    }
+    });
 
 }
 async function below ( using: Disk, path: string, prefix: string, level: number, prune: Prune ): Promise<Step[]> {
@@ -115,8 +114,8 @@ export function memoryDisk (): MemoryDisk {
     let serial = 0;
     const keyOf = ( path: string ): string => resolve("/", path);
     const kindOf = ( key: string ): EntryKind | undefined => (files.has(key) ? "file" : folders.has(key) ? "dir" : undefined);
-    const missing = ( key: string ): error.Fault => error.fault("not_found", "fs.missing", { message: key });
-    const clash = ( key: string, reason = "fs.kind" ): error.Fault => error.fault("conflict", reason, { message: key });
+    const missing = ( key: string ): exception.Fault => exception.fault("not_found", "fs.missing", { message: key });
+    const clash = ( key: string, reason = "fs.kind" ): exception.Fault => exception.fault("conflict", reason, { message: key });
     const under = ( key: string ): string[] => [...files.keys(), ...folders].filter(( item ) => item !== key && holds(key, item));
     const drop = ( key: string ): void => {
 
@@ -297,7 +296,7 @@ export async function readJson<T = unknown> ( path: string ): Promise<T> {
 
     const parsed = json.parse(await text(path));
 
-    if ( parsed === undefined ) throw error.fault("validation", "fs.json", { message: `${path}: not json` });
+    if ( parsed === undefined ) throw exception.fault("validation", "fs.json", { message: `${path}: not json` });
 
     return parsed as T;
 
@@ -330,18 +329,18 @@ function writeAtomicOn ( using: Disk, path: string, content: Uint8Array | string
 
         await target.mkdir(dirname(at));
 
-        try {
+        await exception.rescueAsync(async () => {
 
             await target.write(draft, content);
             await target.rename(draft, at);
 
-        } catch ( cause ) {
+        }, async ( cause ) => {
 
-            await target.remove(draft).catch(() => undefined);
+            await exception.probeAsync(() => target.remove(draft));
 
             throw cause;
 
-        }
+        });
 
     }, using);
 
@@ -426,7 +425,7 @@ function removeOn ( using: Disk, path: string ): Promise<void> {
 
     return held(path, async ( target, at ) => {
 
-        if ( rooted(at) ) throw error.fault("forbidden", "fs.root", { message: at });
+        if ( rooted(at) ) throw exception.fault("forbidden", "fs.root", { message: at });
 
         await target.remove(at, true);
 
@@ -450,7 +449,7 @@ function copyOn ( using: Disk, from: string, to: string ): Promise<void> {
 
         const found = await target.stat(source);
 
-        if ( !found ) throw error.fault("not_found", "fs.missing", { message: source });
+        if ( !found ) throw exception.fault("not_found", "fs.missing", { message: source });
         if ( source === at ) return;
 
         if ( found.kind !== "dir" ) {
@@ -462,7 +461,7 @@ function copyOn ( using: Disk, from: string, to: string ): Promise<void> {
 
         }
 
-        if ( holds(source, at) ) throw error.fault("conflict", "fs.inside", { message: at });
+        if ( holds(source, at) ) throw exception.fault("conflict", "fs.inside", { message: at });
 
         const tree = await walkOn(using, source);
 
@@ -494,27 +493,27 @@ function moveOn ( using: Disk, from: string, to: string ): Promise<void> {
 
     return held(to, async ( target, at ) => {
 
-        if ( rooted(source) ) throw error.fault("forbidden", "fs.root", { message: source });
+        if ( rooted(source) ) throw exception.fault("forbidden", "fs.root", { message: source });
 
         const found = await target.stat(source);
 
-        if ( !found ) throw error.fault("not_found", "fs.missing", { message: source });
-        if ( found.kind === "dir" && source !== at && holds(source, at) ) throw error.fault("conflict", "fs.inside", { message: at });
+        if ( !found ) throw exception.fault("not_found", "fs.missing", { message: source });
+        if ( found.kind === "dir" && source !== at && holds(source, at) ) throw exception.fault("conflict", "fs.inside", { message: at });
 
         await target.mkdir(dirname(at));
 
-        try {
+        await exception.rescueAsync(async () => {
 
             await target.rename(source, at);
 
-        } catch ( cause ) {
+        }, async ( cause ) => {
 
             if ( fieldOf(cause, "code") !== "EXDEV" ) throw cause;
 
             await copyOn(using, source, at);
             await target.remove(source, true);
 
-        }
+        });
 
     }, using);
 
@@ -546,8 +545,8 @@ export async function empty ( path: string ): Promise<void> {
 
         const found = await target.stat(at);
 
-        if ( rooted(at) ) throw error.fault("forbidden", "fs.root", { message: at });
-        if ( found && found.kind !== "dir" ) throw error.fault("conflict", "fs.kind", { message: at });
+        if ( rooted(at) ) throw exception.fault("forbidden", "fs.root", { message: at });
+        if ( found && found.kind !== "dir" ) throw exception.fault("conflict", "fs.kind", { message: at });
 
         if ( found ) for ( const entry of await target.list(at) ) await target.remove(join(at, entry.name), true);
         else await target.mkdir(at);
@@ -559,15 +558,15 @@ async function tempOn ( using: Disk, prefix = "engine-" ): Promise<string> {
 
     const name = safe(prefix, "engine-", 64);
 
-    try {
+    return await exception.rescueAsync(async () => {
 
         return await using.temp(name);
 
-    } catch ( cause ) {
+    }, ( cause ) => {
 
         throw failed(cause, name);
 
-    }
+    });
 
 }
 
@@ -581,7 +580,7 @@ async function withTempOn<T> ( using: Disk, work: ( path: string ) => T | Promis
 
     const path = await tempOn(using, prefix);
 
-    try {
+    return await exception.rescueAsync(async () => {
 
         const out = await work(path);
 
@@ -589,13 +588,13 @@ async function withTempOn<T> ( using: Disk, work: ( path: string ) => T | Promis
 
         return out;
 
-    } catch ( cause ) {
+    }, async ( cause ) => {
 
-        await removeOn(using, path).catch(() => undefined);
+        await exception.probeAsync(() => removeOn(using, path));
 
         throw cause;
 
-    }
+    });
 
 }
 
@@ -662,7 +661,7 @@ async function sizeOn ( using: Disk, path: string ): Promise<number> {
 
     const found = await statOn(using, path);
 
-    if ( !found ) throw error.fault("not_found", "fs.missing", { message: path });
+    if ( !found ) throw exception.fault("not_found", "fs.missing", { message: path });
     if ( found.kind !== "dir" ) return found.size;
 
     const sizes = await list.mapAsync((await walkOn(using, path)).filter(( entry ) => entry.kind === "file"), async ( entry ) => (await statOn(using, entry.path))?.size ?? 0, { lanes: 8 });

@@ -1,5 +1,5 @@
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Debounced, DebounceOptions, Deferred, RetryOptions, Step, Throttled, Timer } from "./arch.ts";
 
 const longest = 2_147_483_647;
@@ -11,15 +11,15 @@ function span ( ms: number ): number {
 }
 async function pause ( wait: number, signal: AbortSignal | undefined, failure: unknown ): Promise<void> {
 
-    try {
+    await exception.rescueAsync(async () => {
 
         await date.sleep(wait, signal);
 
-    } catch {
+    }, async () => {
 
         throw failure;
 
-    }
+    });
 
 }
 
@@ -207,35 +207,33 @@ export function throttle<F extends ( ...args: never[] ) => void> ( work: F, wait
 }
 export async function retry<T> ( work: ( attempt: number ) => Promise<T>, options: RetryOptions = {} ): Promise<T> {
 
-    const { delay = 100, factor = 2, max = 10_000, jitter = true, when = error.retryable, onRetry, signal } = options;
+    const { delay = 100, factor = 2, max = 10_000, jitter = true, when = exception.retryable, onRetry, signal } = options;
     const times = whole(options.times, 3, 1);
     let attempt = 0;
 
     for ( ;; ) {
 
-        if ( signal?.aborted ) throw error.fault("timeout", "retry.aborted", { cause: signal.reason });
+        if ( signal?.aborted ) throw exception.fault("timeout", "retry.aborted", { cause: signal.reason });
 
         attempt += 1;
 
-        try {
+        const held = await exception.rescueAsync(async () => ({ value: await work(attempt) }), ( caught ) => ({ caught }));
 
-            return await work(attempt);
+        if ( "value" in held ) return held.value;
 
-        } catch ( caught ) {
+        const { caught } = held;
 
-            if ( attempt >= times || !when(caught, attempt) || signal?.aborted ) throw caught;
+        if ( attempt >= times || !when(caught, attempt) || signal?.aborted ) throw caught;
 
-            const asked = error.isFault(caught) && typeof caught.retryAfter === "number" && caught.retryAfter >= 0 ? caught.retryAfter * 1000 : undefined;
-            const base = Math.min(max, delay * factor ** (attempt - 1));
-            const wait = asked ?? (jitter ? base * (0.5 + Math.random() * 0.5) : base);
+        const asked = exception.isFault(caught) && typeof caught.retryAfter === "number" && caught.retryAfter >= 0 ? caught.retryAfter * 1000 : undefined;
+        const base = Math.min(max, delay * factor ** (attempt - 1));
+        const wait = asked ?? (jitter ? base * (0.5 + Math.random() * 0.5) : base);
 
-            if ( asked !== undefined && asked > max ) throw caught;
+        if ( asked !== undefined && asked > max ) throw caught;
 
-            onRetry?.(caught, attempt, wait);
+        onRetry?.(caught, attempt, wait);
 
-            await pause(wait, signal, caught);
-
-        }
+        await pause(wait, signal, caught);
 
     }
 
@@ -252,7 +250,7 @@ export async function timeout<T> ( work: Promise<T> | (( signal: AbortSignal ) =
 
         timer = setTimeout(() => {
 
-            const failure = error.fault("timeout", reason);
+            const failure = exception.fault("timeout", reason);
 
             reject(failure);
             controller.abort(failure);

@@ -1,5 +1,5 @@
 export const contents = {
-    name: { ar: "أكمي", en: "Acme" },
-    tagline: { ar: "تطبيق العملاء", en: "The client app" },
-    url: "",
+    name: { key: "brand.name" },
+    tagline: { key: "brand.tagline" },
+    url: "https://store.acme.example",
 } as const;

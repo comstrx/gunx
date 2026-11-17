@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as number from "engine-number";
 import type { Align, Flat, Item, Layout, Measures, Range, Reached, Shape, Visible } from "./arch.ts";
 
@@ -5,7 +6,7 @@ const flats = new WeakMap<Layout, Flat>();
 
 export function whole ( value: number ): number {
 
-    if ( !Number.isFinite(value) ) throw new RangeError("not a count");
+    if ( !Number.isFinite(value) ) throw exception.misuse("not a count");
 
     return Math.max(0, Math.trunc(value));
 

@@ -1,6 +1,7 @@
 import * as date from "engine-date";
 import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as net from "engine-net";
 import * as rand from "engine-rand";
@@ -21,14 +22,14 @@ function isPromise<T> ( value: T | Promise<T> ): value is Promise<T> {
     return typeof value === "object" && value !== null && typeof (value as { then?: unknown }).then === "function";
 
 }
-function interrupted ( call: CallScope ): error.Fault {
+function interrupted ( call: CallScope ): exception.Fault {
 
-    return call.interruption?.() ?? error.fault("timeout", "api.aborted", { cause: call.signal?.reason });
+    return call.interruption?.() ?? exception.fault("timeout", "api.aborted", { cause: call.signal?.reason });
 
 }
-function unbound ( endpoint: Endpoint, name: string, message: string ): error.Fault {
+function unbound ( endpoint: Endpoint, name: string, message: string ): exception.Fault {
 
-    return error.fault("validation", "api.param", { message: `${idOf(endpoint)}: the path parameter {${name}} ${message}`, errors: { [name]: [message] } });
+    return exception.fault("validation", "api.param", { message: `${idOf(endpoint)}: the path parameter {${name}} ${message}`, errors: { [name]: [message] } });
 
 }
 function worded ( value: unknown ): string | undefined {
@@ -56,15 +57,15 @@ function encoded ( endpoint: Endpoint, part: Part, value: unknown ): string {
 
     if ( pieces.some(( piece ) => piece === "" || piece === "." || piece === "..") ) throw unbound(endpoint, part.name, "is not a path segment");
 
-    try {
+    return exception.rescue(() => {
 
         return pieces.map(encodeURIComponent).join("/");
 
-    } catch {
+    }, () => {
 
         throw unbound(endpoint, part.name, "is not well formed text");
 
-    }
+    });
 
 }
 function queried ( value: unknown ): string | string[] | undefined {
@@ -82,6 +83,11 @@ function queried ( value: unknown ): string | string[] | undefined {
     }
 
     return made;
+
+}
+function binary ( value: unknown ): value is Blob | Uint8Array {
+
+    return value instanceof Uint8Array || (typeof Blob !== "undefined" && value instanceof Blob);
 
 }
 function split ( endpoint: Endpoint, input: Record<string, unknown> ): Sent {
@@ -112,7 +118,23 @@ function split ( endpoint: Endpoint, input: Record<string, unknown> ): Sent {
 
     }
 
-    return { path, query, body: bodiless ? undefined : body };
+    if ( bodiless ) return { path, query, body: undefined };
+
+    const files = Object.keys(body).filter(( key ) => binary(body[key]));
+    const [carried] = files;
+
+    if ( carried === undefined ) return { path, query, body };
+    if ( files.length > 1 ) throw exception.fault("internal", "api.file", { message: `${idOf(endpoint)}: an endpoint carries one file, and the file is its whole body` });
+
+    for ( const key of Object.keys(body) ) {
+
+        const text = key === carried ? undefined : queried(body[key]);
+
+        if ( text !== undefined ) query[key] = text;
+
+    }
+
+    return { path, query, body: body[carried] as Blob | Uint8Array };
 
 }
 function rooted ( value: unknown ): string {
@@ -121,13 +143,13 @@ function rooted ( value: unknown ): string {
     let end = text.length;
 
     if ( !text.startsWith("/") ) return address(value as string);
-    if ( text.startsWith("//") || text.includes("?") || text.includes("#") ) throw error.fault("internal", "api.address", { message: "a client is rooted at a bare url or an absolute path, without a query or a hash" });
+    if ( text.startsWith("//") || text.includes("?") || text.includes("#") ) throw exception.fault("internal", "api.address", { message: "a client is rooted at a bare url or an absolute path, without a query or a hash" });
 
     for ( let at = 0; at < text.length; at += 1 ) {
 
         const code = text.charCodeAt(at);
 
-        if ( code <= 32 || code === 127 ) throw error.fault("internal", "api.address", { message: "a client is rooted at a path without spaces or control characters" });
+        if ( code <= 32 || code === 127 ) throw exception.fault("internal", "api.address", { message: "a client is rooted at a path without spaces or control characters" });
 
     }
 
@@ -159,7 +181,7 @@ function frozen<T> ( value: T ): T {
 }
 function untold ( cause: unknown ): never {
 
-    throw error.isFault(cause) ? cause : error.fault("internal", "api.token", { message: "the token provider failed", cause });
+    throw exception.isFault(cause) ? cause : exception.fault("internal", "api.token", { message: "the token provider failed", cause });
 
 }
 function merged ( ...sources: readonly (Record<string, string | undefined> | undefined)[] ): Record<string, string | undefined> {
@@ -198,14 +220,14 @@ function refusal ( wire: Wire ): Refusal {
 
         const wait = net.retryAfter(headers["retry-after"]);
         const later = json.pathGet(body, paths.retryAfter);
-        const fault = json.isRecord(body) ? error.fromEnvelope({
+        const fault = json.isRecord(body) ? exception.fromEnvelope({
             code: json.pathGet(body, paths.code),
             message: json.pathGet(body, paths.message),
             reason: json.pathGet(body, paths.reason),
             errors: json.pathGet(body, paths.errors),
             request_id: json.pathGet(body, paths.requestId),
             retry_after: typeof later === "string" && digits.test(later) ? Number(later) : later,
-        }, status) : error.fromStatus(status);
+        }, status) : exception.fromStatus(status);
 
         return wait === undefined ? fault : fault.with({ retryAfter: wait });
 
@@ -225,33 +247,25 @@ export function create ( options: ClientOptions ): Client {
 
     function told ( run: () => void ): void {
 
-        try {
+        exception.rescue(() => {
 
             run();
 
-        } catch ( cause ) {
+        }, ( cause ) => {
 
             options.fail?.(cause);
 
-        }
+        });
 
     }
     function asked<T> ( run: () => T ): T {
 
-        try {
-
-            return run();
-
-        } catch ( cause ) {
-
-            return untold(cause);
-
-        }
+        return exception.rescue(() => run(), ( cause ) => untold(cause));
 
     }
-    function grieved ( endpoint: Endpoint, caught: unknown ): error.Fault {
+    function grieved ( endpoint: Endpoint, caught: unknown ): exception.Fault {
 
-        const fault = error.of(caught);
+        const fault = exception.of(caught);
 
         told(() => options.onFault?.(fault, endpoint));
 
@@ -349,7 +363,7 @@ export function create ( options: ClientOptions ): Client {
         const headers = merged(options.headers?.(), call.headers);
         const { path, query, body } = split(endpoint, ready.record);
 
-        if ( once !== undefined && (typeof once !== "string" || !printable.test(once)) ) throw error.fault("internal", "api.idempotency", { message: `${idOf(endpoint)}: an idempotency key is 1 to 255 visible ascii characters` });
+        if ( once !== undefined && (typeof once !== "string" || !printable.test(once)) ) throw exception.fault("internal", "api.idempotency", { message: `${idOf(endpoint)}: an idempotency key is 1 to 255 visible ascii characters` });
 
         if ( ready.bearer !== "" ) headers[wire.headers.auth.name] = `${wire.headers.auth.prefix ?? ""}${ready.bearer}`;
         if ( ready.ambient.locale !== "" ) headers[wire.headers.language] = ready.ambient.locale;
@@ -359,8 +373,9 @@ export function create ( options: ClientOptions ): Client {
         if ( once !== undefined ) headers[wire.headers.idempotency] = once;
 
         if ( options.trace !== false ) headers[wire.headers.requestId] = requestId;
+        if ( binary(body) ) headers[wire.headers.contentType] ??= (body instanceof Uint8Array ? "" : body.type) || "application/octet-stream";
 
-        const reply = await net.request(net.joinUrl(base, path), {
+        const reply = await exception.mend(net.request(net.joinUrl(base, path), {
             method: endpoint.method,
             query,
             body,
@@ -373,7 +388,7 @@ export function create ( options: ClientOptions ): Client {
             idempotent: safe || (once !== undefined && (call.retries !== undefined || wire.retries.write > 0)),
             signal: call.signal,
             failure: refuse,
-        }).catch(( cause: unknown ) => {
+        }), ( cause ) => {
 
             if ( call.signal?.aborted ) throw interrupted(call);
 
@@ -405,19 +420,17 @@ export function create ( options: ClientOptions ): Client {
     }
     async function answered ( endpoint: Endpoint, input: unknown, call: CallScope ): Promise<Reply<unknown>> {
 
-        let ready: Ready;
-
-        try {
+        const ready: Ready = await exception.rescueAsync(async () => {
 
             const made = prepared(endpoint, input, call);
 
-            ready = isPromise(made) ? await made : made;
+            return isPromise(made) ? await made : made;
 
-        } catch ( caught ) {
+        }, ( caught ) => {
 
             throw grieved(endpoint, caught);
 
-        }
+        });
 
         if ( ready.kept ) return ready.kept;
 
@@ -455,13 +468,13 @@ export function create ( options: ClientOptions ): Client {
     async function bounded ( endpoint: Endpoint, input: unknown, call: Call ): Promise<Reply<unknown>> {
 
         if ( call.budget === undefined ) return answered(endpoint, input, call);
-        if ( !(call.budget >= 0) ) throw new RangeError("not a duration");
+        if ( !(call.budget >= 0) ) throw exception.misuse("not a duration");
 
         const scope = event.deadline(call.budget, call.signal);
 
         try {
 
-            return await answered(endpoint, input, { ...call, signal: scope.signal, interruption: () => error.fault("timeout", call.signal?.aborted ? "api.aborted" : "api.budget", { cause: scope.signal.reason }) });
+            return await answered(endpoint, input, { ...call, signal: scope.signal, interruption: () => exception.fault("timeout", call.signal?.aborted ? "api.aborted" : "api.budget", { cause: scope.signal.reason }) });
 
         } finally {
 
@@ -491,7 +504,7 @@ export function create ( options: ClientOptions ): Client {
             const now = endpoint.auth ? asked(() => options.token?.()) : "";
             if ( isPromise(now) ) {
 
-                void Promise.resolve(now).catch(( cause: unknown ) => grieved(endpoint, error.isFault(cause) ? cause : error.fault("internal", "api.token", { cause })));
+                void exception.mend(Promise.resolve(now), ( cause: unknown ) => grieved(endpoint, exception.isFault(cause) ? cause : exception.fault("internal", "api.token", { cause })));
 
                 return undefined;
 

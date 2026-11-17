@@ -1,4 +1,5 @@
-import * as adapter from "engine-adapter";
+import * as device from "engine-device";
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import type { Source, Track } from "./arch.ts";
 
@@ -12,8 +13,8 @@ const horizon = 281_474_976_710_655;
 const ulids: readonly [Track, Track] = [track(), track()];
 const sevens: readonly [Track, Track] = [track(), track()];
 
-export const engine: adapter.Port<Source> = adapter.port<Source>("rand.engine", {
-    fallback: adapter.web<Source>("rand.engine", ( host ) => host.crypto),
+export const engine: exception.Slot<Source> = exception.slot<Source>("rand.engine", {
+    fallback: () => device.host<{ crypto?: Source }>().crypto,
     check: ( value ) => typeof value.getRandomValues === "function",
 });
 
@@ -28,7 +29,7 @@ function stamp ( at: number ): number {
 
     if ( time >= 0 && time <= horizon ) return time;
 
-    throw new RangeError("not a time");
+    throw exception.misuse("not a time");
 
 }
 function bumped ( tail: Uint8Array, from: number ): boolean {
@@ -110,7 +111,7 @@ export function sized ( value: number, most = ceiling ): number {
 
     if ( size >= 0 && size <= most ) return size + 0;
 
-    throw new RangeError("not a size");
+    throw exception.misuse("not a size");
 
 }
 export function fill ( data: Uint8Array<ArrayBuffer> ): Uint8Array<ArrayBuffer> {

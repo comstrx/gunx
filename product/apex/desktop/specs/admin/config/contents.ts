@@ -1,5 +1,5 @@
 export const contents = {
-    name: { ar: "أكمي", en: "Acme" },
-    tagline: { ar: "لوحة الإدارة", en: "The admin panel" },
+    name: { key: "brand.name" },
+    tagline: { key: "brand.tagline" },
     url: "",
 } as const;

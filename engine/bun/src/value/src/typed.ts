@@ -1,4 +1,5 @@
 import * as calendar from "engine-date";
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import type { CurrencyCode, Email, Key, LocaleTag, Otp, Phone, PlainDate, Slug, Ulid, Url, Uuid } from "./arch.ts";
 
@@ -44,17 +45,17 @@ export function url ( value: unknown, protocols: readonly string[] = ["http", "h
 
     const word = worded(value, 2048);
 
-    try {
+    return exception.rescue(() => {
 
         const found = new URL(word);
 
         return protocols.includes(found.protocol.slice(0, -1)) && found.href.length <= 2048 ? (found.href as Url) : undefined;
 
-    } catch {
+    }, () => {
 
         return undefined;
 
-    }
+    });
 
 }
 export function phone ( value: unknown, dial?: string ): Phone | undefined {

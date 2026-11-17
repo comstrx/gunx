@@ -1,9 +1,10 @@
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as state from "engine/state";
 import { useEffect, useMemo } from "react";
 import { type Greeting, type Tone, tones, transport } from "@/api/hello.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
-import { live, report, settingsOf } from "@/specs/runtime.ts";
+import { useStage } from "@/hooks/use-stage.ts";
+import { host } from "@/specs/app.ts";
 import { bind } from "@/stores/bind.ts";
 import { client } from "@/stores/client.ts";
 import type { Status } from "@/types/index.ts";
@@ -15,10 +16,13 @@ export function toneOf ( settings: Record<string, unknown> ): Tone {
     return tones.find(( tone ) => tone === settings.tone) ?? "plain";
 
 }
-export function useHello ( screen = "hello" ): Hello {
+export function useHello ( id = "hello" ): Hello {
 
+    const { live, screen } = useStage();
     const { locale } = usePreferences();
-    const tone = toneOf(settingsOf(screen, "hello"));
+    const { bus } = host.app;
+    const call = client();
+    const tone = toneOf(live.settings(screen, id));
     const loader = useMemo(() => {
 
         let fresh = false;
@@ -29,9 +33,9 @@ export function useHello ( screen = "hello" ): Hello {
 
                 fresh = false;
 
-                const reply = await client.call(transport.world, { tone }, { signal, fresh: asked, budget: 8000, locale });
+                const reply = await call.call(transport.world, { tone }, { signal, fresh: asked, budget: 8000, locale });
 
-                live.bus.publish("hello.greeted", { tone, locale: reply.data.locale });
+                bus.publish("hello.greeted", { tone, locale: reply.data.locale });
 
                 return reply.data;
 
@@ -48,14 +52,14 @@ export function useHello ( screen = "hello" ): Hello {
             },
         };
 
-    }, [locale, tone]);
+    }, [locale, tone, call, bus]);
     const shown = useMemo(() => bind(loader.resource), [loader]).useState();
 
     useEffect(() => {
 
         void loader.resource.refresh();
 
-        const stop = live.handle("hello.refresh", () => {
+        const stop = live.handle(`${id}.refresh`, () => {
 
             loader.renew();
 
@@ -68,16 +72,16 @@ export function useHello ( screen = "hello" ): Hello {
 
         };
 
-    }, [loader]);
+    }, [loader, live, id]);
 
     return {
         tone,
         status: shown.status,
         message: shown.data?.message,
-        reason: shown.error === undefined ? undefined : error.of(shown.error).code,
+        reason: shown.error === undefined ? undefined : exception.of(shown.error).code,
         refresh: () => {
 
-            void live.act("hello", "refresh").catch(( caught: unknown ) => report(caught, "hello.refresh"));
+            void live.act(id, "refresh").catch(( caught: unknown ) => host.app.report(caught, `${id}.refresh`));
 
         },
     };

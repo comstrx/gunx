@@ -1,16 +1,18 @@
 import * as spec from "engine/spec";
 
-export const hello = spec.screen({
-    name: "hello",
+const stack = spec.kind("stack");
+
+export const hello = spec.screen("hello", {
     path: "/",
-    title: { ar: "أهلاً", en: "Hello" },
+    title: { key: "screens.hello.title" },
     icon: "wave",
-    role: "admin",
-    features: [
-        spec.feature("hello", { tone: "warm" }, {
-            on: { load: [spec.set("signals.visits", 1)] },
-            triggers: [spec.trigger("hello.greeted", [spec.set("signals.greeted", true)])],
-        }),
+    layout: [
+        stack({ align: "center", justify: "center", padding: "md", gap: "lg", height: "screen" }, [
+            spec.feature("hello", { settings: { tone: "warm" }, on: { load: spec.set("signals.visits", 1), "hello.greeted": spec.set("signals.greeted", true) } }),
+            stack({ direction: "row", gap: "sm", justify: "center", width: "auto" }, [
+                spec.feature("action", { id: "peek", settings: { label: "about.open", look: "soft" }, on: { success: spec.open("/about", { size: "md" }) } }),
+                spec.feature("action", { id: "leave", settings: { label: "about.client", look: "ghost" }, on: { success: spec.transfer("client") } }),
+            ]),
+        ]),
     ],
-    blocks: [spec.block("stack", { align: "center", justify: "center", padding: "md", height: "screen" }, [spec.block("feature", { name: "hello" })])],
 });

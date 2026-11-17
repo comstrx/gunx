@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as motion from "engine/world";
 
 describe("world.motion", () => {
@@ -49,7 +50,7 @@ describe("world.motion", () => {
     });
     it("refuses junk curves, springs, paths and properties; clamps samples, settles within ten seconds and lands the overdamped path", () => {
 
-        expect([() => motion.ease([2, 0, 0, 1]), () => motion.ease([0, 0, 0] as never), () => motion.ease("bounce" as never), () => motion.path({ damping: -1, stiffness: 100, mass: 1 }), () => motion.path({ damping: 1, stiffness: 0, mass: 1 }), () => motion.spring(-1), () => motion.spring(Number.NaN), () => motion.toLinear({ duration: 1, points: [1] }), () => motion.toLinear({ duration: 1, points: [0, Number.NaN] }), () => motion.transition(["1bad"]), () => motion.transition(["opacity"], -1), () => motion.tween(0, 1, 0.5, [0, 0, 2, 1])].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof RangeError ? "refused" : "?"; } })).toEqual(Array.from({ length: 12 }, () => "refused"));
+        expect([() => motion.ease([2, 0, 0, 1]), () => motion.ease([0, 0, 0] as never), () => motion.ease("bounce" as never), () => motion.path({ damping: -1, stiffness: 100, mass: 1 }), () => motion.path({ damping: 1, stiffness: 0, mass: 1 }), () => motion.spring(-1), () => motion.spring(Number.NaN), () => motion.toLinear({ duration: 1, points: [1] }), () => motion.toLinear({ duration: 1, points: [0, Number.NaN] }), () => motion.transition(["1bad"]), () => motion.transition(["opacity"], -1), () => motion.tween(0, 1, 0.5, [0, 0, 2, 1])].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof exception.Fault ? "refused" : "?"; } })).toEqual(Array.from({ length: 12 }, () => "refused"));
         expect([motion.path(motion.spring(), 1).points.length, motion.path(motion.spring(), 10_000).points.length, motion.path(motion.spring(), Number.NaN).points.length, motion.path(motion.spring(1, 1000)).duration < 1000, motion.path(motion.spring(0, 1)).duration]).toEqual([3, 513, 33, true, 10_000]);
         expect(motion.path(motion.spring(1.5, 100), 8)).toEqual({ duration: 1808, points: [0, 0.5067, 0.7918, 0.9122, 0.963, 0.9844, 0.9934, 0.9972, 1] });
         expect([motion.transition(["opacity"], 100, "linear"), motion.transition(["--x", "-webkit-mask"], 0), motion.stagger(-3), motion.stagger(Number.NaN), motion.stagger(2, 10, 15), motion.tween(0, 10, -1), motion.tween(0, 10, Number.NaN)]).toEqual(["opacity 100ms linear", "--x 0ms cubic-bezier(0.2, 0, 0, 1), -webkit-mask 0ms cubic-bezier(0.2, 0, 0, 1)", 0, 0, 15, 0, 0]);

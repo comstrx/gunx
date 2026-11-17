@@ -1,0 +1,64 @@
+import type * as device from "engine-device";
+
+export type Recorder = { state: string; pause?: () => void; resume?: () => void; mimeType?: string; ondataavailable: null | (( event: { data: Blob } ) => void); onstop: null | (() => void); onerror: null | (() => void); start: ( slice?: number ) => void; stop: () => void };
+export type Player = { preload: string; muted?: boolean; src: string; srcObject?: unknown; duration: number; videoWidth: number; videoHeight: number; onloadedmetadata: null | (() => void); onloadeddata?: null | (() => void); onerror: null | (() => void); play?: () => Promise<void> | void };
+export type Elements = { input: FileInput; video: Player };
+export type FileInput = { type: string; accept: string; multiple: boolean; capture: string; onchange: null | (() => void); oncancel?: null | (() => void); files: ArrayLike<File> | null; click: () => void };
+export type Bitmap = { width: number; height: number; close?: () => void };
+export type Brush = { fillStyle: string; imageSmoothingQuality?: string; fillRect: ( x: number, y: number, width: number, height: number ) => void; drawImage: ( image: Bitmap, sx: number, sy: number, sw: number, sh: number, dx: number, dy: number, dw: number, dh: number ) => void };
+export type Canvas = { getContext: ( kind: "2d" ) => Brush | null; convertToBlob: ( options?: { type?: string; quality?: number } ) => Promise<Blob> };
+export type Source = "camera" | "library" | "files";
+export type Format = "jpeg" | "png" | "webp";
+export type Sizing = { side?: number | undefined; width?: number | undefined; height?: number | undefined; ratio?: number | undefined; format?: Format | undefined; quality?: number | undefined };
+export type Kind = "image" | "video" | "audio";
+export type Pick = { source?: Source | undefined; accept?: readonly string[] | undefined; multiple?: boolean | undefined; limit?: number | undefined; facing?: "front" | "back" | undefined; seconds?: number | undefined; image?: Sizing | undefined };
+export type Picked = { name: string; type: string; size: number; uri: string; blob?: Blob | undefined; width?: number | undefined; height?: number | undefined; duration?: number | undefined };
+export type Pictured = { width: number; height: number; type: string; name: string };
+export type Box = { x: number; y: number; width: number; height: number };
+export type Plan = { crop: Box | undefined; width: number; height: number; format: Format; type: string; quality: number; name: string; idle: boolean };
+export type Facts = { width?: number | undefined; height?: number | undefined; duration?: number | undefined };
+export type Link = { url: string; release: () => void };
+export type Take = { audio?: boolean | undefined; video?: boolean | { facing?: "front" | "back" | undefined; side?: number | undefined } | undefined; seconds?: number | undefined; quality?: "low" | "high" | undefined };
+export type Phase = "idle" | "ready" | "live" | "paused" | "done";
+export type Deck = {
+    stream?: unknown;
+    start: () => Promise<void> | void;
+    pause?: (() => void) | undefined;
+    resume?: (() => void) | undefined;
+    stop: () => Promise<Picked | undefined>;
+    drop: () => void;
+    snap?: (() => Promise<Picked | undefined>) | undefined;
+    flip?: (() => Promise<unknown>) | undefined;
+};
+export type Recording = {
+    open: () => Promise<void>;
+    start: () => Promise<void>;
+    pause: () => boolean;
+    resume: () => boolean;
+    stop: () => Promise<Picked | undefined>;
+    drop: () => void;
+    snap: ( sizing?: Sizing ) => Promise<Picked | undefined>;
+    flip: () => Promise<boolean>;
+    phase: () => Phase;
+    elapsed: () => number;
+    stream: () => unknown;
+    watch: ( listener: () => void ) => () => void;
+    done: Promise<Picked | undefined>;
+};
+export type Adapter = {
+    pick?: (( options: Pick ) => Promise<Picked[]>) | undefined;
+    resize?: (( file: Picked, sizing: Sizing ) => Promise<Picked>) | undefined;
+    size?: (( file: Picked ) => Promise<Facts>) | undefined;
+    link?: (( file: Picked ) => Link) | undefined;
+    voice?: (( take: Take, unit: device.Device ) => Promise<Deck | undefined>) | undefined;
+    camera?: (( take: Take, unit: device.Device ) => Promise<Deck | undefined>) | undefined;
+};
+export type Capability = keyof Adapter;
+export type Host = {
+    navigator?: { userActivation?: { isActive?: boolean } };
+    document?: { createElement?: <K extends keyof Elements>( tag: K ) => Elements[K] };
+    createImageBitmap?: ( source: Blob | Player, options?: { imageOrientation?: "from-image" | "none" } ) => Promise<Bitmap>;
+    OffscreenCanvas?: new ( width: number, height: number ) => Canvas;
+    MediaRecorder?: { new ( stream: unknown, options?: { mimeType?: string; audioBitsPerSecond?: number; videoBitsPerSecond?: number } ): Recorder; isTypeSupported?: ( type: string ) => boolean };
+    URL?: { createObjectURL: ( blob: Blob ) => string; revokeObjectURL: ( url: string ) => void };
+};

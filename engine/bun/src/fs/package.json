@@ -8,9 +8,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "engine-adapter": "workspace:*",
     "engine-crypto": "workspace:*",
     "engine-error": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-json": "workspace:*",
     "engine-list": "workspace:*",
     "engine-number": "workspace:*",

@@ -1,7 +1,7 @@
 import { describe, expect, test as it } from "bun:test";
 import { createCipheriv, createHmac, hkdfSync, pbkdf2Sync } from "node:crypto";
 import * as crypto from "engine/crypto";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as strings from "engine/string";
 import * as stage from "engine/test";
 
@@ -18,7 +18,7 @@ async function refused ( work: () => unknown ): Promise<string> {
 
     } catch ( caught ) {
 
-        return caught instanceof RangeError ? caught.message : "other";
+        return caught instanceof exception.Fault ? caught.message : "other";
 
     }
 
@@ -196,7 +196,7 @@ describe("crypto", () => {
         expect(await crypto.engine.with(fake, () => crypto.hash("abc"))).toBe("010203");
         expect(await crypto.hash("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 
-        const rejected = error.attemptSync(() => crypto.engine.use({} as unknown as crypto.Source));
+        const rejected = exception.attemptSync(() => crypto.engine.use({} as unknown as crypto.Source));
 
         expect(rejected.ok ? undefined : [rejected.fault.code, rejected.fault.reason]).toEqual(["internal", "crypto.engine.rejected"]);
         expect(crypto.engine.bound()).toBe(false);
@@ -207,11 +207,11 @@ describe("crypto", () => {
 
             crypto.engine.reset();
 
-            const hashing = await error.attempt(() => crypto.hash("abc"));
-            const opening = await error.attempt(() => crypto.open(sealed, "port-secret"));
+            const hashing = await exception.attempt(() => crypto.hash("abc"));
+            const opening = await exception.attempt(() => crypto.open(sealed, "port-secret"));
 
-            expect(hashing.ok ? undefined : [hashing.fault.code, hashing.fault.reason]).toEqual(["unavailable", "crypto.engine"]);
-            expect(opening.ok ? undefined : [opening.fault.code, opening.fault.reason]).toEqual(["unavailable", "crypto.engine"]);
+            expect(hashing.ok ? undefined : [hashing.fault.code, hashing.fault.reason]).toEqual(["unavailable", "crypto.engine.unbound"]);
+            expect(opening.ok ? undefined : [opening.fault.code, opening.fault.reason]).toEqual(["unavailable", "crypto.engine.unbound"]);
 
         } finally {
 

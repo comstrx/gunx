@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Held, Hijri, Input, Moon, Parts } from "./arch.ts";
 import { from, utc } from "./calendar.ts";
 import { held, tongue } from "./intl.ts";
@@ -12,15 +13,7 @@ function wall ( timeZone: string ): Intl.DateTimeFormat | undefined {
 
     return held(walls, timeZone, () => {
 
-        try {
-
-            return new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", era: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-
-        } catch {
-
-            return undefined;
-
-        }
+        return exception.probe(() => new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", era: "short", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }));
 
     });
 
@@ -31,7 +24,7 @@ function moon ( locale: string ): Moon | undefined {
 
     return held(moons, base, () => {
 
-        try {
+        return exception.rescue(() => {
 
             const counted = new Intl.DateTimeFormat(`${base}-u-ca-islamic-umalqura-nu-latn`, { timeZone: "UTC", year: "numeric", month: "numeric", day: "numeric" });
 
@@ -39,11 +32,11 @@ function moon ( locale: string ): Moon | undefined {
 
             return [counted, new Intl.DateTimeFormat(`${base}-u-ca-islamic-umalqura`, { timeZone: "UTC", dateStyle: "long" })] as const;
 
-        } catch {
+        }, () => {
 
             return undefined;
 
-        }
+        });
 
     }, 64);
 

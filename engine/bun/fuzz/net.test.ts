@@ -1,5 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as net from "engine/net";
 import * as fc from "fast-check";
 
@@ -101,7 +101,7 @@ describe("fuzz net", () => {
 
             } catch ( caught ) {
 
-                expect(caught).toBeInstanceOf(RangeError);
+                expect(caught).toBeInstanceOf(exception.Fault);
 
                 return;
 
@@ -275,9 +275,9 @@ describe("fuzz net", () => {
 
             }
 
-            expect(error.is(answer.fault)).toBe(true);
+            expect(exception.is(answer.fault)).toBe(true);
 
-            if ( !error.is(answer.fault) ) return;
+            if ( !exception.is(answer.fault) ) return;
 
             if ( ok ) {
 
@@ -288,10 +288,10 @@ describe("fuzz net", () => {
             }
 
             expect(answer.fault.status).toBe(given.code);
-            expect(answer.fault.code).toBe(error.fromEnvelope(claims ? (parsedBody ?? given.body) : given.body, given.code).code);
+            expect(answer.fault.code).toBe(exception.fromEnvelope(claims ? (parsedBody ?? given.body) : given.body, given.code).code);
             expect(answer.fault.retryAfter).toBe(given.retry === "3" ? 3 : undefined);
 
-            const transient = error.retryable(answer.fault);
+            const transient = exception.retryable(answer.fault);
             const allowed = idempotent;
 
             expect(calls).toBe(transient && allowed ? retries + 1 : 1);
@@ -333,7 +333,7 @@ describe("fuzz net", () => {
             const fetcher: net.Fetcher = async ( url ) => (url.endsWith("/go") ? new Response(null, { status: 302, headers: { location: `${landing}/landed` } }) : new Response("ok"));
             const guarded = net.guarded(fetcher, allow);
             const start = rules.find(( rule ) => !rule.includes("*.")) ?? (rules[0] as string).replace("*.", "a.");
-            const answer = await guarded(`${start}/go`, { method: "GET", headers: {}, signal: new AbortController().signal }).then(( response ) => response.status, ( fault: unknown ) => (error.is(fault) ? fault.reason : "?"));
+            const answer = await guarded(`${start}/go`, { method: "GET", headers: {}, signal: new AbortController().signal }).then(( response ) => response.status, ( fault: unknown ) => (exception.is(fault) ? fault.reason : "?"));
 
             expect(answer).toBe(allow(`${landing}/landed`) ? 200 : "net.redirect");
 

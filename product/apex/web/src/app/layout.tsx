@@ -1,16 +1,17 @@
 import * as translate from "engine/translate";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { compiled, contentOf, publicOf } from "@/specs/runtime.ts";
+import { host } from "@/specs/app.ts";
 import "./globals.css";
 
-const name = contentOf("name", compiled.surface.locale);
-const locale = compiled.surface.locale;
-const open = publicOf();
+const name = host.app.content("name", host.app.compiled.surface.locale);
+const locale = host.app.compiled.surface.locale;
+const open = host.app.indexing();
+const surfaces = JSON.stringify(host.index);
 
 export const metadata: Metadata = {
     title: { default: name, template: `%s · ${name}` },
-    description: contentOf("tagline", locale),
+    description: host.app.content("tagline", locale),
     robots: open.indexable ? { index: true, follow: true } : { index: false, follow: false },
     metadataBase: open.url ? new URL(open.url) : null,
 };
@@ -21,10 +22,12 @@ export default function Layout ({ children }: { children: ReactNode } ) {
     return (
         <html lang={locale} dir={translate.direction(locale)} suppressHydrationWarning>
             <head>
-                <script src="/appearance.js" data-locales={compiled.surface.locales.join(" ")} data-scheme={compiled.role.config.settings.scheme} />
+                <script src="/appearance.js" data-surface={host.entry} data-surfaces={surfaces} />
                 {["readex-pro-arabic", "figtree-latin"].map(( file ) => <link key={file} rel="preload" as="font" type="font/woff2" crossOrigin="anonymous" href={`/fonts/${file}.woff2`} />)}
             </head>
-            <body>{children}</body>
+            <body>
+                {children}
+            </body>
         </html>
     );
 

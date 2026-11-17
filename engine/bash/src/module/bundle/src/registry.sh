@@ -1,6 +1,3 @@
-declare -ga UI_COMMANDS=()
-declare -gA UI_FLAGS=() UI_GLOBALS=() UI_INDEX=() UI_ARITY=() UI_RAW=()
-
 module:bundle:usage:add () {
 
     local name="${1:-}" handler="${2:-}" usage="${3:-}" summary="${4:-}"

@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as list from "engine-list";
 import * as string from "engine-string";
@@ -16,7 +17,7 @@ function weightOf ( weights: Readonly<Record<string, number>> | undefined, field
 
     const weight = weights && Object.hasOwn(weights, field) ? weights[field] : 1;
 
-    if ( typeof weight !== "number" || !(weight >= 0) || weight === Number.POSITIVE_INFINITY ) throw new RangeError("not a weight");
+    if ( typeof weight !== "number" || !(weight >= 0) || weight === Number.POSITIVE_INFINITY ) throw exception.misuse("not a weight");
 
     return weight;
 
@@ -187,7 +188,7 @@ export function index<T> ( options: Options<T> ): Index<T> {
 
             const id = key(item);
 
-            if ( typeof id !== "string" || id === "" ) throw new TypeError("not a key");
+            if ( typeof id !== "string" || id === "" ) throw exception.misuse("not a key");
 
             const counts = termsOf(item);
 

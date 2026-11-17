@@ -1,5 +1,6 @@
-import { messages } from "./brand/messages.ts";
+import * as spec from "engine/spec";
+import { messages } from "./brand/messages/index.ts";
 import { config } from "./config/index.ts";
-import { screens } from "./schema/index.ts";
+import { schema } from "./schema/index.ts";
 
-export const admin = { role: "admin", config, screens, messages } as const;
+export const admin = spec.surface({ config, schema, messages });

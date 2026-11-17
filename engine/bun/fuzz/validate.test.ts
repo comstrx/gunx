@@ -1,5 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import type * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as validate from "engine/validate";
 import * as fc from "fast-check";
 
@@ -73,7 +74,7 @@ function claimed ( schema: validate.Schema, payload: unknown ): Told {
 
     } catch ( failure ) {
 
-        if ( !(failure instanceof error.Fault) ) throw failure;
+        if ( !(failure instanceof exception.Fault) ) throw failure;
 
         return { errors: failure.errors };
 
@@ -88,7 +89,7 @@ function built ( given: validate.Rules ): Built {
 
     } catch ( failure ) {
 
-        if ( !(failure instanceof error.Fault) ) throw failure;
+        if ( !(failure instanceof exception.Fault) ) throw failure;
 
         return { refused: `${failure.code}/${failure.reason}/${failure.message}` };
 
@@ -415,7 +416,7 @@ describe("fuzz validate", () => {
                 if ( !result.ok ) {
 
                     expect([result.fault.code, result.fault.status, sound(result.fault.errors)]).toEqual(["validation", 422, true]);
-                    expect(JSON.stringify(error.toJson(result.fault)).includes(secret)).toBe(false);
+                    expect(JSON.stringify(exception.toJson(result.fault)).includes(secret)).toBe(false);
                     expect(String(result.fault).includes(secret)).toBe(false);
 
                 }

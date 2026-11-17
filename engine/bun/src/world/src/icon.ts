@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import type { Entry, Glyph, Icon, IconSet, Icons, Shape } from "./arch.ts";
 import { word } from "./lazy.ts";
@@ -9,14 +10,14 @@ const floor = 0.3;
 
 function shaped ( glyph: string | Glyph ): Shape {
 
-    if ( typeof glyph !== "string" && (typeof glyph !== "object" || glyph === null) ) throw new RangeError("not a glyph");
+    if ( typeof glyph !== "string" && (typeof glyph !== "object" || glyph === null) ) throw exception.misuse("not a glyph");
 
     const given: Glyph = typeof glyph === "string" ? { path: glyph } : glyph;
     const lines: readonly string[] = typeof given.path === "string" ? [given.path] : given.path;
     const viewBox = given.viewBox === undefined ? square : word(given.viewBox).trim();
     const sound = Array.isArray(lines) && lines.length > 0 && lines.every(( line ) => typeof line === "string" && line !== "");
 
-    if ( !sound || !boxed.test(viewBox) ) throw new RangeError("not a glyph");
+    if ( !sound || !boxed.test(viewBox) ) throw exception.misuse("not a glyph");
 
     return Object.freeze({ path: Object.freeze([...lines]), viewBox, mirror: given.mirror === true, filled: given.filled === true });
 
@@ -29,7 +30,7 @@ function merged ( base: ReadonlyMap<string, Shape>, set: IconSet ): Map<string, 
 
         const key = string.kebab(name);
 
-        if ( key === "" ) throw new RangeError("not a glyph");
+        if ( key === "" ) throw exception.misuse("not a glyph");
 
         out.set(key, shaped(glyph));
 
@@ -47,7 +48,7 @@ function linked ( base: ReadonlyMap<string, string>, aliases: Readonly<Record<st
         const key = string.kebab(from);
         const target = string.kebab(word(to));
 
-        if ( key === "" || target === "" ) throw new RangeError("not an alias");
+        if ( key === "" || target === "" ) throw exception.misuse("not an alias");
 
         if ( key === target ) out.delete(key);
         else out.set(key, target);
@@ -81,7 +82,7 @@ function built ( glyphs: ReadonlyMap<string, Shape>, alias: ReadonlyMap<string, 
 
         }
 
-        if ( alias.has(current) ) throw new RangeError("not an alias");
+        if ( alias.has(current) ) throw exception.misuse("not an alias");
         if ( glyphs.has(current) ) targets.set(from, current);
 
     }

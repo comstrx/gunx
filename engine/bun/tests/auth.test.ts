@@ -2,7 +2,8 @@ import { describe, expect, test as it } from "bun:test";
 import * as auth from "engine/auth";
 import * as cache from "engine/cache";
 import * as crypto from "engine/crypto";
-import * as error from "engine/error";
+import type * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as state from "engine/state";
 
 type User = { id: string; abilities: string[]; roles: string[] };
@@ -31,7 +32,7 @@ function told ( run: () => unknown ): string {
 
     } catch ( failure ) {
 
-        if ( error.is(failure) ) return `${failure.code}/${failure.reason}`;
+        if ( exception.is(failure) && failure.reason !== "misuse" ) return `${failure.code}/${failure.reason}`;
 
         return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
 
@@ -78,13 +79,13 @@ describe("auth", () => {
     it("a refused renewal ends the session; a transient one keeps it; no refresh path ends it", async () => {
 
         const time = clock(0);
-        let answer: error.Fault = error.fault("unavailable", "gateway.upstream");
+        let answer: exception.Fault = exception.fault("unavailable", "gateway.upstream");
         const signed = auth.session<User>({ name: "s2", box: cache.open({ storage: cache.memory() }), now: time.now, renew: async () => { throw answer; } });
 
         signed.begin({ access: "a1", refresh: "r1", expires: 10 }, user);
         await expect(signed.token()).rejects.toMatchObject({ code: "unavailable" });
         expect(signed.signed()).toBe(true);
-        answer = error.fault("unauthorized", "session.expired");
+        answer = exception.fault("unauthorized", "session.expired");
         await expect(signed.token()).rejects.toMatchObject({ code: "unauthorized" });
         expect(signed.signed()).toBe(false);
         expect(await signed.token()).toBeNull();
@@ -146,7 +147,7 @@ describe("auth", () => {
             calls.push(refresh);
             await tick(2);
 
-            if ( !valid.has(refresh) ) throw error.fault("unauthorized", "invalid_grant");
+            if ( !valid.has(refresh) ) throw exception.fault("unauthorized", "invalid_grant");
 
             valid.delete(refresh);
 
@@ -227,7 +228,7 @@ describe("auth", () => {
 
         for ( const [code, ends] of [["bad_request", true], ["unauthorized", true], ["forbidden", true], ["not_found", true], ["gone", true], ["validation", true], ["unavailable", false], ["internal", false], ["timeout", false], ["conflict", false], ["too_many", false]] as const ) {
 
-            const made = auth.session<User>({ name: "codes", box: cache.open({ storage: cache.memory() }), now: time.now, renew: async () => { throw error.fault(code as error.Code, "x"); } });
+            const made = auth.session<User>({ name: "codes", box: cache.open({ storage: cache.memory() }), now: time.now, renew: async () => { throw exception.fault(code as error.Code, "x"); } });
 
             made.begin({ access: "a1", refresh: "r1", expires: 10 }, user);
             time.move(20);
@@ -255,7 +256,7 @@ describe("auth", () => {
 
         expect(junk.signed()).toBe(true);
 
-        for ( const skew of [Number.NaN, -1, Number.POSITIVE_INFINITY] ) expect(told(() => auth.session<User>({ name: "skew", box: cache.open({ storage: cache.memory() }), skew }))).toBe("RangeError: not a duration");
+        for ( const skew of [Number.NaN, -1, Number.POSITIVE_INFINITY] ) expect(told(() => auth.session<User>({ name: "skew", box: cache.open({ storage: cache.memory() }), skew }))).toBe("Fault: not a duration");
 
         const soon = auth.session<User>({ name: "soon", box: cache.open({ storage: cache.memory() }), now: () => 100, skew: 0 });
 
@@ -343,7 +344,7 @@ describe("auth", () => {
 
         } catch ( fault ) {
 
-            expect(error.is(fault) ? fault.errors : {}).toEqual({ abilities: ["users.read", "billing.pay"] });
+            expect(exception.is(fault) ? fault.errors : {}).toEqual({ abilities: ["users.read", "billing.pay"] });
 
         }
 

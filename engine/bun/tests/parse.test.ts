@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as parse from "engine/parse";
 
 describe("parse", () => {
@@ -112,9 +113,9 @@ describe("parse", () => {
     });
     it("fill refuses dot segments and keeps a rest param's slashes", () => {
 
-        expect(() => parse.fill("/files/{name}", { name: ".." })).toThrow(RangeError);
+        expect(() => parse.fill("/files/{name}", { name: ".." })).toThrow(exception.Fault);
         expect(() => parse.fill("/files/{name}", { name: "." })).toThrow("not a path segment");
-        expect(() => parse.fill("/files/{name}", { name: String.fromCharCode(0xd83d) })).toThrow(RangeError);
+        expect(() => parse.fill("/files/{name}", { name: String.fromCharCode(0xd83d) })).toThrow(exception.Fault);
         expect(() => parse.fill("/files/{name}", { name: `a${String.fromCharCode(0xde00)}` })).toThrow("not a path segment");
         expect(() => parse.fill("/files/{path*}", { path: "a/../b" })).toThrow("not a path segment");
         expect(parse.fill("/files/{path*}", { path: "a/b c/d.txt" })).toBe("/files/a/b%20c/d.txt");

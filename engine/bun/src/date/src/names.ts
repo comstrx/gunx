@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Held, Names, Width } from "./arch.ts";
 import { mod, utc } from "./calendar.ts";
 import { held, tongue } from "./intl.ts";
@@ -27,7 +28,7 @@ function listed ( tag: string, options: Intl.DateTimeFormatOptions, size: number
 }
 function derived ( tag: string ): Names {
 
-    try {
+    return exception.rescue(() => {
 
         const months = ( month: Width ): string[] => listed(tag, { month }, 12, ( index ) => utc(2024, index + 1, 15));
         const days = ( weekday: Width ): string[] => listed(tag, { weekday }, 7, ( index ) => utc(2024, 9, index + 1));
@@ -36,11 +37,11 @@ function derived ( tag: string ): Names {
 
         return { months: months("long"), monthsShort: months("short"), days: days("long"), daysShort: days("short"), meridiem: [half(9) || "AM", half(15) || "PM"] };
 
-    } catch {
+    }, () => {
 
         return english;
 
-    }
+    });
 
 }
 

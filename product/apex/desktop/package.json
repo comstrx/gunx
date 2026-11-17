@@ -24,7 +24,7 @@
     "typescript": "7.0.2"
   },
   "scripts": {
-    "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/bun && pwd)/.bun\" bun install --frozen-lockfile && bun run --cwd native deps",
+    "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/bun && pwd)/.bun\" bun install --frozen-lockfile && bun run --cwd host deps",
     "tool": "bun node_modules/engine/bin/tool.ts",
     "compile": "bun run tool compile",
     "check": "bun run tool check",
@@ -35,7 +35,7 @@
     "app": "bun run tool app",
     "dev": "bun run tool dev",
     "audit": "bun run tool audit",
-    "native": "bun run --cwd native",
+    "host": "bun run --cwd host",
     "gate": "bun run deps && bun run tool gate"
   }
 }

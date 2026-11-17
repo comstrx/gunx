@@ -16,17 +16,20 @@ const reach = /from\s+"engine-([a-z]+)"|import\(\s*"engine-([a-z]+)"\s*\)/g;
 const exported = /^export \* as ([a-z]+) from "engine-([a-z]+)";$/;
 const library = /(?:from|import)\s*\(?\s*"((?!engine-|\.|node:|bun)[^"]+)"/g;
 const terminal = new Set(["api", "spec", "tool"]);
-const hosted = new Set(["adapter", "test", "tool"]);
+const leaning: Readonly<Record<string, readonly string[]>> = { spec: ["api"], tool: ["spec"] };
+const hosted = new Set(["device", "test", "tool"]);
 const hostNames = ["globalThis", "window", "document", "navigator", "location", "history", "localStorage", "sessionStorage", "fetch", "WebSocket", "Notification", "matchMedia", "ResizeObserver", "HermesInternal", "importScripts", "WorkerGlobalScope", "process", "Bun", "Deno", "crypto"];
 const hostRead = new RegExp(`(?<![.\\w$])(?:${hostNames.join("|")})\\b(?!\\s*\\??:)`, "g");
 const namespaces = /import \* as ([A-Za-z_]+) from "engine-[a-z]+"/g;
 const ladder: readonly (readonly string[])[] = [
-    ["date", "error", "json", "list", "number", "string", "value", "virtual"],
-    ["adapter", "event", "func", "log", "parse", "search", "seo", "translate", "validate"],
+    ["date", "error", "exception", "json", "list", "number", "string", "value", "virtual"],
+    ["event", "func", "log", "parse", "search", "seo", "translate", "validate"],
     ["crypto", "device", "geo", "history", "rand"],
-    ["cache", "fs", "net", "socket"],
+    ["cache", "fs", "media", "net", "socket"],
     ["auth", "form", "queue", "state", "world"],
-    ["api", "fake", "spec", "test", "tool"],
+    ["api", "fake", "test"],
+    ["spec"],
+    ["tool"],
 ];
 const rung = new Map(ladder.flatMap(( names, index ) => names.map(( name ) => [name, index] as const)));
 const arrowVerb = /^export const [A-Za-z_$][\w$]*\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*(?::\s*[^=]+)?=>/m;
@@ -49,6 +52,32 @@ function sources ( member: string ): [string, string][] {
 function files ( member: string ): string[] {
 
     return sources(member).map(([, code]) => code);
+
+}
+function guarded ( code: string ): string[] {
+
+    const out: string[] = [];
+
+    for ( const hit of code.matchAll(/\btry\s*\{/g) ) {
+
+        const start = (hit.index ?? 0) + hit[0].length - 1;
+        let depth = 0;
+        let at = start;
+
+        for ( ; at < code.length; at += 1 ) {
+
+            if ( code[at] === "{" ) depth += 1;
+            else if ( code[at] === "}" ) depth -= 1;
+
+            if ( depth === 0 ) break;
+
+        }
+
+        if ( /^\s*catch\b/.test(code.slice(at + 1)) ) out.push(code.slice(start, at + 1));
+
+    }
+
+    return out;
 
 }
 function masked ( code: string ): string {
@@ -257,16 +286,16 @@ describe("laws", () => {
         expect([...homes].filter(([, found]) => found.size > 1).map(([head, found]) => `${head}: ${[...found].join(" ")}`)).toEqual([]);
 
     });
-    it("terminal: nothing imports api, spec or tool, and they never import each other", () => {
+    it("terminal: tool leans on spec and spec on api, one way; nothing else imports api, spec or tool", () => {
 
         for ( const member of members ) {
 
-            expect([...used(member)].filter(( name ) => terminal.has(name)), `${member} imports a terminal member`).toEqual([]);
+            expect([...used(member)].filter(( name ) => terminal.has(name) && !(leaning[member] ?? []).includes(name)), `${member} imports a terminal member`).toEqual([]);
 
         }
 
     });
-    it("host-free: no member but adapter reads the host; a port's file asks adapter.web for its fallback", () => {
+    it("host-free: no member but device reads the host; every other member asks device.host for its slice", () => {
 
         const offenders: string[] = [];
 
@@ -280,6 +309,33 @@ describe("laws", () => {
                 const found = [...new Set([...masked(code).matchAll(hostRead)].map(( hit ) => hit[0]))].filter(( name ) => !imported.has(name));
 
                 if ( found.length ) offenders.push(`${member}/${name}: ${found.join(" ")}`);
+
+            }
+
+        }
+
+        expect(offenders).toEqual([]);
+
+    });
+    it("unified: every failure is thrown, caught and told through exception; only a generator keeps a catch around its yields", () => {
+
+        const offenders: string[] = [];
+
+        for ( const member of members ) {
+
+            if ( member === "exception" ) continue;
+
+            for ( const [name, code] of sources(member) ) {
+
+                const bare = masked(code);
+                const found = [
+                    ...(/\.catch\s*\(/.test(bare) ? ["a promise is caught by hand"] : []),
+                    ...(/\bnew\s+(?:[A-Z]\w*)?Error\s*\(/.test(bare) ? ["a native error is made"] : []),
+                    ...(/\binstanceof\s+(?:[A-Z]\w*)?Error\b/.test(bare) ? ["a native error is tested"] : []),
+                    ...(guarded(bare).some(( block ) => !/\byield\b/.test(block)) ? ["a failure is caught by hand"] : []),
+                ];
+
+                if ( found.length ) offenders.push(`${member}/${name}: ${found.join(", ")}`);
 
             }
 

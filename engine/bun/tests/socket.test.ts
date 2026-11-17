@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as socket from "engine/socket";
 
 type Side = socket.Socket & { fire: ( frame: socket.Frame ) => void; sent: socket.Frame[]; openNow: () => void; dropNow: ( code?: number, reason?: string ) => void };
@@ -52,7 +52,7 @@ function fakeSocket ( acking = true, ponging = false ): Side {
 }
 function told ( failure: unknown ): string {
 
-    if ( error.is(failure) ) return `${failure.code}/${failure.reason}`;
+    if ( exception.is(failure) && failure.reason !== "misuse" ) return `${failure.code}/${failure.reason}`;
 
     return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
 
@@ -60,6 +60,12 @@ function told ( failure: unknown ): string {
 function tick ( ms = 0 ): Promise<void> {
 
     return new Promise(( done ) => setTimeout(done, ms));
+
+}
+
+async function until ( met: () => boolean, limit = 2000 ): Promise<void> {
+
+    for ( let waited = 0; !met() && waited < limit; waited += 1 ) await tick(1);
 
 }
 
@@ -323,7 +329,7 @@ describe("socket", () => {
 
         controller.abort(new Error("leaving"));
         expect(await aborted.then(() => "answered", told)).toBe("timeout/socket.aborted");
-        expect([await live.request("", 1).then(() => "answered", told), await live.request("x", 1, { timeout: -1 }).then(() => "answered", told), await live.request("x", "y".repeat(70_000)).then(() => "answered", told)]).toEqual(["internal/socket.event", "RangeError: not a duration", "too_large/socket.frame"]);
+        expect([await live.request("", 1).then(() => "answered", told), await live.request("x", 1, { timeout: -1 }).then(() => "answered", told), await live.request("x", "y".repeat(70_000)).then(() => "answered", told)]).toEqual(["internal/socket.event", "Fault: not a duration", "too_large/socket.frame"]);
         await tick(5);
         sides[1]?.openNow();
         await tick(1);
@@ -388,15 +394,17 @@ describe("socket", () => {
 
         void live.connect().catch(() => undefined);
         await tick(5);
+        await until(() => sides.length === 1);
         sides[0]?.openNow();
+        await until(() => (sides[0]?.sent.length ?? 0) > 0);
         sides[0]?.dropNow();
-        await tick(10);
+        await until(() => sides.length === 2);
         sides[1]?.openNow();
-        await tick(1);
+        await until(() => (sides[1]?.sent.length ?? 0) > 0);
         expect(sides.map(( side ) => side.sent[0]?.data)).toEqual([{ token: "t1" }, { token: "t2" }]);
         live.close();
 
-        const failing = api.connect({ url: "wss://x", auth: () => { throw error.fault("unauthorized", "no token"); }, reconnect: { min: 1 }, factory: () => fakeSocket() });
+        const failing = api.connect({ url: "wss://x", auth: () => { throw exception.fault("unauthorized", "no token"); }, reconnect: { min: 1 }, factory: () => fakeSocket() });
 
         expect([await failing.connect().then(() => "connected", told), failing.status()]).toEqual(["unauthorized/no token", "failed"]);
 
@@ -419,7 +427,7 @@ describe("socket", () => {
 
         }
 
-        for ( const [options, expected] of [[{ heartbeat: Number.NaN }, "RangeError: not a duration"], [{ timeout: -1 }, "RangeError: not a duration"], [{ maxFrame: Number.NaN }, "RangeError: not a size"], [{ buffer: -1 }, "RangeError: not a size"], [{ backlog: Number.NaN }, "RangeError: not a size"], [{ reconnect: { factor: 0.5 } }, "RangeError: not a factor"], [{ reconnect: { limit: -1 } }, "RangeError: not a count"], [{ reconnect: { min: Number.NaN } }, "RangeError: not a duration"], [{ reconnect: { steady: -1 } }, "RangeError: not a duration"]] as const ) expect(told(( () => { try { api.connect({ url: "wss://x", factory: () => fakeSocket(), ...options }); return "accepted"; } catch ( cause ) { return cause; } } )())).toBe(expected);
+        for ( const [options, expected] of [[{ heartbeat: Number.NaN }, "Fault: not a duration"], [{ timeout: -1 }, "Fault: not a duration"], [{ maxFrame: Number.NaN }, "Fault: not a size"], [{ buffer: -1 }, "Fault: not a size"], [{ backlog: Number.NaN }, "Fault: not a size"], [{ reconnect: { factor: 0.5 } }, "Fault: not a factor"], [{ reconnect: { limit: -1 } }, "Fault: not a count"], [{ reconnect: { min: Number.NaN } }, "Fault: not a duration"], [{ reconnect: { steady: -1 } }, "Fault: not a duration"]] as const ) expect(told(( () => { try { api.connect({ url: "wss://x", factory: () => fakeSocket(), ...options }); return "accepted"; } catch ( cause ) { return cause; } } )())).toBe(expected);
 
     });
     it("listeners run to the end past a throwing peer, the failure reaches fail, once waits with a bound, and stale sockets are ignored", async () => {
@@ -603,8 +611,8 @@ describe("socket", () => {
         const counts: number[] = [];
 
         who.watch(( state ) => { counts.push(state.count); });
-        expect(() => api.presence(made, "room", { limit: Number.NaN })).toThrow(new RangeError("not a count"));
-        expect(() => api.presence(made, "room", { limit: -1 })).toThrow(new RangeError("not a count"));
+        expect(() => api.presence(made, "room", { limit: Number.NaN })).toThrow(exception.misuse("not a count"));
+        expect(() => api.presence(made, "room", { limit: -1 })).toThrow(exception.misuse("not a count"));
         void made.connect();
         await tick(1);
         side.openNow();

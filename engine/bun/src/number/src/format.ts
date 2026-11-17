@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import type { Amount, CurrencyParts, FormatOptions, Numerals, Style, Told } from "./arch.ts";
 import { clamp, finite, precision } from "./math.ts";
@@ -15,15 +16,7 @@ const coded = /^[A-Za-z]{3}$/;
 
 function crafted ( locale: string, settings: Intl.NumberFormatOptions ): Intl.NumberFormat {
 
-    try {
-
-        return new Intl.NumberFormat(locale, settings);
-
-    } catch {
-
-        return new Intl.NumberFormat("en", settings);
-
-    }
+    return exception.rescue(() => new Intl.NumberFormat(locale, settings), () => new Intl.NumberFormat("en", settings));
 
 }
 function kept ( key: string, locale: string, settings: () => Intl.NumberFormatOptions ): Intl.NumberFormat {
@@ -80,7 +73,7 @@ function told ( value: Amount ): Told {
     if ( typeof value === "string" && value.length <= 64 && plain.test(value) ) return value as Told;
     if ( typeof value === "number" && Number.isFinite(value) ) return value;
 
-    throw new RangeError("not an amount");
+    throw exception.misuse("not an amount");
 
 }
 export function numerals ( text: string, system: Numerals ): string {
@@ -97,14 +90,14 @@ export function format ( value: Amount, options: FormatOptions = {} ): string {
 }
 export function formatPercent ( value: number, options: FormatOptions = {} ): string {
 
-    if ( !Number.isFinite(value) ) throw new RangeError("not an amount");
+    if ( !Number.isFinite(value) ) throw exception.misuse("not an amount");
 
     return shaped("percent", { ...options, digits: options.digits ?? 0, minDigits: options.minDigits ?? 0 }).format(value / 100);
 
 }
 export function abbreviate ( value: number, digits = 1, locale = "en" ): string {
 
-    if ( !Number.isFinite(value) ) throw new RangeError("not an amount");
+    if ( !Number.isFinite(value) ) throw exception.misuse("not an amount");
 
     return kept(`compact|${locale}|${digits}`, tagOf(locale, undefined), () => ({ notation: "compact", maximumFractionDigits: count(digits) })).format(value);
 

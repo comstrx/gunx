@@ -1,4 +1,5 @@
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import type { Aged, Dedupe, Expiring, Kept, Lru, Node, Remember, Swr, Tagged, Timed } from "./arch.ts";
 
 const noop = (): void => undefined;
@@ -323,7 +324,7 @@ export function swr<V> ( fresh = 10_000, stale = 60_000, limit = 1024 ): Swr<V> 
 
             if ( found === undefined || passed >= old ) return flight;
 
-            void flight.catch(noop);
+            exception.quiet(flight);
 
             return Promise.resolve(found.value);
 

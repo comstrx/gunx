@@ -7,7 +7,9 @@ module:extract:gate () {
 
     mapfile -t rows < <(module:gate:within "${tree}")
 
-    @info "gates of ${name} in ${tree}, ${seconds}s budget each"
+    @info "gates of ${name} in ${tree}, ${seconds}s each"
+
+    GATE_RESULTS=()
 
     for row in "${rows[@]}"; do
 
@@ -19,5 +21,10 @@ module:extract:gate () {
     module:gate:summary
 
     (( failed == 0 )) || { @err "gates failed for ${name}"; return; }
+
+}
+module:extract:language () {
+
+    [[ -n "$(module:gate:chains "${1}")" ]]
 
 }

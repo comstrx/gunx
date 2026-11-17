@@ -1,5 +1,5 @@
 import * as date from "engine-date";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as number from "engine-number";
 import * as value from "engine-value";
@@ -62,7 +62,7 @@ export function formatRange ( from: date.Input, to: date.Input, locale = "en", o
 }
 export function reason ( failure: unknown, translate: Translate ): string {
 
-    const fault = error.of(failure);
+    const fault = exception.of(failure);
     const params = { message: fault.message, code: fault.code, reason: fault.reason, status: fault.status, retryAfter: fault.retryAfter, requestId: fault.requestId };
 
     return (fault.reason === undefined ? undefined : translate.find(`faults.${fault.reason}`, params)) ?? translate.find(`codes.${fault.code}`, params) ?? fault.message;
@@ -70,7 +70,7 @@ export function reason ( failure: unknown, translate: Translate ): string {
 }
 export function field ( failure: unknown, name: string, translate: Translate ): string | undefined {
 
-    const first = error.isFault(failure) ? failure.field(name) : undefined;
+    const first = exception.isFault(failure) ? failure.field(name) : undefined;
 
     if ( typeof first !== "string" ) return undefined;
 

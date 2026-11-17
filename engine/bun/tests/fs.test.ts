@@ -1,5 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as fs from "engine/fs";
 
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 16, 0, 0, 0, 9]);
@@ -49,7 +49,7 @@ async function refusal ( run: () => unknown ): Promise<unknown> {
 
     } catch ( failure ) {
 
-        return failure instanceof error.Fault ? [failure.code, failure.reason, failure.errors] : failure;
+        return failure instanceof exception.Fault ? [failure.code, failure.reason, failure.errors] : failure;
 
     }
 
@@ -131,8 +131,8 @@ describe("fs", () => {
         const ref = { uri: "file:///a.jpg", name: "a.jpg", type: "image/jpeg", size: 10 };
 
         expect(fs.isRef(ref) && !fs.isRef({ uri: 1 })).toBe(true);
-        expect(() => fs.check(file, { maxBytes: 10, maxFiles: 1 })).toThrow(error.Fault);
-        expect(() => fs.check(ref, { maxBytes: 100, maxFiles: 1, types: ["image/png"] }, "photo")).toThrow(error.Fault);
+        expect(() => fs.check(file, { maxBytes: 10, maxFiles: 1 })).toThrow(exception.Fault);
+        expect(() => fs.check(ref, { maxBytes: 100, maxFiles: 1, types: ["image/png"] }, "photo")).toThrow(exception.Fault);
         fs.check(file, { maxBytes: 100, maxFiles: 1, types: ["image/*"] });
 
         const data = fs.formData({ name: "x", tags: ["a", "b"], file, refs: [ref], nested: { a: 1 }, skipped: null }, { maxBytes: 1000, maxFiles: 3 });
@@ -142,7 +142,7 @@ describe("fs", () => {
         expect(data.get("file")).toBeInstanceOf(Blob);
         expect(data.get("nested")).toBe('{"a":1}');
         expect(data.has("skipped")).toBe(false);
-        expect(() => fs.formData({ files: [file, file] }, { maxBytes: 1000, maxFiles: 1 })).toThrow(error.Fault);
+        expect(() => fs.formData({ files: [file, file] }, { maxBytes: 1000, maxFiles: 1 })).toThrow(exception.Fault);
         expect(fs.dataUri("text/plain", "aGk=")).toBe("data:text/plain;base64,aGk=");
         expect(fs.parseDataUri("data:text/plain;base64,aGk=")).toEqual({ type: "text/plain", bytes: new Uint8Array([104, 105]) });
         expect(fs.parseDataUri("data:,hi%20there")?.bytes).toEqual(new TextEncoder().encode("hi there"));
@@ -198,7 +198,7 @@ describe("fs", () => {
 
         });
 
-        expect(() => fs.disk.get()).toThrow(error.Fault);
+        expect(() => fs.disk.get()).toThrow(exception.Fault);
 
     });
     it("absolute paths are told apart from relative ones", () => {
@@ -251,17 +251,17 @@ describe("fs", () => {
 
         for ( const name of ["../../etc/passwd", "..", ".", "", "x/y", "b\\c", "a\u0000"] ) {
 
-            expect(() => fs.withName("uploads/a.png", name)).toThrow(new RangeError("not a name"));
-            expect(() => fs.withStem("uploads/a.png", name)).toThrow(new RangeError("not a name"));
-            expect(() => fs.withStem("uploads/a", name)).toThrow(new RangeError("not a name"));
+            expect(() => fs.withName("uploads/a.png", name)).toThrow(exception.misuse("not a name"));
+            expect(() => fs.withStem("uploads/a.png", name)).toThrow(exception.misuse("not a name"));
+            expect(() => fs.withStem("uploads/a", name)).toThrow(exception.misuse("not a name"));
 
         }
 
         expect([fs.withName("a.png", "C:"), fs.withStem("a", "c:"), fs.withStem("a.png", "C:"), fs.withName("./C:/a", "b"), fs.withExtension("./C:/a", "x")]).toEqual(["./C:", "./c:", "C:.png", "./C:/b", "./C:/a.x"]);
         expect([fs.withName("a.png", "C:"), fs.withName("./C:/a", "b")].map(fs.isAbsolute)).toEqual([false, false]);
         expect([fs.withName("a.png", "C:x"), fs.withName("x/a", "1:"), fs.withExtension("C:x", "")]).toEqual(["C:x", "x/1:", "C:x"]);
-        expect(() => fs.withExtension("uploads/a.png", "x/../../y")).toThrow(new RangeError("not a name"));
-        expect(() => fs.withExtension("uploads/a.png", "\\y")).toThrow(new RangeError("not a name"));
+        expect(() => fs.withExtension("uploads/a.png", "x/../../y")).toThrow(exception.misuse("not a name"));
+        expect(() => fs.withExtension("uploads/a.png", "\\y")).toThrow(exception.misuse("not a name"));
 
     });
     it("normalize collapses dots, separators, drives and shares without ever climbing a root", () => {
@@ -367,9 +367,9 @@ describe("fs", () => {
         expect([fs.matches("a", "!a"), fs.matches("b", "!a"), fs.matches("a", "!!a"), fs.matches("!a", "!!a")]).toEqual([false, true, true, false]);
         expect([fs.matches("a.ts", []), fs.matches("a.ts", ["*.js", "*.ts"]), fs.matches("a.ts", ["*.ts", "!a.ts"]), fs.matches("b.ts", ["*.ts", "!a.ts"])]).toEqual([false, true, false, true]);
         expect([fs.matches("A.TS", "*.ts"), fs.matches("A.TS", "*.ts", { insensitive: true }), fs.matches("İ", "İ", { insensitive: true }), fs.matches("İ", "[İ]", { insensitive: true }), fs.matches("ß", "SS", { insensitive: true }), fs.matches("ß", "[A-Z]", { insensitive: true }), fs.matches("q", "[A-Z]", { insensitive: true })]).toEqual([false, true, true, true, false, false, true]);
-        expect(() => fs.glob("{a,b}".repeat(10))).toThrow(new RangeError("not a glob"));
-        expect(() => fs.glob("a".repeat(1025))).toThrow(new RangeError("not a glob"));
-        expect(() => fs.glob(`${"{a,b,c}".repeat(3)}{a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s}`)).toThrow(new RangeError("not a glob"));
+        expect(() => fs.glob("{a,b}".repeat(10))).toThrow(exception.misuse("not a glob"));
+        expect(() => fs.glob("a".repeat(1025))).toThrow(exception.misuse("not a glob"));
+        expect(() => fs.glob(`${"{a,b,c}".repeat(3)}{a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s}`)).toThrow(exception.misuse("not a glob"));
         expect(fs.glob("{a,b}".repeat(9))("a".repeat(9))).toBe(true);
 
     });
@@ -683,9 +683,9 @@ describe("fs", () => {
         expect(await Promise.all(fs.slices(whole, 3).map(( one ) => one.blob.text()))).toEqual(["abc", "def", "ghi", "j"]);
         expect(fs.slices(new Blob([new Uint8Array(10_000)]), 1)).toHaveLength(10_000);
 
-        for ( const size of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY] ) expect(() => fs.slices(whole, size)).toThrow(new RangeError("not a size"));
+        for ( const size of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY] ) expect(() => fs.slices(whole, size)).toThrow(exception.misuse("not a size"));
 
-        expect(() => fs.slices(new Blob([new Uint8Array(10_001)]), 1)).toThrow(new RangeError("not a size"));
+        expect(() => fs.slices(new Blob([new Uint8Array(10_001)]), 1)).toThrow(exception.misuse("not a size"));
         expect([(await fs.head(new Blob([new Uint8Array(5000)]))).length, (await fs.head(whole, 2)).length, (await fs.head(new Blob([]))).length, [...(await fs.head(whole, 3))]]).toEqual([4100, 2, 0, [97, 98, 99]]);
         expect([[...(await fs.bytes(new Blob(["hi"])))], await fs.blobText(new Blob(["é"])), (await fs.bytes(new Blob([]))).length]).toEqual([[104, 105], "é", 0]);
         expect([0, 1, 1023, 1024, 1536, 1_048_576, 10_485_760, 1_073_741_824].map(( size ) => fs.human(size))).toEqual(["0 B", "1 B", "1023 B", "1 KiB", "1.5 KiB", "1 MiB", "10 MiB", "1 GiB"]);
@@ -998,7 +998,7 @@ describe("fs", () => {
 
     it("a host failure becomes one fault by its code, and a fault passes through untouched", async () => {
 
-        const mine = error.fault("locked", "mine", { message: "kept" });
+        const mine = exception.fault("locked", "mine", { message: "kept" });
         const table: readonly (readonly [string, string, string])[] = [
             ["ENOENT", "not_found", "fs.missing"],
             ["EACCES", "forbidden", "fs.denied"],
@@ -1028,7 +1028,7 @@ describe("fs", () => {
 
             const failure = await fs.disk.with(failing(thrown), () => fs.read("/a/../x")).catch(( caught: unknown ) => caught);
 
-            return failure instanceof error.Fault ? [failure.code, failure.reason, failure.message, failure.cause === thrown] : failure;
+            return failure instanceof exception.Fault ? [failure.code, failure.reason, failure.message, failure.cause === thrown] : failure;
 
         };
 
@@ -1106,7 +1106,7 @@ describe("fs", () => {
 
         expect<unknown[]>(await Promise.all([told(() => fs.read("/held")), told(() => fs.temp()), told(() => fs.walk("/")), told(() => fs.remove("/held")), told(() => fs.exists("/held")), told(() => fs.stat("/held")), told(() => fs.write("/held", "x"))])).toEqual(Array.from({ length: 7 }, () => "unavailable/fs.disk.unbound"));
         expect([...disk.files.keys()]).toEqual(["/held"]);
-        expect(() => fs.disk.get()).toThrow(error.Fault);
+        expect(() => fs.disk.get()).toThrow(exception.Fault);
 
         const bare = fs.memoryDisk();
 

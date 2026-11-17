@@ -7,7 +7,7 @@ import { Dialog } from "@/elements/dialog.tsx";
 import { Heading } from "@/elements/heading.tsx";
 import { Text } from "@/elements/text.tsx";
 import { useStale } from "@/hooks/use-stale.ts";
-import { labels } from "@/specs/runtime.ts";
+import { host } from "@/specs/app.ts";
 import type { Locale } from "@/types/index.ts";
 
 export type StaleProps = { locale: Locale };
@@ -15,7 +15,7 @@ export type StaleProps = { locale: Locale };
 export function Stale ({ locale }: StaleProps ) {
 
     const { stale, dismiss, reload } = useStale();
-    const text = labels(locale, "nav");
+    const text = host.app.labels(locale, "nav");
     const id = useId();
 
     return (

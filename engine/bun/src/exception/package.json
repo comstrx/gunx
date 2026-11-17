@@ -1,0 +1,13 @@
+{
+  "name": "engine-exception",
+  "private": true,
+  "type": "module",
+  "description": "Exceptions: the thrown fault, converting what was caught, guards, probes, slots",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "engine-error": "workspace:*"
+  }
+}

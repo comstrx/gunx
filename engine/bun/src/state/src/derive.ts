@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Combined, Equal, Readable, Readables, Source } from "./arch.ts";
 
 function plain ( value: object ): boolean {
@@ -103,15 +104,15 @@ export function combine<R extends Readables> ( sources: R ): Readable<Combined<R
 
                 for ( const stop of stops.splice(0) ) {
 
-                    try {
+                    exception.rescue(() => {
 
                         stop();
 
-                    } catch ( cause ) {
+                    }, ( cause ) => {
 
                         failed ??= { cause };
 
-                    }
+                    });
 
                 }
 
@@ -119,7 +120,7 @@ export function combine<R extends Readables> ( sources: R ): Readable<Combined<R
 
             };
 
-            try {
+            const failed = exception.run(() => {
 
                 for ( const origin of origins ) stops.push(origin.subscribe(() => {
 
@@ -134,19 +135,21 @@ export function combine<R extends Readables> ( sources: R ): Readable<Combined<R
 
                 }));
 
-            } catch ( cause ) {
+            });
 
-                try {
+            if ( exception.threw(failed) ) {
+
+                exception.rescue(() => {
 
                     release();
 
-                } catch ( cleanup ) {
+                }, ( cleanup ) => {
 
-                    throw new AggregateError([cause, cleanup], "state.subscribe");
+                    throw exception.fault("internal", "state.subscribe", { message: "state.subscribe", cause: [failed.caught, cleanup] });
 
-                }
+                });
 
-                throw cause;
+                throw failed.caught;
 
             }
 

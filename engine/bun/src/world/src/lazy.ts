@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Catalog, Slot } from "./arch.ts";
 
 export const catalogs: readonly Catalog[] = ["countries", "currencies", "languages", "emoji"];
@@ -35,7 +35,7 @@ export function slot<T> ( name: Catalog, read: () => Promise<T> ): Slot<T> {
     return {
         get: () => {
 
-            if ( value === undefined ) throw error.fault("unavailable", "world.unloaded", { message: `world: load("${name}") before reading it`, errors: { catalog: [name] } });
+            if ( value === undefined ) throw exception.fault("unavailable", "world.unloaded", { message: `world: load("${name}") before reading it`, errors: { catalog: [name] } });
 
             return value;
 
@@ -45,24 +45,24 @@ export function slot<T> ( name: Catalog, read: () => Promise<T> ): Slot<T> {
 
             if ( loading ) return loading;
 
-            const asked: Promise<T> = Promise.resolve().then(read).then(
+            const asked: Promise<T> = exception.mend(Promise.resolve().then(read).then(
                 ( found ) => {
 
                     if ( loading !== asked && value !== undefined ) return value;
 
-                    if ( !Array.isArray(found) || found.length === 0 ) throw new TypeError("a world catalog is a nonempty array");
+                    if ( !Array.isArray(found) || found.length === 0 ) throw exception.misuse("a world catalog is a nonempty array");
 
                     value = found;
 
                     return found;
 
                 },
-            ).catch(
-                ( cause: unknown ) => {
+            ),
+                ( cause ) => {
 
                     if ( loading === asked ) loading = undefined;
 
-                    throw error.fault("unavailable", "world.refused", { message: `world: the ${name} catalog did not load`, cause, errors: { catalog: [name] } });
+                    throw exception.fault("unavailable", "world.refused", { message: `world: the ${name} catalog did not load`, cause, errors: { catalog: [name] } });
 
                 },
             );

@@ -1,4 +1,5 @@
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import * as value from "engine-value";
 import type { FileLike, FileLimits } from "./arch.ts";
 import { format } from "./check.ts";
@@ -65,7 +66,7 @@ export function password ( min = 8, max = 128 ) {
 }
 export function otp ( length = 6 ) {
 
-    if ( !Number.isInteger(length) || length < 1 || length > 12 ) throw new RangeError("not an otp length");
+    if ( !Number.isInteger(length) || length < 1 || length > 12 ) throw exception.misuse("not an otp length");
 
     return zod.pipe(zod.pipe(zod.string().check(zod.trim()), zod.transform(( word: string ) => value.otp(word, length) ?? word)), zod.string().check(zod.regex(new RegExp(`^\\d{${length}}$`)))).check(format("otp", length));
 

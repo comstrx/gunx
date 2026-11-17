@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as string from "engine-string";
 import type { Exact, Factor, Rounding, Whole } from "./arch.ts";
 
@@ -94,7 +95,7 @@ export function safe ( value: Whole ): number {
 
     const found = typeof value === "bigint" ? Number(value) : value;
 
-    if ( !Number.isSafeInteger(found) ) throw new RangeError(`not a safe whole number: ${String(value)}`);
+    if ( !Number.isSafeInteger(found) ) throw exception.misuse(`not a safe whole number: ${String(value)}`);
 
     return found === 0 ? 0 : found;
 
@@ -139,7 +140,7 @@ export function away ( rounding: Rounding, negative: boolean, odd: boolean, half
 }
 export function divided ( top: bigint, bottom: bigint, rounding: Rounding ): bigint {
 
-    if ( bottom === 0n ) throw new RangeError("division by zero");
+    if ( bottom === 0n ) throw exception.misuse("division by zero");
 
     const negative = top < 0n !== bottom < 0n;
     const size = top < 0n ? -top : top;
@@ -155,7 +156,7 @@ export function divided ( top: bigint, bottom: bigint, rounding: Rounding ): big
 export function quotient ( top: Whole, bottom: Whole, rounding: Rounding ): Whole {
 
     if ( typeof top !== "number" || typeof bottom !== "number" ) return divided(BigInt(top), BigInt(bottom), rounding);
-    if ( bottom === 0 ) throw new RangeError("division by zero");
+    if ( bottom === 0 ) throw exception.misuse("division by zero");
 
     const negative = top < 0 !== bottom < 0;
     const size = Math.abs(top);

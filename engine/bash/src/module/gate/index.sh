@@ -1,3 +1,4 @@
+@use module::gate::src::arch
 @use module::gate::src::bash
 @use module::gate::src::bun
 @use module::gate::src::changes

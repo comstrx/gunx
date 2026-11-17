@@ -1,4 +1,4 @@
-import { StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import type { BlockProps } from "@/elements/contract.ts";
 import { useTheme } from "@/styles/theme.ts";
 import { gaps, paddings, radius, reading } from "@/styles/tokens.ts";
@@ -25,6 +25,12 @@ export function Block ( props: BlockProps ) {
         justifyContent: props.justify ? justifies[props.justify] : undefined,
         direction: dir,
     };
+
+    if ( as === "main" ) return (
+        <ScrollView nativeID={props.id} role="main" aria-label={props.label} testID="block-main" style={heights.screen} contentContainerStyle={[layout, widths[width], { flexGrow: 1 }]} keyboardShouldPersistTaps="handled">
+            {props.children}
+        </ScrollView>
+    );
 
     return (
         <View

@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as cache from "engine/cache";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as queue from "engine/queue";
 import * as fc from "fast-check";
 
@@ -60,8 +60,8 @@ describe("fuzz queue", () => {
             let serial = 0;
             const box = queue.create({ owner: "u", retries, keep, delay: 0, perform: async ( job ) => {
 
-                if ( job.type === "flaky" ) throw error.fault("unavailable", "down");
-                if ( job.type === "final" ) throw error.fault("forbidden", "no");
+                if ( job.type === "flaky" ) throw exception.fault("unavailable", "down");
+                if ( job.type === "final" ) throw exception.fault("forbidden", "no");
 
             } });
             let rows: Row[] = [];
@@ -105,7 +105,7 @@ describe("fuzz queue", () => {
 
                     } else if ( live() >= keep ) {
 
-                        expect(error.is(made) && made.reason === "queue.full").toBe(true);
+                        expect(exception.is(made) && made.reason === "queue.full").toBe(true);
 
                     } else {
 

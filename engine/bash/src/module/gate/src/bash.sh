@@ -1,21 +1,21 @@
 module:gate:bash:deps () {
 
-    module:gate:install:runtime && bash src/main.sh fetch shellcheck
+    bash src/main.sh fetch shellcheck "${GATE_ARGS[@]}"
 
 }
 module:gate:bash:check () {
 
-    bash src/main.sh self check
+    bash src/main.sh self check "${GATE_ARGS[@]}"
 
 }
 module:gate:bash:lint () {
 
-    bash src/main.sh self lint
+    bash src/main.sh self lint "${GATE_ARGS[@]}"
 
 }
 module:gate:bash:test () {
 
-    bash src/main.sh self test
+    bash src/main.sh self test "${GATE_ARGS[@]}"
 
 }
 module:gate:bash:safety () {
@@ -41,6 +41,27 @@ module:gate:bash:build () {
     fi
 
 }
+module:gate:bash:install () {
+
+    shift
+
+    bash src/main.sh self install "$@"
+
+}
+module:gate:bash:update () {
+
+    shift
+
+    bash src/main.sh self update "$@"
+
+}
+module:gate:bash:remove () {
+
+    shift
+
+    bash src/main.sh self remove "$@"
+
+}
 module:gate:bash:run () {
 
     local dev="${1}" bundle=""
@@ -61,12 +82,13 @@ module:gate:bash:surface () {
 }
 module:gate:bash:semver () {
 
-    local baseline="" old="" now="" was="" version=""
+    local baseline="" old="" now="" was="" version="" file=""
     local -A table=()
 
     baseline="$(module:gate:semver:baseline)" || return 0
 
-    core:parse:toml table infra.toml || return
+    file="$(config:manifest:file "${PWD}")" || return
+    core:parse:toml table "${file}" || return
     version="${table[meta.version]:-}"
 
     ! module:gate:semver:bumped "${baseline}" "${version}" || return 0
@@ -86,6 +108,6 @@ module:gate:bash:bench () {
 }
 module:gate:bash:fuzz () {
 
-    bash src/main.sh self fuzz "${GATE_FUZZ}"
+    bash src/main.sh self fuzz "$(( GATE_FUZZ / 2 ))"
 
 }

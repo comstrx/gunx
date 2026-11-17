@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as search from "engine/search";
 
 type Row = { id: string; name: string; tags: string[]; price: number; status: string; meta: { city: string } };
@@ -117,9 +118,9 @@ describe("search", () => {
         expect(made.query("shoes").map(( hit ) => hit.score)).toEqual([0.287, 0.287]);
         expect(made.query("shoes", { boost: ( row ) => (row.id === "2" ? 1.5 : 1) }).map(( hit ) => [hit.key, hit.score])).toEqual([["2", 0.43], ["1", 0.287]]);
         expect([made.query("s", { expansions: 1 }).map(( hit ) => hit.key), made.query("s", { expansions: 1 })[0]?.terms, made.query("s", { expansions: 0 }).length, made.query("s", { expansions: Number.NaN }).length, made.query("s")[0]?.terms]).toEqual([["1", "2"], ["shoes"], 2, 2, ["shoes", "sport"]]);
-        expect(() => search.index<Item>({ fields: ["name"], key: ( row ) => row.id, weights: { name: Number.NaN } })).toThrow(new RangeError("not a weight"));
-        expect(() => search.index<Item>({ fields: ["name"], key: ( row ) => row.id, weights: { name: -1 } })).toThrow(new RangeError("not a weight"));
-        expect(() => search.index<Item>({ fields: ["name"], key: ( row ) => row.id, weights: { name: Number.POSITIVE_INFINITY } })).toThrow(new RangeError("not a weight"));
+        expect(() => search.index<Item>({ fields: ["name"], key: ( row ) => row.id, weights: { name: Number.NaN } })).toThrow(exception.misuse("not a weight"));
+        expect(() => search.index<Item>({ fields: ["name"], key: ( row ) => row.id, weights: { name: -1 } })).toThrow(exception.misuse("not a weight"));
+        expect(() => search.index<Item>({ fields: ["name"], key: ( row ) => row.id, weights: { name: Number.POSITIVE_INFINITY } })).toThrow(exception.misuse("not a weight"));
 
         const unweighted = search.index<Item>({ fields: ["name"], key: ( row ) => row.id, weights: { name: 0 } });
 

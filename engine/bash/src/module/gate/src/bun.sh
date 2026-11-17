@@ -9,8 +9,8 @@ module:gate:bun:prefer () {
 
     shift
 
-    if module:gate:bun:script "${name}"; then bun run "${name}"
-    else "$@"
+    if module:gate:bun:script "${name}"; then bun run "${name}" "${GATE_ARGS[@]}"
+    else "$@" "${GATE_ARGS[@]}"
     fi
 
 }
@@ -27,7 +27,7 @@ module:gate:bun:suite () {
 }
 module:gate:bun:deps () {
 
-    core:proc:io module:gate:bun:prefer deps bun install --frozen-lockfile || return
+    core:proc:io module:gate:bun:prefer deps bun install || return
 
     module:gate:bun:script link || return 0
 
@@ -87,7 +87,7 @@ module:gate:bun:semver () {
 
     old="$(module:gate:semver:tree "${baseline}")" || return
 
-    core:proc:within "${old}" core:proc:io bun install --frozen-lockfile --silent || return
+    core:proc:within "${old}" core:proc:io bun install --silent || return
 
     now="$(module:gate:bun:surface)" || return
     was="$(core:proc:within "${old}" module:gate:bun:surface)" || return

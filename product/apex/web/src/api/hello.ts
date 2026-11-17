@@ -7,6 +7,7 @@ export const greeting = validate.object({ message: validate.string(), locale: va
 
 export const transport = api.feature("hello", {
     world: api.get("/api/hello", validate.object({ tone: validate.optional(validate.enum(tones)) }), greeting, { auth: false, cache: 30 }),
+    me: api.get("/api/hello/me", validate.object({}), greeting, { auth: true }),
     someone: api.get("/api/hello/{name}", validate.object({ name: validate.string().check(validate.minLength(1), validate.maxLength(40)) }), greeting, { auth: false }),
 });
 export const manifest: spec.Manifest = {

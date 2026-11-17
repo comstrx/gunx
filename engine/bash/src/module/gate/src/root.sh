@@ -1,6 +1,3 @@
-declare -ga GATE_SECURITY=( gitleaks trivy syft zizmor )
-declare -ga GATE_QUALITY=( typos taplo prettier )
-
 module:gate:root:has () {
 
     case "${1}" in

@@ -4,7 +4,7 @@ fixture:module:gate:repo () {
 
     mkdir -p "${root}/engine/rust" "${root}/engine/bash/src" "${root}/product/demo/web" "${root}/product/demo/api"
     printf '' > "${root}/engine/rust/Cargo.toml"
-    printf '' > "${root}/engine/bash/infra.toml"
+    printf '' > "${root}/engine/bash/bash.toml"
     printf '' > "${root}/engine/bash/src/main.sh"
     printf '{"dependencies":{"api":"file:../api"}}' > "${root}/product/demo/web/package.json"
     printf '' > "${root}/product/demo/api/pyproject.toml"
@@ -67,6 +67,11 @@ test:module:gate:plans-the-paths () {
 
     @eq "$(module:gate:within "${root}/product/demo" | cut -f1 | tr '\n' ' ')" 'python bun root '
     @eq "$(module:gate:within "${root}/engine/rust" | cut -f1 | tr '\n' ' ')" 'rust root '
+    @eq "$(module:gate:within "${root}" | tr '\t' ' ' | tr '\n' '|')" "bash ${root}/engine/bash|rust ${root}/engine/rust|python ${root}/product/demo/api|bun ${root}/product/demo/web|root ${root}|"
+
+    mkdir -p "${root}/engine/rust/crates/inner"
+    printf '' > "${root}/engine/rust/crates/inner/Cargo.toml"
+    @eq "$(module:gate:within "${root}" | grep -c rust)" 1
 
 }
 test:module:gate:refuses-bad-flags () {
@@ -96,7 +101,7 @@ test:module:gate:runs-one-part-within-its-budget () {
     local root="${TMPDIR}/tool"
 
     mkdir -p "${root}/src"
-    printf '' > "${root}/infra.toml"
+    printf '' > "${root}/bash.toml"
     cat > "${root}/src/main.sh" <<'TOOL'
 [[ "$1" != self ]] || shift
 case "$1" in
@@ -108,7 +113,7 @@ esac
 TOOL
 
     @eq "$(module:gate:one bash "${root}" 'check' 7 false 2>&1 | grep -c 'checked in tool')" 1
-    @eq "$(module:gate:one bash "${root}" 'fuzz' 100 false 2>&1 | grep -c 'fuzz 60')" 1
+    @eq "$(module:gate:one bash "${root}" 'fuzz' 100 false 2>&1 | grep -c 'fuzz 30')" 1
     @errors 'failed at test' module:gate:one bash "${root}" 'check test' 7 false
     @contains "$(module:gate:one bash "${root}" 'check test' 7 true 2>&1)" 'failed at test; passing as asked'
     @errors 'ran out of its 1s timeout' module:gate:one bash "${root}" 'bench' 1 false
@@ -122,7 +127,7 @@ test:module:gate:keeps-the-truth-in-the-summary () {
     local root="${TMPDIR}/tool" summary="${TMPDIR}/summary.md" report=""
 
     mkdir -p "${root}/src"
-    printf '' > "${root}/infra.toml"
+    printf '' > "${root}/bash.toml"
     cat > "${root}/src/main.sh" <<'TOOL'
 [[ "$1" != self ]] || shift
 case "$1" in
@@ -191,7 +196,7 @@ test:module:gate:builds-and-runs-a-path () {
     local root="${TMPDIR}/tool"
 
     mkdir -p "${root}/src"
-    printf '' > "${root}/infra.toml"
+    printf '' > "${root}/bash.toml"
     cat > "${root}/src/main.sh" <<'TOOL'
 if [[ "${1} ${2:-}" == "self build" ]]; then printf 'built %s\n' "${*:3}"; printf '%s\n' "${BUNDLE}"; exit 0; fi
 printf 'ran %s\n' "$*"
@@ -207,5 +212,99 @@ TOOL
     printf '' > "${TMPDIR}/other/Cargo.toml"
     @errors 'run takes one target, not 2' module:gate:life run --path "${root},${TMPDIR}/other"
     @errors '--path needs the directories' module:gate:life build --path
+
+}
+test:module:gate:names-the-toolchains () {
+
+    local root=""
+
+    root="$(fixture:module:gate:repo)"
+    cd -- "${root}" || return
+
+    printf 'go 1.25\n' > "${root}/engine/rust/go.mod"
+    printf '{"packageManager":"bun@1.0.0"}' > "${root}/product/demo/web/package.json"
+    printf 'singleQuote: true\n' > "${root}/.prettierrc.yml"
+
+    @eq "$(bash "${TOOL_BIN}" toolchains | tr '\n' ' ')" 'rust=true python=true go=true go-file=engine/rust/go.mod bun=true bun-file=product/demo/web/package.json '
+    @eq "$(bash "${TOOL_BIN}" toolchains --path product/demo/api)" python=true
+    @eq "$(bash "${TOOL_BIN}" toolchains --path engine/bash)" ''
+
+    rm -f -- "${root}/product/demo/web/package.json" "${root}/engine/rust/go.mod"
+    @eq "$(bash "${TOOL_BIN}" toolchains | tr '\n' ' ')" 'rust=true python=true bun=true '
+
+    @errors 'toolchains takes no argument' bash "${TOOL_BIN}" toolchains extra
+
+}
+test:module:gate:hands-the-rest-to-one-gate () {
+
+    local root="${TMPDIR}/tool"
+
+    mkdir -p "${root}/src"
+    printf '' > "${root}/bash.toml"
+    cat > "${root}/src/main.sh" <<'TOOL'
+[[ "$1" != self ]] || shift
+echo "ran $*"
+TOOL
+
+    GATE_KIND=check
+    GATE_REST=( --fast one )
+
+    @contains "$(module:gate:one bash "${root}" 'check' 7 false 2>&1)" 'ran check --fast one'
+    @absent "$(module:gate:one bash "${root}" 'check' 7 false 2>&1)" 'shellcheck --fast'
+    @absent "$(module:gate:one bash "${root}" 'lint' 7 false 2>&1)" '--fast'
+
+    @absent "$(declare -f module:gate:rust:deps module:gate:rust:check module:gate:python:deps module:gate:bun:deps)" 'locked'
+    @absent "$(declare -f module:gate:bun:deps module:gate:python:audit module:gate:python:run)" 'frozen'
+
+}
+test:module:gate:watches-what-it-builds-on () {
+
+    local root=""
+
+    root="$(fixture:module:gate:repo)"
+
+    @eq "$(module:gate:watch "${root}/product/demo/web" | tr '\n' ' ')" "${root}/product/demo/web ${root}/product/demo/api "
+    @eq "$(module:gate:watch "${root}/engine/rust")" "${root}/engine/rust"
+    module:gate:fresh "${root}/product/demo/web" "${root}/product/demo/api/main.py"
+    @fails module:gate:fresh "${root}/product/demo/web" "${root}/product/demo/apiary/x"
+    @fails module:gate:fresh "${root}/product/demo/web" ''
+
+}
+test:module:gate:keeps-the-changed-paths () {
+
+    local root=""
+
+    root="$(fixture:module:gate:repo)"
+    CLI_VALUED=( [--path]=true [--base]=true )
+    cd -- "${root}" || return
+
+    printf 'changed\n' > "${root}/product/demo/api/main.py"
+
+    CLI_FLAGS=( [--base]=HEAD )
+    @eq "$(module:gate:keep "rust"$'\t'"${root}/engine/rust" "python"$'\t'"${root}/product/demo/api" "bun"$'\t'"${root}/product/demo/web" 2>/dev/null | cut -f1 | tr '\n' ' ')" 'python bun '
+    @contains "$(module:gate:keep "rust"$'\t'"${root}/engine/rust" 2>&1)" 'nothing changed since HEAD'
+
+    @contains "$(bash "${TOOL_BIN}" changes --base HEAD --path engine/rust,product/demo/api)" $'engine/rust       unchanged'
+    @contains "$(bash "${TOOL_BIN}" changes --base HEAD --path product/demo/api)" $'product/demo/api  changed'
+    @errors 'Cannot diff against nope' bash "${TOOL_BIN}" changes --base nope
+    @errors 'changes takes no argument' bash "${TOOL_BIN}" changes extra
+
+}
+test:module:gate:routes-the-life-of-a-tool () {
+
+    local root="${TMPDIR}/tool"
+
+    mkdir -p "${root}/src" "${TMPDIR}/other"
+    printf '' > "${root}/bash.toml"
+    printf '' > "${TMPDIR}/other/Cargo.toml"
+    cat > "${root}/src/main.sh" <<'TOOL'
+echo "ran $*"
+TOOL
+
+    @eq "$(module:gate:life install --path "${root}" --alias name --yes 2>/dev/null)" 'ran self install --alias name --yes'
+    @eq "$(module:gate:life update --path "${root}" --dev 2>/dev/null)" 'ran self update'
+    @eq "$(module:gate:life remove --path "${root}" 2>/dev/null)" 'ran self remove'
+    @errors 'rust has no install' module:gate:life install --path "${TMPDIR}/other"
+    @eq "$(module:bundle:usage:handler update)" module:gate:update
 
 }

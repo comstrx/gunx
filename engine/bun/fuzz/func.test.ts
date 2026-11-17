@@ -1,5 +1,5 @@
 import { describe, expect, test as it, jest } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as func from "engine/func";
 import * as fc from "fast-check";
 
@@ -74,7 +74,7 @@ describe("fuzz func", () => {
 
                 expect(outcomes.map(( result ) => result.ok)).toEqual(Array.from({ length: count }, ( _, at ) => at < admitted));
                 expect(ran).toEqual(Array.from({ length: admitted }, ( _, at ) => at));
-                expect(outcomes.filter(( result ) => "fault" in result).every(( result ) => "fault" in result && error.is(result.fault, "too_many_requests") && result.fault.reason === "lane.full")).toBe(true);
+                expect(outcomes.filter(( result ) => "fault" in result).every(( result ) => "fault" in result && exception.is(result.fault, "too_many_requests") && result.fault.reason === "lane.full")).toBe(true);
                 expect(made.size()).toBe(0);
                 expect(await made.run(async () => "recovered")).toBe("recovered");
 
@@ -275,7 +275,7 @@ describe("fuzz func", () => {
 
                     const outcome = await raced;
 
-                    expect(takes < limit ? outcome === takes : error.isFault(outcome) && outcome.code === "timeout" && outcome.reason === "late").toBe(true);
+                    expect(takes < limit ? outcome === takes : exception.isFault(outcome) && outcome.code === "timeout" && outcome.reason === "late").toBe(true);
                     expect([signals[0]?.aborted, jest.getTimerCount()]).toEqual([takes > limit, 0]);
 
                 }),
@@ -304,7 +304,7 @@ describe("fuzz func", () => {
 
                         attempts += 1;
 
-                        if ( attempt <= fails ) throw error.fault("unavailable", `try.${attempt}`);
+                        if ( attempt <= fails ) throw exception.fault("unavailable", `try.${attempt}`);
 
                         return attempt;
 
@@ -320,7 +320,7 @@ describe("fuzz func", () => {
                     const outcome = await raced;
 
                     expect(attempts).toBe(Math.min(times, fails + 1));
-                    expect(fails < times ? outcome === fails + 1 : error.isFault(outcome) && outcome.reason === `try.${times}`).toBe(true);
+                    expect(fails < times ? outcome === fails + 1 : exception.isFault(outcome) && outcome.reason === `try.${times}`).toBe(true);
                     expect(waits).toHaveLength(attempts - 1);
                     expect(waits.every(( wait, at ) => wait <= Math.min(50, 8 * 2 ** at) && wait >= Math.min(50, 8 * 2 ** at) / (jitter ? 2 : 1))).toBe(true);
                     expect(jest.getTimerCount()).toBe(0);
@@ -355,7 +355,7 @@ describe("fuzz func", () => {
 
                     active -= 1;
 
-                    if ( step.fails ) throw error.fault("conflict", `job.${at}`);
+                    if ( step.fails ) throw exception.fault("conflict", `job.${at}`);
 
                     return at;
 
@@ -404,7 +404,7 @@ describe("fuzz func", () => {
 
                 expect(started).toEqual(stays);
                 expect(results.flatMap(( result ) => (result.status === "fulfilled" ? [result.value] : []))).toEqual(stays);
-                expect(results.every(( result ) => result.status === "fulfilled" || (error.isFault(result.reason) && result.reason.reason === "lane.aborted"))).toBe(true);
+                expect(results.every(( result ) => result.status === "fulfilled" || (exception.isFault(result.reason) && result.reason.reason === "lane.aborted"))).toBe(true);
                 expect(lane.size()).toBe(0);
 
             }),
@@ -429,15 +429,15 @@ describe("fuzz func", () => {
 
                         ran += 1;
 
-                        if ( !ok ) throw error.fault("unavailable", `step.${at}`);
+                        if ( !ok ) throw exception.fault("unavailable", `step.${at}`);
 
                         return at;
 
                     }));
 
-                    if ( open ) expect([ran, error.isFault(outcome) && outcome.reason]).toEqual([before, "breaker.open"]);
+                    if ( open ) expect([ran, exception.isFault(outcome) && outcome.reason]).toEqual([before, "breaker.open"]);
                     else if ( ok ) expect([ran, outcome]).toEqual([before + 1, at]);
-                    else expect([ran, error.isFault(outcome) && outcome.reason]).toEqual([before + 1, `step.${at}`]);
+                    else expect([ran, exception.isFault(outcome) && outcome.reason]).toEqual([before + 1, `step.${at}`]);
 
                     streak = open ? streak : ok ? 0 : streak + 1;
                     open = open || streak >= limit;

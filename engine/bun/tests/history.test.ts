@@ -1,5 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as history from "engine/history";
 
 type Row = { href: string; state: unknown };
@@ -587,10 +587,10 @@ describe("history", () => {
     });
     it("a move the host refuses answers an unavailable fault and tells nobody", () => {
 
-        const shape = ( failure: unknown ): unknown[] => (error.isFault(failure) ? [failure.code, failure.reason, failure.status, (failure.cause as { name?: string } | undefined)?.name] : [String(failure)]);
+        const shape = ( failure: unknown ): unknown[] => (exception.isFault(failure) ? [failure.code, failure.reason, failure.status, (failure.cause as { name?: string } | undefined)?.name] : [String(failure)]);
         const push = browser("/a", "push");
         const replace = browser("/a", "replace");
-        const quota = error.fault("too_large", "history.quota");
+        const quota = exception.fault("too_large", "history.quota");
         const told: string[] = [];
         const first = history.create(push.adapter);
         const second = history.create(replace.adapter);

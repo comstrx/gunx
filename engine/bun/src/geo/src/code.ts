@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Bounds, Point, Tile } from "./arch.ts";
 import { turned } from "./path.ts";
 import { deg, rad, sure } from "./point.ts";
@@ -27,14 +28,14 @@ function table (): Int8Array {
 }
 function sized ( value: number, low: number, high: number, name: string ): number {
 
-    if ( Number.isNaN(value) ) throw new RangeError(`not a ${name}`);
+    if ( Number.isNaN(value) ) throw exception.misuse(`not a ${name}`);
 
     return Math.max(low, Math.min(high, Math.trunc(value)));
 
 }
 function scaled ( precision: number ): number {
 
-    if ( !Number.isInteger(precision) || precision < 1 || precision > 6 ) throw new RangeError("not a precision");
+    if ( !Number.isInteger(precision) || precision < 1 || precision > 6 ) throw exception.misuse("not a precision");
 
     return 10 ** precision;
 
@@ -262,7 +263,7 @@ export function untile ( given: Tile ): Bounds {
     const scale = 2 ** z;
     const lat = ( row: number ): number => Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / scale))) * deg;
 
-    if ( !Number.isInteger(z) || z < 0 || z > zooms || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= scale || y >= scale ) throw new RangeError("not a tile");
+    if ( !Number.isInteger(z) || z < 0 || z > zooms || !Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= scale || y >= scale ) throw exception.misuse("not a tile");
 
     return { south: lat(y + 1), west: (x / scale) * 360 - 180, north: lat(y), east: ((x + 1) / scale) * 360 - 180 };
 

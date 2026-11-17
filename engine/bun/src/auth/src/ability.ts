@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Holder, Mode } from "./arch.ts";
 
 function covers ( held: string, wanted: string ): boolean {
@@ -31,8 +31,8 @@ export function authorize ( holder: Holder, required: readonly string[] | string
 
     const wanted = typeof required === "string" ? [required] : required;
 
-    if ( !holder ) throw error.fault("unauthorized", "auth.guest");
-    if ( !can(holder, wanted, mode) ) throw error.fault("forbidden", "auth.denied", { errors: { abilities: missing(holder.abilities ?? [], wanted) } });
+    if ( !holder ) throw exception.fault("unauthorized", "auth.guest");
+    if ( !can(holder, wanted, mode) ) throw exception.fault("forbidden", "auth.denied", { errors: { abilities: missing(holder.abilities ?? [], wanted) } });
 
 }
 export function hasRole ( holder: Holder, roles: readonly string[] | string, mode: Mode = "any" ): boolean {

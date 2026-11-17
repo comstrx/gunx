@@ -1,4 +1,4 @@
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as translate from "engine/translate";
 import { bench, do_not_optimize, run } from "mitata";
 
@@ -12,8 +12,8 @@ const en = translate.dictionary(
 const ar = en.use("ar");
 const routing: translate.Routing = { locales: ["ar", "en", "fr-FR"], default: "ar" };
 const supported = ["en", "ar-EG"];
-const missed = error.fault("not_found", "cart.empty");
-const invalid = error.fault("validation", "r", { errors: { email: ["min_length:8"] } });
+const missed = exception.fault("not_found", "cart.empty");
+const invalid = exception.fault("validation", "r", { errors: { email: ["min_length:8"] } });
 const names = ["a", "b", "c"];
 
 bench("translate.t", () => do_not_optimize(en.t("hello", { name: "Ann" })));

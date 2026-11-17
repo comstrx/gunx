@@ -26,7 +26,7 @@ test:core:sys:opens-a-session () {
     printf '%s\n' 2147483646 > "${lab}/run/dead.0000/pid"
 
     directory="$(core:sys:session "${lab}")"
-    [[ -d "${directory}" && "${directory}" == "${lab}"/run/[0-9]*-[0-9]*-[0-9]*.???? ]]
+    [[ -d "${directory}" && "${directory}" == "${lab}"/run/[0-9]*-[0-9]*-[0-9]*.???????? ]]
 
     @eq "$(cat "${directory}/pid")" "$$"
     @eq "$(core:fs:file:mode "${lab}/run")" 700
@@ -88,5 +88,17 @@ test:core:sys:reads-the-run-context () {
     @eq "${context[ref]}" trunk
     @eq "${#context[sha]}" 12
     @eq "${context[link]}" ''
+
+}
+test:core:sys:keeps-a-session-that-was-asked-to-stay () {
+
+    local lab="${TMPDIR}/lab"
+
+    mkdir -p "${lab}/run/20261115-101010-2147483646.kept" "${lab}/run/20261115-101010-2147483646.gone"
+    : > "${lab}/run/20261115-101010-2147483646.kept/keep"
+
+    core:sys:prune "${lab}/run"
+
+    [[ -d "${lab}/run/20261115-101010-2147483646.kept" && ! -e "${lab}/run/20261115-101010-2147483646.gone" ]]
 
 }

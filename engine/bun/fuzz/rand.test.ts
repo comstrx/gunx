@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as rand from "engine/rand";
 import * as fc from "fast-check";
 
@@ -136,7 +137,7 @@ describe("fuzz rand", () => {
 
                 if ( classes === 0 ) {
 
-                    expect(() => rand.seeded(name).password(rules)).toThrow(RangeError);
+                    expect(() => rand.seeded(name).password(rules)).toThrow(exception.Fault);
 
                     return;
 

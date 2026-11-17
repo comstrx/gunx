@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import { posix } from "node:path";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as fs from "engine/fs";
 import * as fc from "fast-check";
 
@@ -496,7 +496,7 @@ function drawn ( tree: Tree ): string[] {
 }
 function named ( failure: unknown ): string {
 
-    return failure instanceof error.Fault ? `${failure.code}/${failure.reason}` : String(failure);
+    return failure instanceof exception.Fault ? `${failure.code}/${failure.reason}` : String(failure);
 
 }
 async function census ( memory: fs.MemoryDisk ): Promise<Tree> {
@@ -730,7 +730,7 @@ describe("fuzz fs", () => {
 
             if ( bad(name) ) {
 
-                expect(() => fs.withName(path, name)).toThrow(new RangeError("not a name"));
+                expect(() => fs.withName(path, name)).toThrow(exception.misuse("not a name"));
 
                 return;
 
@@ -750,7 +750,7 @@ describe("fuzz fs", () => {
 
             if ( bad(next) ) {
 
-                expect(() => fs.withStem(path, next)).toThrow(new RangeError("not a name"));
+                expect(() => fs.withStem(path, next)).toThrow(exception.misuse("not a name"));
 
                 return;
 
@@ -774,7 +774,7 @@ describe("fuzz fs", () => {
 
             if ( bad(name) ) {
 
-                expect(() => fs.withExtension(path, next)).toThrow(new RangeError("not a name"));
+                expect(() => fs.withExtension(path, next)).toThrow(exception.misuse("not a name"));
 
                 return;
 
@@ -827,7 +827,7 @@ describe("fuzz fs", () => {
 
             if ( patterns.some(( one ) => count(one.tokens) > most) ) {
 
-                expect(() => fs.glob(texts, options)).toThrow(new RangeError("not a glob"));
+                expect(() => fs.glob(texts, options)).toThrow(exception.misuse("not a glob"));
 
                 return;
 
@@ -855,10 +855,10 @@ describe("fuzz fs", () => {
             const total = sizes.reduce(( product, size ) => product * size, 1);
             const long = "a".repeat(length);
 
-            if ( total > most ) expect(() => fs.glob(text)).toThrow(new RangeError("not a glob"));
+            if ( total > most ) expect(() => fs.glob(text)).toThrow(exception.misuse("not a glob"));
             else expect(fs.glob(text)(sizes.map(( size ) => String.fromCharCode(96 + size)).join(""))).toBe(true);
 
-            if ( length > 1024 ) expect(() => fs.glob(long)).toThrow(new RangeError("not a glob"));
+            if ( length > 1024 ) expect(() => fs.glob(long)).toThrow(exception.misuse("not a glob"));
             else expect(fs.glob(long)(long)).toBe(true);
 
         }), { numRuns: 300 });
@@ -984,7 +984,7 @@ describe("fuzz fs", () => {
 
             if ( !Number.isInteger(size) || size <= 0 || length / size > 10_000 ) {
 
-                expect(() => fs.slices(blob, size)).toThrow(new RangeError("not a size"));
+                expect(() => fs.slices(blob, size)).toThrow(exception.misuse("not a size"));
 
                 return;
 

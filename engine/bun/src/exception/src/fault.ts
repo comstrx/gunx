@@ -1,0 +1,211 @@
+import * as error from "engine-error";
+import type { Plain } from "./arch.ts";
+import { compact, isBlank, isRecord } from "./plain.ts";
+
+const cut = new Set(["AbortError", "TimeoutError"]);
+const late = new Set(["ETIMEDOUT", "ESOCKETTIMEDOUT"]);
+const lost = new Set(["ECONNREFUSED", "ECONNRESET", "ECONNABORTED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "EPIPE"]);
+const offline = /fetch|network|load failed|unable to connect/i;
+
+export const poison = "__proto__";
+
+export class Fault extends Error implements error.Failure {
+
+    readonly code: error.Code;
+    readonly status: number;
+    readonly reason: string | undefined;
+    readonly errors: error.Errors;
+    readonly retryAfter: number | undefined;
+    readonly requestId: string | undefined;
+    constructor ( code: error.Code, detail: error.Detail = {} ) {
+
+        super(detail.message ?? error.messages[code], detail.cause === undefined ? undefined : { cause: detail.cause });
+
+        this.name = "Fault";
+        this.code = code;
+        this.status = detail.status ?? error.codes[code];
+        this.reason = detail.reason;
+        this.errors = detail.errors ?? {};
+        this.retryAfter = detail.retryAfter;
+        this.requestId = detail.requestId;
+
+    }
+    is ( ...many: readonly error.Code[] ): boolean {
+
+        return many.includes(this.code);
+
+    }
+    field ( name: string ): string | undefined {
+
+        return Object.hasOwn(this.errors, name) ? this.errors[name]?.[0] : undefined;
+
+    }
+    with ( detail: error.Detail ): Fault {
+
+        return new Fault(this.code, {
+            message: detail.message ?? this.message,
+            reason: detail.reason ?? this.reason,
+            errors: detail.errors ?? this.errors,
+            status: detail.status ?? this.status,
+            retryAfter: detail.retryAfter ?? this.retryAfter,
+            requestId: detail.requestId ?? this.requestId,
+            cause: detail.cause ?? this.cause,
+        });
+
+    }
+    toJSON (): Plain {
+
+        return toJson(this);
+
+    }
+}
+
+export function fault ( code: error.Code, reason?: string, detail: error.Detail = {} ): Fault {
+
+    return new Fault(code, reason === undefined ? detail : { ...detail, reason });
+
+}
+export function raise ( code: error.Code, reason?: string, detail: error.Detail = {} ): never {
+
+    throw fault(code, reason, detail);
+
+}
+export function misuse ( message: string, reason = "misuse" ): Fault {
+
+    return new Fault("bad_request", { message, reason });
+
+}
+export function isError ( value: unknown ): value is Error {
+
+    return value instanceof Error;
+
+}
+export function isFault ( value: unknown ): value is Fault {
+
+    return value instanceof Fault;
+
+}
+export function is ( value: unknown, ...many: readonly error.Code[] ): value is Fault {
+
+    return isFault(value) && (many.length === 0 || many.includes(value.code));
+
+}
+export function messageOf ( value: unknown, fallback = error.messages.internal ): string {
+
+    const found = value instanceof Error || isRecord(value) ? value.message : value;
+
+    return typeof found === "string" && !isBlank(found) ? found : fallback;
+
+}
+function sensed ( value: unknown ): error.Code | undefined {
+
+    if ( !(value instanceof Error) ) return undefined;
+
+    const tag = (value as { code?: unknown }).code;
+
+    if ( cut.has(value.name) || (typeof tag === "string" && late.has(tag)) ) return "timeout";
+    if ( typeof tag === "string" && lost.has(tag) ) return "network";
+
+    return value instanceof TypeError && offline.test(value.message) ? "network" : undefined;
+
+}
+export function of ( value: unknown, code: error.Code = "internal" ): Fault {
+
+    if ( isFault(value) ) return value;
+
+    const kind = sensed(value) ?? code;
+
+    return new Fault(kind, { message: messageOf(value, error.messages[kind]), cause: value });
+
+}
+export function wrap ( value: unknown, code: error.Code, detail: error.Detail = {} ): Fault {
+
+    return isFault(value) ? value.with(detail) : new Fault(code, { ...detail, cause: value, message: detail.message ?? error.messages[code] });
+
+}
+export function fromStatus ( status: number, detail: error.Detail = {} ): Fault {
+
+    return new Fault(error.codeOf(status), { ...detail, status });
+
+}
+export function toEnvelope ( value: Fault, meta: Plain = {} ): error.Envelope {
+
+    return {
+        data: null,
+        message: value.message,
+        errors: Object.keys(value.errors).length ? value.errors : null,
+        code: value.code,
+        reason: value.reason ?? null,
+        meta: value.requestId ? { request_id: value.requestId, ...meta } : meta,
+    };
+
+}
+export function toJson ( value: Fault ): Plain {
+
+    return compact({
+        code: value.code,
+        status: value.status,
+        message: value.message,
+        reason: value.reason,
+        errors: Object.keys(value.errors).length ? value.errors : undefined,
+        retry_after: value.retryAfter,
+        request_id: value.requestId,
+    });
+
+}
+function told ( value: unknown ): string | undefined {
+
+    if ( typeof value === "string" ) return value;
+
+    return isRecord(value) && typeof value.message === "string" ? value.message : undefined;
+
+}
+function errorsOf ( value: unknown ): error.Errors | undefined {
+
+    if ( !isRecord(value) ) return undefined;
+
+    const out = new Map<string, string[]>();
+
+    for ( const [field, found] of Object.entries(value) ) {
+
+        const rules = (Array.isArray(found) ? found : [found]).map(told).filter(( rule ) => rule !== undefined);
+
+        if ( field !== poison && (rules.length > 0 || Array.isArray(found)) ) out.set(field, rules);
+
+    }
+
+    return Object.fromEntries(out);
+
+}
+function coded ( value: unknown, status: number ): error.Code | undefined {
+
+    if ( !error.isCode(value) ) return undefined;
+
+    return error.codes[value] >= 400 || error.codes[value] === 0 || !(status >= 400) ? value : undefined;
+
+}
+export function fromEnvelope ( body: unknown, status: number ): Fault {
+
+    if ( !isRecord(body) ) return fromStatus(status);
+
+    const code = coded(body.code, status);
+    const meta = isRecord(body.meta) ? body.meta : {};
+    const detail: error.Detail = {
+        message: typeof body.message === "string" ? body.message : undefined,
+        reason: typeof body.reason === "string" ? body.reason : undefined,
+        errors: errorsOf(body.errors),
+        status,
+        requestId: typeof meta.request_id === "string" ? meta.request_id : typeof body.request_id === "string" ? body.request_id : undefined,
+        retryAfter: typeof body.retry_after === "number" && body.retry_after >= 0 && Number.isFinite(body.retry_after) ? body.retry_after : undefined,
+    };
+
+    return code ? new Fault(code, compact(detail)) : fromStatus(status, compact(detail));
+
+}
+export function fromJson ( value: unknown ): Fault | undefined {
+
+    if ( !isRecord(value) || !error.isCode(value.code) ) return undefined;
+
+    return fromEnvelope(value, typeof value.status === "number" ? value.status : error.codes[value.code]);
+
+}

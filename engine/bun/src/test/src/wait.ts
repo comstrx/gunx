@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as log from "engine-log";
 import type { Logs } from "./arch.ts";
 
@@ -19,7 +19,7 @@ export function until<T> ( check: () => T | Promise<T>, options: { timeout?: num
 
     const limit = span(options.timeout, 2000);
     const every = span(options.every, 5);
-    const late = error.fault("timeout", "test.until", { message: options.message ?? `until: not met within ${limit}ms` });
+    const late = exception.fault("timeout", "test.until", { message: options.message ?? `until: not met within ${limit}ms` });
 
     return new Promise<T>(( resolve, reject ) => {
 

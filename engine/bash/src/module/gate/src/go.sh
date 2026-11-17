@@ -18,7 +18,7 @@ module:gate:go:deps () {
     module:gate:go:modules modules || return
 
     for module in "${modules[@]}"; do
-        core:proc:within "${module}" core:proc:io go mod download || return
+        core:proc:within "${module}" core:proc:io go mod download "${GATE_ARGS[@]}" || return
     done
 
 }
@@ -33,7 +33,7 @@ module:gate:go:check () {
         core:proc:within "${module}" go mod tidy -diff || return
     done
 
-    go vet "${modules[@]/%//...}"
+    go vet "${GATE_ARGS[@]}" "${modules[@]/%//...}"
 
 }
 module:gate:go:lint () {
@@ -42,7 +42,7 @@ module:gate:go:lint () {
 
     module:gate:go:modules modules || return
 
-    golangci-lint run "${modules[@]/%//...}"
+    golangci-lint run "${GATE_ARGS[@]}" "${modules[@]/%//...}"
 
 }
 module:gate:go:test () {
@@ -51,7 +51,7 @@ module:gate:go:test () {
 
     module:gate:go:modules modules || return
 
-    go test -race -shuffle=on -count=1 "${modules[@]/%//...}"
+    go test -race -shuffle=on -count=1 "${GATE_ARGS[@]}" "${modules[@]/%//...}"
 
 }
 module:gate:go:safety () {

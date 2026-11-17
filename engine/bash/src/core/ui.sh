@@ -109,3 +109,16 @@ core:ui:grid () {
     done
 
 }
+core:ui:confirm () {
+
+    local question="${1-}" answer=""
+
+    [[ -t 0 ]] || return 2
+
+    printf '%s [y/N] ' "${question}" >&2
+
+    IFS= read -r answer || return 1
+
+    [[ "${answer}" == [yY] || "${answer}" == [yY][eE][sS] ]]
+
+}

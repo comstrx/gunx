@@ -1,5 +1,6 @@
 import { describe, expect, test as it, jest } from "bun:test";
 import * as cache from "engine/cache";
+import * as exception from "engine/exception";
 import * as fc from "fast-check";
 
 type Held = { value: number; until: number; tags: readonly string[] };
@@ -150,7 +151,7 @@ describe("fuzz cache", () => {
 
             expect(typeof line === "string").toBe(!refused);
 
-            if ( typeof line !== "string" ) expect(line).toBeInstanceOf(RangeError);
+            if ( typeof line !== "string" ) expect(line).toBeInstanceOf(exception.Fault);
             else expect([line.endsWith("; Path=/; SameSite=Lax"), Object.hasOwn(first(line), name), first(line)[name]]).toEqual([true, true, text]);
 
         }), { numRuns: runs });
@@ -158,7 +159,7 @@ describe("fuzz cache", () => {
 
             const line = thrown(() => cache.serializeCookie(name, text));
 
-            if ( typeof line !== "string" ) expect(line).toBeInstanceOf(RangeError);
+            if ( typeof line !== "string" ) expect(line).toBeInstanceOf(exception.Fault);
             else expect(Object.entries(first(line))).toEqual([[name, text]]);
 
         }), { numRuns: runs });
@@ -173,7 +174,7 @@ describe("fuzz cache", () => {
 
             if ( typeof line !== "string" ) {
 
-                expect(line).toBeInstanceOf(RangeError);
+                expect(line).toBeInstanceOf(exception.Fault);
 
                 return;
 
@@ -549,7 +550,7 @@ describe("fuzz cache", () => {
 
             if ( step.run === "more" || step.run === "less" ) {
 
-                if ( had && typeof kept !== "number" ) return "RangeError: not a counter";
+                if ( had && typeof kept !== "number" ) return "Fault: not a counter";
 
                 const next = (typeof kept === "number" ? kept : 0) + (step.run === "more" ? step.by : -step.by);
 

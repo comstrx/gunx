@@ -1,7 +1,7 @@
 import { describe, expect, test as it } from "bun:test";
 import { resolve } from "node:path";
-import * as error from "engine/error";
 import * as event from "engine/event";
+import * as exception from "engine/exception";
 import * as spec from "engine/spec";
 import * as validate from "engine/validate";
 
@@ -18,42 +18,39 @@ const catalogue: spec.Catalogue = {
 };
 const stack = validate.strictObject({ gap: validate.optional(validate.enum(["sm", "lg"])) });
 const placement = validate.strictObject({ name: validate.string() });
-const admin = spec.surface({
+const admin = spec.plan({
     name: "acme-admin",
     role: "admin",
     locales: ["ar", "en"],
     locale: "ar",
     screens: [
-        spec.screen({
-            name: "home",
+        spec.screen("home", {
             path: "/",
             title: { ar: "الرئيسية", en: "Home" },
             icon: "house",
-            features: [spec.feature("hello", { tone: "warm" }, { on: { load: [spec.set("signals.greeted", true)] } })],
+            features: [spec.feature("hello", { settings: { tone: "warm" }, on: { load: [spec.set("signals.greeted", true)] } })],
             blocks: [spec.block("stack", { gap: "sm" }, [spec.block("feature", { name: "hello" }, [], { id: "greeting", when: "signals.greeted" })])],
         }),
-        spec.screen({
-            name: "orders",
+        spec.screen("orders", {
             path: "/orders",
             title: { ar: "الطلبات", en: "Orders" },
             auth: true,
             query: ["status"],
             features: [
-                spec.feature("orders.list", { pageSize: 20 }, {
+                spec.feature("orders.list", { settings: { pageSize: 20 },
                     ports: { rows: spec.read("orders.list", { status: spec.query("status") }) },
                     watch: { "query.status": [spec.refresh("orders.list")] },
                     triggers: [spec.trigger("orders.updated", [spec.refresh("orders.list"), spec.set("signals.selected", spec.fromEvent("id"))])],
                 }),
-                spec.feature("orders.export", {}, { when: "signals.selected", on: { success: [spec.emit("orders.exported", { count: spec.fromSignal("selected") })] } }),
+                spec.feature("orders.export", { when: "signals.selected", on: { success: [spec.emit("orders.exported", { count: spec.fromSignal("selected") })] } }),
             ],
         }),
-        spec.screen({
-            name: "order",
+        spec.screen("order", {
             path: "/orders/{id}",
             title: { ar: "طلب", en: "Order" },
             menu: false,
             features: [
-                spec.feature("orders.show", {}, {
+                spec.feature("orders.show", {
                     ports: { row: spec.read("orders.show", { id: spec.param("id") }), save: spec.write("orders.update", { id: spec.param("id") }, ["status", "note"]) },
                     watch: { "form.status": [spec.branch("form.status=cancelled", [spec.set("form.note", "cancelled by staff"), spec.show("note")], [spec.hide("note")])] },
                     on: { success: [spec.emit("orders.updated", { id: spec.param("id") }), spec.navigate("/orders")] },
@@ -61,7 +58,7 @@ const admin = spec.surface({
             ],
             blocks: [spec.block("stack", {}, [spec.block("feature", { name: "orders.show" }, [], { id: "note" })])],
         }),
-        spec.screen({ name: "files", path: "/files/*", title: { ar: "ملفات", en: "Files" }, menu: false }),
+        spec.screen("files", { path: "/files/*", title: { ar: "ملفات", en: "Files" }, menu: false }),
     ],
 });
 
@@ -85,35 +82,34 @@ describe("spec", () => {
         expect(compiled.topics).toEqual({ emitted: ["orders.exported", "orders.selected", "orders.updated"], consumed: ["orders.updated"] });
         expect(compiled.byName.orders?.features[0]?.manifest?.name).toBe("orders.list");
         expect(JSON.parse(JSON.stringify(spec.serialize(compiled))).screens).toHaveLength(4);
-        expect(() => spec.compile({ ...admin, screens: [spec.screen({ name: "Bad Name", path: "/x", title: "x" })] })).toThrow(error.Fault);
-        expect(() => spec.compile({ ...admin, screens: [spec.screen({ name: "bad", path: "no-slash", title: "x" })] })).toThrow(error.Fault);
+        expect(() => spec.compile({ ...admin, screens: [spec.screen("Bad Name", { path: "/x", title: "x" })] })).toThrow(exception.Fault);
+        expect(() => spec.compile({ ...admin, screens: [spec.screen("bad", { path: "no-slash", title: "x" })] })).toThrow(exception.Fault);
 
     });
     it("the compiler names every broken reference, binding, effect, topic and cycle", () => {
 
-        const loose = spec.surface({
+        const loose = spec.plan({
             name: "s",
             role: "admin",
             locales: ["ar", "en"],
             screens: [
-                spec.screen({
-                    name: "home",
+                spec.screen("home", {
                     path: "/",
                     title: { en: "Home" },
                     role: "vendor",
                     features: [
                         spec.feature("ghost"),
-                        spec.feature("orders.list", { pageSize: 500 }, {
+                        spec.feature("orders.list", { settings: { pageSize: 500 },
                             ports: { rows: spec.read("orders.nope"), extra: spec.data([]) },
                             watch: { "form.a": [spec.set("form.b", 1)], "form.b": [spec.set("form.a", 2)], "nowhere.x": [spec.call("orders.list.explode")] },
                             on: { load: [spec.set("query.tab", "x"), spec.hide("missing"), spec.refresh("hello"), spec.navigate("/elsewhere"), spec.set("params.id", spec.param("id")), spec.set("signals.copy", spec.fromEvent("id"))] },
                             triggers: [spec.trigger("payments.settled", [spec.emit("x.y")])],
                         }),
-                        spec.feature("orders.show", {}, { ports: { row: spec.write("orders.list"), save: spec.read("orders.update", { bogus: 1 }) } }),
+                        spec.feature("orders.show", { ports: { row: spec.write("orders.list"), save: spec.read("orders.update", { bogus: 1 }) } }),
                     ],
                     blocks: [spec.block("odd", { gap: "huge" }, [spec.block("feature", { name: "nobody" }, [], { id: "dup" })], { id: "dup", when: "signals.nope" })],
                 }),
-                spec.screen({ name: "home", path: "/", title: { ar: "x", en: "x" } }),
+                spec.screen("home", { path: "/", title: { ar: "x", en: "x" } }),
             ],
         });
         const compiled = spec.compile(loose, { blocks: { stack, feature: placement }, features: manifests, catalogue, maxDepth: 1 });
@@ -129,7 +125,7 @@ describe("spec", () => {
         expect(compiled.issues.filter(( issue ) => issue.rule === "effect.path").map(( issue ) => issue.message)).toContain("query.tab: the screen declares no query tab");
         expect(compiled.issues.filter(( issue ) => issue.rule === "port.unbound")).toEqual([]);
         expect(spec.compile(loose, { topics: ["payments.*"] }).issues.some(( issue ) => issue.rule === "trigger.topic")).toBe(false);
-        expect(spec.compile(spec.surface({ name: "k", role: "a", screens: [spec.screen({ name: "x", path: "/x", title: "X", blocks: [spec.block("weird")] })] }), { kinds: ["stack"] }).issues).toEqual([{ path: "screens.x", rule: "block.kind", fix: "declare the kind in the surface's blocks", message: "unknown block kind: weird" }]);
+        expect(spec.compile(spec.plan({ name: "k", role: "a", screens: [spec.screen("x", { path: "/x", title: "X", blocks: [spec.block("weird")] })] }), { kinds: ["stack"] }).issues).toEqual([{ path: "screens.x", rule: "block.kind", fix: "declare the kind in the surface's blocks", message: "unknown block kind: weird" }]);
 
     });
     it("serialized surfaces retain runtime behavior and reject malformed artifacts without the compiler", () => {
@@ -151,7 +147,7 @@ describe("spec", () => {
             { ...serialized, screens: [{ ...first, features: [{ ...first.features[0], id: "__proto__" }] }] },
             { ...serialized, screens: [{ ...first, blocks: [{ ...first.blocks[0], children: {} }] }] },
             { ...serialized, screens: [{ ...first, params: [1] }] },
-        ] ) expect(() => spec.revive(broken)).toThrow(error.Fault);
+        ] ) expect(() => spec.revive(broken)).toThrow(exception.Fault);
 
     });
     it("reviving a built artifact ships without the schema compiler", async () => {
@@ -291,14 +287,14 @@ describe("spec", () => {
         expect(spec.match(compiled, "/nope")).toBeUndefined();
         expect(spec.titleOf(compiled.byName.home as spec.CompiledScreen, "ar-EG")).toBe("الرئيسية");
         expect(spec.titleOf(compiled.byName.home as spec.CompiledScreen, "fr", "en")).toBe("Home");
-        expect(spec.titleOf(spec.screen({ name: "my-screen", path: "/x", title: {} }), "ar")).toBe("My-screen");
+        expect(spec.titleOf(spec.screen("my-screen", { path: "/x", title: {} }), "ar")).toBe("My-screen");
         expect(spec.menuOf(compiled, "en", "/orders/42")).toEqual([
             { name: "home", path: "/", title: "Home", icon: "house", active: false },
             { name: "orders", path: "/orders", title: "Orders", icon: undefined, active: true },
         ]);
         expect(spec.menuOf(compiled, "ar", "/")[0]?.active).toBe(true);
         expect(spec.featuresOf(compiled, "orders")).toEqual({ "orders.list": { pageSize: 20 }, "orders.export": {} });
-        expect(() => spec.featuresOf(compiled, "nope")).toThrow(error.Fault);
+        expect(() => spec.featuresOf(compiled, "nope")).toThrow(exception.Fault);
         expect(spec.namespaces).toContain("signals");
         expect(validate.check(spec.whenShape, spec.when("a.b=1")).ok && validate.check(spec.effectShape, spec.emit("x.y")).ok && !validate.check(spec.effectShape, { boom: 1 }).ok).toBe(true);
 
@@ -306,26 +302,26 @@ describe("spec", () => {
     it("enable is an effect and the surface shape refuses an empty surface", () => {
 
         expect(spec.enable("form.save")).toEqual({ enable: "form.save" });
-        expect(spec.surfaceShape.safeParse({}).success).toBe(false);
+        expect(spec.planShape.safeParse({}).success).toBe(false);
         expect(spec.platformShape.safeParse("mobile").success && !spec.platformShape.safeParse("tv").success).toBe(true);
         expect(spec.catalogShape.safeParse("emoji").success && !spec.catalogShape.safeParse("stars").success).toBe(true);
-        expect(spec.surface({ name: "s", role: "r", screens: [], world: ["countries"] }).world).toEqual(["countries"]);
-        expect(() => spec.revive({ nope: 1 })).toThrow(error.Fault);
-        expect(spec.isBuilt(spec.screen({ name: "x", path: "/x", title: "X" })) && !spec.isBuilt(JSON.parse(JSON.stringify(spec.screen({ name: "x", path: "/x", title: "X" }))))).toBe(true);
+        expect(spec.plan({ name: "s", role: "r", screens: [], world: ["countries"] }).world).toEqual(["countries"]);
+        expect(() => spec.revive({ nope: 1 })).toThrow(exception.Fault);
+        expect(spec.isBuilt(spec.screen("x", { path: "/x", title: "X" })) && !spec.isBuilt(JSON.parse(JSON.stringify(spec.screen("x", { path: "/x", title: "X" }))))).toBe(true);
         expect(typeof spec.built).toBe("symbol");
-        expect(spec.screenShapeOf.safeParse(JSON.parse(JSON.stringify(spec.screen({ name: "x", path: "/x", title: "X" })))).success).toBe(true);
+        expect(spec.screenShapeOf.safeParse(JSON.parse(JSON.stringify(spec.screen("x", { path: "/x", title: "X" })))).success).toBe(true);
         expect(spec.featureShapeOf.safeParse({ name: "f" }).success).toBe(false);
         expect(spec.blockShapeOf.safeParse({ kind: "stack", props: {}, children: [] }).success).toBe(true);
 
-        const raw = JSON.parse(JSON.stringify(spec.surface({ name: "raw", role: "r", screens: [spec.screen({ name: "x", path: "/x", title: "X", blocks: [spec.block("stack")] })] }))) as spec.Surface;
+        const raw = JSON.parse(JSON.stringify(spec.plan({ name: "raw", role: "r", screens: [spec.screen("x", { path: "/x", title: "X", blocks: [spec.block("stack")] })] }))) as spec.Plan;
 
         expect(spec.compile(raw).issues).toEqual([]);
-        expect(() => spec.compile({ ...raw, locale: 7 } as unknown as spec.Surface)).toThrow(error.Fault);
+        expect(() => spec.compile({ ...raw, locale: 7 } as unknown as spec.Plan)).toThrow(exception.Fault);
 
-        const rawScreen = JSON.parse(JSON.stringify(spec.screen({ name: "y", path: "/y", title: "Y" }))) as spec.Screen;
+        const rawScreen = JSON.parse(JSON.stringify(spec.screen("y", { path: "/y", title: "Y" }))) as spec.Screen;
 
         (rawScreen as { path: string }).path = "Bad Path";
-        expect(spec.compile(spec.surface({ name: "mixed", role: "r", screens: [rawScreen] })).issues.map(( issue ) => issue.rule)).toEqual(["shape"]);
+        expect(spec.compile(spec.plan({ name: "mixed", role: "r", screens: [rawScreen] })).issues.map(( issue ) => issue.rule)).toEqual(["shape"]);
 
     });
     it("the second-lap dsl: texts, grants, flows, confirmations, form checks, listings, live ports, queued calls, suggestions and explain", async () => {
@@ -337,18 +333,17 @@ describe("spec", () => {
         const catalogue: spec.Catalogue = { "orders.list": { many: true, write: false, input: ["page", "limit", "q"], output: ["id", "total", "status"] }, "orders.remove": { many: false, write: true, input: ["id"] } };
         const texts = ["orders.title", "orders.removeAsk", "wizard.next"];
         const grants = ["orders.read", "orders.*", "wizard.use"];
-        const made = spec.surface({
+        const made = spec.plan({
             name: "s",
             role: "admin",
             locales: ["en"],
             screens: [
-                spec.screen({
-                    name: "orders",
+                spec.screen("orders", {
                     path: "/orders",
                     title: "Orders",
                     access: ["orders.read"],
                     features: [
-                        spec.feature("orders", {}, {
+                        spec.feature("orders", {
                             ports: { rows: spec.read("orders.list", { q: spec.query("q") }, { list: { sort: "-total", filter: { status: "open" }, page: spec.query("page"), limit: 20 }, live: true }) },
                             when: "can:orders.write",
                             triggers: [spec.trigger("orders.removed", [spec.set("signals.gone", true)])],
@@ -358,12 +353,11 @@ describe("spec", () => {
                     query: ["q", "page"],
                     triggers: [spec.trigger("ui.ask", [spec.confirm("orders.removeAsk", [spec.queued("orders.remove", { id: spec.fromEvent("id") })], [spec.set("signals.kept", true)])])],
                 }),
-                spec.screen({
-                    name: "wizard",
+                spec.screen("wizard", {
                     path: "/wizard",
                     title: "Wizard",
                     flow: ["account", "address", "review"],
-                    features: [spec.feature("wizard", {}, { form: { email: "required|email", age: "integer|between:18,99" }, access: ["wizard.use"] })],
+                    features: [spec.feature("wizard", { form: { email: "required|email", age: "integer|between:18,99" }, access: ["wizard.use"] })],
                     triggers: [spec.trigger("ui.next", [spec.check("wizard", [spec.step("next")], [spec.set("signals.blocked", true)])]), spec.trigger("ui.back", [spec.step("back")]), spec.trigger("ui.review", [spec.step("review")])],
                 }),
             ],
@@ -376,15 +370,14 @@ describe("spec", () => {
         expect(spec.explain(compiled, "wizard")).toContain("flow: account, address, review");
         expect(spec.explain(compiled, "wizard")).toContain("email: required|email");
 
-        const wrong = spec.compile(spec.surface({
+        const wrong = spec.compile(spec.plan({
             name: "s",
             role: "admin",
-            screens: [spec.screen({
-                name: "orders",
+            screens: [spec.screen("orders", {
                 path: "/orders",
                 title: "Orders",
                 access: ["orders.delete"],
-                features: [spec.feature("orders", {}, { ports: { rows: spec.read("orders.list", undefined, { list: { sort: "totl" } }) }, when: "can:orders.writ", on: { load: [spec.set("signals.label", spec.text("orders.titel")), spec.step("next"), spec.check("orders", [])] } })],
+                features: [spec.feature("orders", { ports: { rows: spec.read("orders.list", undefined, { list: { sort: "totl" } }) }, when: "can:orders.writ", on: { load: [spec.set("signals.label", spec.text("orders.titel")), spec.step("next"), spec.check("orders", [])] } })],
             })],
         }), { features: manifests, catalogue, texts, grants: ["orders.read", "wizard.use"] });
         const rules = Object.fromEntries(wrong.issues.map(( issue ) => [issue.rule, issue]));
@@ -472,18 +465,17 @@ describe("spec", () => {
     });
     it("a screen opens by its access and a check narrows to the fields it names", async () => {
 
-        const made = spec.surface({
+        const made = spec.plan({
             name: "s",
             role: "admin",
             screens: [
-                spec.screen({ name: "home", path: "/", title: "Home" }),
-                spec.screen({
-                    name: "join",
+                spec.screen("home", { path: "/", title: "Home" }),
+                spec.screen("join", {
                     path: "/join",
                     title: "Join",
                     access: ["join.use"],
                     flow: ["account", "profile"],
-                    features: [spec.feature("join", {}, { form: { email: "required|email", name: "required|min:2" } })],
+                    features: [spec.feature("join", { form: { email: "required|email", name: "required|min:2" } })],
                     triggers: [
                         spec.trigger("ui.next", [spec.check("join", [spec.clear("signals.blocked"), spec.step("next")], [spec.set("signals.blocked", true)], ["email"])]),
                         spec.trigger("ui.done", [spec.check("join", [spec.set("signals.done", true)])]),
@@ -500,10 +492,10 @@ describe("spec", () => {
         expect(validate.check(spec.effectShape, spec.check("join", [], [], ["email"])).ok).toBe(true);
         expect(validate.check(spec.effectShape, { check: "join", do: [], fields: [""] }).ok).toBe(false);
 
-        const wrong = spec.compile(spec.surface({
+        const wrong = spec.compile(spec.plan({
             name: "s",
             role: "admin",
-            screens: [spec.screen({ name: "join", path: "/join", title: "Join", features: [spec.feature("join", {}, { form: { email: "required|email" } })], on: { load: [spec.check("join", [], undefined, ["emial"])] } })],
+            screens: [spec.screen("join", { path: "/join", title: "Join", features: [spec.feature("join", { form: { email: "required|email" } })], on: { load: [spec.check("join", [], undefined, ["emial"])] } })],
         }), { features: { join: { name: "join" } } });
 
         expect(wrong.issues.map(( issue ) => [issue.rule, issue.near])).toEqual([["check.field", "email"]]);
@@ -512,7 +504,7 @@ describe("spec", () => {
         const live = spec.runtime(compiled, { bus, rulebook: validate.rulebook });
         const ruled: spec.Rulebook = validate.rulebook;
 
-        const refused = error.attemptSync(() => spec.runtime(compiled, { bus }));
+        const refused = exception.attemptSync(() => spec.runtime(compiled, { bus }));
 
         expect(!refused.ok && [refused.fault.code, refused.fault.reason, refused.fault.errors]).toEqual(["internal", "spec.rulebook", { feature: ["join"] }]);
         expect(spec.runtime(compiled, { bus, rulebook: ruled }).opens("home")).toBe(true);
@@ -559,8 +551,8 @@ describe("spec", () => {
 
 it("features declare their world catalogs and compilation refuses missing shipment", () => {
 
-    const screen = spec.screen({ name: "home", path: "/", title: { en: "Home" }, features: [spec.feature("places")] });
-    const surface = spec.surface({ name: "web-admin", role: "admin", screens: [screen] });
+    const screen = spec.screen("home", { path: "/", title: { en: "Home" }, features: [spec.feature("places")] });
+    const surface = spec.plan({ name: "web-admin", role: "admin", screens: [screen] });
     const features: Readonly<Record<string, spec.Manifest>> = { places: { name: "places", world: ["countries", "currencies"] } };
 
     expect(spec.compile(surface, { features }).issues.map(( issue ) => issue.rule)).toEqual(["feature.world", "feature.world"]);

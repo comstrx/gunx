@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "engine-date": "workspace:*",
-    "engine-error": "workspace:*"
+    "engine-exception": "workspace:*"
   }
 }

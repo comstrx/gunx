@@ -1,8 +1,9 @@
+import * as exception from "engine-exception";
 import type { Lanes, Settled } from "./arch.ts";
 
 function stopped ( signal: AbortSignal ): Error {
 
-    return signal.reason instanceof Error ? signal.reason : new Error("aborted", { cause: signal.reason });
+    return exception.isError(signal.reason) ? signal.reason : exception.fault("timeout", "list.aborted", { message: "aborted", cause: signal.reason });
 
 }
 
@@ -17,7 +18,7 @@ async function visit<T> ( items: readonly T[], work: ( item: T, index: number ) 
 
         while ( cursor < items.length && failed === undefined ) {
 
-            try {
+            await exception.rescueAsync(async () => {
 
                 if ( signal?.aborted ) throw stopped(signal);
 
@@ -26,11 +27,11 @@ async function visit<T> ( items: readonly T[], work: ( item: T, index: number ) 
                 cursor += 1;
                 await work(items[index] as T, index);
 
-            } catch ( cause ) {
+            }, async ( cause ) => {
 
                 failed ??= { cause };
 
-            }
+            });
 
         }
 
@@ -84,15 +85,7 @@ export async function settle<T> ( works: readonly (() => Promise<T>)[], options:
 
     const results = await mapAsync(works, async ( work ) => {
 
-        try {
-
-            return { ok: true as const, value: await work() };
-
-        } catch ( caught ) {
-
-            return { ok: false as const, failure: caught };
-
-        }
+        return exception.rescueAsync(async () => ({ ok: true as const, value: await work() }), ( caught ) => ({ ok: false as const, failure: caught }));
 
     }, options);
 

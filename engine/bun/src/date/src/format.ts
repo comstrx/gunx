@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as number from "engine-number";
 import * as string from "engine-string";
 import type { Duration, FormatOptions, Held, Input, Scale, Style, Voice, Writer } from "./arch.ts";
@@ -84,15 +85,7 @@ function shaped ( style: string, options: FormatOptions ): Intl.DateTimeFormat |
 
     return held(formatters, `${style}|${tag}|${timeZone}`, () => {
 
-        try {
-
-            return new Intl.DateTimeFormat(tag, { timeZone, ...styles.get(style) });
-
-        } catch {
-
-            return undefined;
-
-        }
+        return exception.probe(() => new Intl.DateTimeFormat(tag, { timeZone, ...styles.get(style) }));
 
     });
 
@@ -152,15 +145,7 @@ function voice ( tag: string ): Voice | undefined {
 
     return held(voices, tag, () => {
 
-        try {
-
-            return "RelativeTimeFormat" in Intl ? ([new Intl.RelativeTimeFormat(tag, { numeric: "always" }), new Intl.RelativeTimeFormat(tag, { numeric: "auto" })] as const) : undefined;
-
-        } catch {
-
-            return undefined;
-
-        }
+        return exception.probe(() => "RelativeTimeFormat" in Intl ? ([new Intl.RelativeTimeFormat(tag, { numeric: "always" }), new Intl.RelativeTimeFormat(tag, { numeric: "auto" })] as const) : undefined);
 
     }, 64);
 
@@ -169,15 +154,7 @@ function worded ( count: number, unit: Scale, tag: string | undefined ): string 
 
     const counter = tag === undefined ? undefined : held(counters, `${tag}|${unit}`, () => {
 
-        try {
-
-            return new Intl.NumberFormat(tag, { style: "unit", unit, unitDisplay: "long" });
-
-        } catch {
-
-            return undefined;
-
-        }
+        return exception.probe(() => new Intl.NumberFormat(tag, { style: "unit", unit, unitDisplay: "long" }));
 
     });
 

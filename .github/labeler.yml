@@ -2,13 +2,13 @@ rust:
   - changed-files:
       - any-glob-to-any-file: ['engine/rust/**']
 
-python:
-  - changed-files:
-      - any-glob-to-any-file: ['engine/python/**']
-
 go:
   - changed-files:
       - any-glob-to-any-file: ['engine/go/**']
+
+python:
+  - changed-files:
+      - any-glob-to-any-file: ['engine/python/**']
 
 bun:
   - changed-files:
@@ -38,7 +38,7 @@ tutor:
   - changed-files:
       - any-glob-to-any-file: ['tutor/**']
 
-global:
+root:
   - changed-files:
       - any-glob-to-any-file: ['*', '.*', '.github/**']
 
@@ -52,12 +52,16 @@ deps:
       - any-glob-to-any-file:
           - '**/Cargo.toml'
           - '**/Cargo.lock'
+          - '**/go.mod'
+          - '**/go.sum'
           - '**/pyproject.toml'
           - '**/uv.lock'
           - '**/package.json'
+          - '**/bunfig.toml'
           - '**/bun.lock'
-          - '**/go.mod'
-          - '**/go.sum'
+          - '**/bash.toml'
+          - '**/Bash.toml'
+          - '**/infra.toml'
 
 docs:
   - changed-files:

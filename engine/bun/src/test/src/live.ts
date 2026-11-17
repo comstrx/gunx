@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import type * as socket from "engine-socket";
 import type { Caller, Client, Data, Live, LiveOptions } from "./arch.ts";
@@ -14,14 +14,14 @@ export function live ( options: LiveOptions ): Live {
 
     function admits ( token: string | undefined ): boolean {
 
-        const judged = error.attemptSync(() => options.auth === undefined || options.auth(token) === true);
+        const judged = exception.attemptSync(() => options.auth === undefined || options.auth(token) === true);
 
         return judged.ok && judged.value;
 
     }
     function opens ( channel: string, from: Caller ): boolean {
 
-        const judged = error.attemptSync(() => options.gate === undefined || options.gate(channel, from) === true);
+        const judged = exception.attemptSync(() => options.gate === undefined || options.gate(channel, from) === true);
 
         return judged.ok && judged.value;
 
@@ -97,16 +97,15 @@ export function live ( options: LiveOptions ): Live {
 
         }
 
-        void Promise.resolve()
+        void exception.mend(Promise.resolve()
             .then(() => options.onFrame?.(frame, reply, from))
             .then(( handled ) => {
 
                 if ( !handled && frame.id !== undefined ) reply({ event: "ack", id: frame.id, data: frame.data });
 
-            })
-            .catch(( caught: unknown ) => {
+            }), ( caught ) => {
 
-                const fault = error.of(caught);
+                const fault = exception.of(caught);
 
                 refuse(fault.code, fault.reason ?? "socket.handler");
 

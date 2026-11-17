@@ -4,7 +4,6 @@ import * as device from "engine/device";
 type Listener = ( event: never ) => void;
 type Browser = NonNullable<device.Host["navigator"]>;
 type Page = NonNullable<device.Host["document"]>;
-type Input = ReturnType<NonNullable<Page["createElement"]>>;
 type Fix = Parameters<Parameters<NonNullable<Browser["geolocation"]>["getCurrentPosition"]>[0]>[0];
 type Wire = { addEventListener: ( name: string, handler: Listener ) => void; removeEventListener: ( name: string, handler: Listener ) => void };
 type Rig = {
@@ -59,7 +58,6 @@ function host (): device.Host & { fire: ( name: string, event?: unknown ) => voi
         document: {
             visibilityState: "visible",
             hasFocus: () => true,
-            createElement: () => ({ type: "", accept: "", multiple: false, capture: "", onchange: null, oncancel: null, files: created.files, click: () => { created.clicked = true; (made.document as { last?: unknown }).last = undefined; } }),
             addEventListener: on,
             removeEventListener: off,
         },
@@ -139,7 +137,6 @@ describe("device", () => {
         expect(server.watch("online", () => undefined)()).toBeUndefined();
         expect(await server.ask("camera")).toBe("unsupported");
         expect(await server.copy("x")).toBe(false);
-        expect(await server.pick()).toEqual([]);
         expect(await server.position()).toBeUndefined();
         await expect(server.require("location")).rejects.toMatchObject({ code: "unavailable", reason: "device.location.unsupported", errors: { location: ["unsupported"] } });
         expect(() => server.hotkey("mod+k", () => undefined)()).not.toThrow();
@@ -232,7 +229,7 @@ describe("device", () => {
 
         unit.follow({ accuracy: "high" }, ( position ) => { positions.push(position); })();
         expect(positions).toEqual([{ lat: 30.1, lng: 31.1, accuracy: 9, at: 8 }]);
-        expect(await unit.media({ video: true })).toBeUndefined();
+        expect(await unit.capture({ video: true })).toBeUndefined();
 
         const pressed: device.Key[] = [];
         const stopKeys = unit.keys(( key ) => { pressed.push(key); });
@@ -241,7 +238,7 @@ describe("device", () => {
         fake.fire("keydown", { key: "a", code: "KeyA", ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, repeat: false, target: { tagName: "INPUT" } });
         expect(pressed.map(( key ) => [key.key, key.typing])).toEqual([["k", false], ["a", true]]);
         stopKeys();
-        expect(unit.capabilities()).toContain("pick");
+        expect(unit.capabilities()).toContain("copy");
         expect(device.bindWeb(fake)).toBe(true);
         expect(device.create().is("web")).toBe(true);
         device.port.reset();
@@ -987,73 +984,6 @@ describe("device", () => {
         expect([await silent.open("https://a.io"), silent.can("open")]).toEqual([false, false]);
 
     });
-    it("pick shapes the file input, reads what was chosen and answers nothing on cancel, refusal or no gesture", async () => {
-
-        const r = rig();
-        const took = (): string[] => r.calls.splice(0);
-        const made: Input[] = [];
-        const chosen = [new File(["ab"], "a.png", { type: "image/png" }), new File(["abc"], "b.pdf", { type: "application/pdf" })];
-        let files: File[] | null = chosen;
-        let click = "change";
-        let broken = false;
-
-        r.page.createElement = ( tag ) => {
-
-            const input: Input = {
-                type: "", accept: "", multiple: false, capture: "", onchange: null, oncancel: null, files,
-                click: () => {
-
-                    r.calls.push("click");
-
-                    if ( click === "throw" ) throw new Error("no gesture");
-                    if ( click === "change" ) input.onchange?.();
-                    if ( click === "cancel" ) input.oncancel?.();
-
-                },
-            };
-
-            r.calls.push(`make:${tag}`);
-
-            if ( broken ) throw new Error("detached");
-
-            made.push(input);
-
-            return input;
-
-        };
-
-        const unit = web(r.host);
-        const shape = (): unknown[] => { const last = made.at(-1); return [last?.type, last?.accept, last?.multiple, last?.capture]; };
-
-        expect(await unit.pick()).toEqual([{ name: "a.png", type: "image/png", size: 2, uri: "", blob: chosen[0] }, { name: "b.pdf", type: "application/pdf", size: 3, uri: "", blob: chosen[1] }]);
-        expect([shape(), took()]).toEqual([["file", "image/*", false, ""], ["make:input", "click"]]);
-        expect([(await unit.pick({ source: "files" })).length, shape()]).toEqual([2, ["file", "", false, ""]]);
-        expect([(await unit.pick({ source: "library", multiple: true })).length, shape()]).toEqual([2, ["file", "image/*", true, ""]]);
-        expect([(await unit.pick({ source: "camera" })).length, shape()]).toEqual([2, ["file", "image/*", false, "environment"]]);
-        expect([(await unit.pick({ source: "files", accept: ["image/png", ".pdf"] })).length, shape()]).toEqual([2, ["file", "image/png,.pdf", false, ""]]);
-        expect([(await unit.pick({ accept: [] })).length, shape()]).toEqual([2, ["file", "", false, ""]]);
-        took();
-        click = "cancel";
-        expect([await unit.pick(), took()]).toEqual([[], ["make:input", "click"]]);
-        click = "throw";
-        expect([await unit.pick(), took()]).toEqual([[], ["make:input", "click"]]);
-        click = "change";
-        files = null;
-        expect([await unit.pick(), took()]).toEqual([[], ["make:input", "click"]]);
-        files = [];
-        expect([await unit.pick(), took()]).toEqual([[], ["make:input", "click"]]);
-        files = chosen;
-        r.browser.userActivation = { isActive: false };
-        expect([await unit.pick(), took()]).toEqual([[], []]);
-        r.browser.userActivation = { isActive: true };
-        expect([(await unit.pick()).length, took()]).toEqual([2, ["make:input", "click"]]);
-        r.browser.userActivation = {};
-        expect([(await unit.pick()).length, took()]).toEqual([2, ["make:input", "click"]]);
-        broken = true;
-        expect([await unit.pick(), took()]).toEqual([[], ["make:input"]]);
-        expect([await web({ navigator: {}, document: {} }).pick(), web({ navigator: {}, document: {} }).can("pick"), unit.can("pick")]).toEqual([[], false, true]);
-
-    });
     it("media opens exactly the tracks asked for, and a battery reading is clamped or absent", async () => {
 
         const r = rig();
@@ -1083,18 +1013,18 @@ describe("device", () => {
 
         const unit = web(r.host);
 
-        expect([await unit.media({}), await unit.media({ video: false, audio: false }), took()]).toEqual([undefined, undefined, []]);
+        expect([await unit.capture({}), await unit.capture({ video: false, audio: false }), took()]).toEqual([undefined, undefined, []]);
 
-        const live = await unit.media({ video: true });
+        const live = await unit.capture({ video: true });
 
         expect([typeof live?.stop, took(), stopped]).toEqual(["function", ["media:{\"video\":true,\"audio\":false}"], 0]);
         live?.stop();
         expect(stopped).toBe(2);
-        expect([(await unit.media({ audio: true })) !== undefined, took()]).toEqual([true, ["media:{\"video\":false,\"audio\":true}"]]);
-        expect([(await unit.media({ video: { facing: "user" }, audio: true })) !== undefined, took()]).toEqual([true, ["media:{\"video\":{\"facingMode\":\"user\"},\"audio\":true}"]]);
-        expect([(await unit.media({ video: {} })) !== undefined, took()]).toEqual([true, ["media:{\"video\":{\"facingMode\":\"environment\"},\"audio\":false}"]]);
+        expect([(await unit.capture({ audio: true })) !== undefined, took()]).toEqual([true, ["media:{\"video\":false,\"audio\":true}"]]);
+        expect([(await unit.capture({ video: { facing: "user" }, audio: true })) !== undefined, took()]).toEqual([true, ["media:{\"video\":{\"facingMode\":\"user\"},\"audio\":true}"]]);
+        expect([(await unit.capture({ video: {} })) !== undefined, took()]).toEqual([true, ["media:{\"video\":{\"facingMode\":\"environment\"},\"audio\":false}"]]);
         refused = true;
-        expect([await unit.media({ video: true }), took(), stopped]).toEqual([undefined, ["media:{\"video\":true,\"audio\":false}"], 2]);
+        expect([await unit.capture({ video: true }), took(), stopped]).toEqual([undefined, ["media:{\"video\":true,\"audio\":false}"], 2]);
 
         for ( const [given, wanted] of [[{ level: 0.5, charging: true }, { level: 0.5, charging: true }], [{ level: 1.7, charging: false }, { level: 1, charging: false }], [{ level: -0.2, charging: 1 as never }, { level: 0, charging: false }], [{ level: 0, charging: true }, { level: 0, charging: true }], [{ level: Number.NaN, charging: true }, undefined], [{ level: "1" as never, charging: true }, undefined], [new Error("no battery"), undefined]] as const ) {
 
@@ -1105,7 +1035,7 @@ describe("device", () => {
 
         const silent = web({ navigator: {}, document: {} });
 
-        expect([await silent.media({ video: true }), await silent.battery(), silent.can("media"), silent.can("battery")]).toEqual([undefined, undefined, false, false]);
+        expect([await silent.capture({ video: true }), await silent.battery(), silent.can("capture"), silent.can("battery")]).toEqual([undefined, undefined, false, false]);
 
     });
     it("web keys skip composition and mark typing by the focused field; hotkeys honour typing, repeat and order", () => {
@@ -1332,9 +1262,9 @@ describe("device", () => {
     it("reload asks the host page to reload where it can, and answers false where it cannot or the host throws", () => {
 
         const asked: string[] = [];
-        const page = web({ navigator: {}, document: {}, location: { pathname: "/", search: "", hash: "", reload: () => { asked.push("reload"); } } });
-        const broken = web({ navigator: {}, document: {}, location: { pathname: "/", search: "", hash: "", reload: () => { throw new Error("blocked"); } } });
-        const plain = web({ navigator: {}, document: {}, location: { pathname: "/", search: "", hash: "" } });
+        const page = web({ navigator: {}, document: {}, location: { reload: () => { asked.push("reload"); } } });
+        const broken = web({ navigator: {}, document: {}, location: { reload: () => { throw new Error("blocked"); } } });
+        const plain = web({ navigator: {}, document: {}, location: {} });
 
         expect([page.can("reload"), page.reload(), asked]).toEqual([true, true, ["reload"]]);
         expect([broken.can("reload"), broken.reload()]).toEqual([true, false]);
@@ -1388,20 +1318,20 @@ describe("device", () => {
         const boom = (): never => { throw new Error("boom"); };
         const sour = async (): Promise<never> => { throw new Error("sour"); };
         const none = (): never => undefined as never;
-        const all: device.Capability[] = ["ask", "awake", "badge", "battery", "copy", "follow", "haptic", "keys", "media", "notify", "open", "paste", "pick", "position", "pushToken", "reload", "share", "state", "vibrate"];
+        const all: device.Capability[] = ["ask", "awake", "badge", "battery", "capture", "copy", "follow", "haptic", "keys", "notify", "open", "paste", "position", "pushToken", "reload", "share", "shield", "state", "vibrate"];
         const quiet = [
-            "unsupported", "unsupported", false, undefined, undefined, undefined, false, undefined, false, false, false, false, false, false, [], undefined, undefined, undefined, undefined, false,
+            "unsupported", "unsupported", false, undefined, undefined, undefined, false, undefined, false, false, false, false, false, false, undefined, undefined, undefined, undefined, false, undefined,
         ];
 
         for ( const [label, fail] of [["throws", boom], ["rejects", sour], ["nothing", none]] as const ) {
 
             const flat = label === "rejects" ? boom : fail;
-            const unit = device.create({ ...base, state: fail, ask: fail, notify: fail, pushToken: fail, position: fail, follow: flat, copy: fail, paste: fail, share: fail, vibrate: flat, haptic: flat, open: fail, reload: flat, pick: fail, media: fail, keys: flat, battery: fail, awake: fail, badge: fail });
+            const unit = device.create({ ...base, state: fail, ask: fail, notify: fail, pushToken: fail, position: fail, follow: flat, copy: fail, paste: fail, share: fail, vibrate: flat, haptic: flat, open: fail, reload: flat, capture: fail, keys: flat, battery: fail, awake: fail, badge: fail, shield: fail });
             const follow = unit.follow({}, () => undefined);
             const keys = unit.keys(() => undefined);
             const answers = [
                 await unit.state("camera"), await unit.ask("camera"), await unit.notify({ title: "t" }), await unit.pushToken(), await unit.position(), follow(), await unit.copy("x"), await unit.paste(), await unit.share({ text: "x" }),
-                unit.vibrate(5), unit.haptic("light"), await unit.open("https://a.example"), await unit.open("javascript:alert(1)"), unit.reload(), await unit.pick(), await unit.media({ video: true }), keys(), await unit.battery(), await unit.awake(), await unit.badge(1),
+                unit.vibrate(5), unit.haptic("light"), await unit.open("https://a.example"), await unit.open("javascript:alert(1)"), unit.reload(), await unit.capture({ video: true }), keys(), await unit.battery(), await unit.awake(), await unit.badge(1), await unit.shield(),
             ];
 
             expect([label, answers]).toEqual([label, quiet]);
@@ -1423,22 +1353,21 @@ describe("device", () => {
         };
         const fix: device.Position = { lat: 30.05, lng: 31.25, accuracy: 4, at: 9 };
         const stream: device.Stream = { stream: "s", stop: () => undefined };
-        const picked: device.Picked[] = [{ name: "a.png", type: "image/png", size: 2, uri: "file:///a.png" }];
         const listener = (): void => undefined;
         const ended = (): void => { seen.push(["ended"]); };
         const full = device.create({
             ...base, state: said("state", "prompt" as const), ask: said("ask", Promise.resolve("granted" as const)), notify: said("notify", Promise.resolve(true)), pushToken: said("pushToken", Promise.resolve("push-1")), position: said("position", Promise.resolve(fix)),
             follow: said("follow", ended), copy: said("copy", Promise.resolve(true)), paste: said("paste", Promise.resolve("")), share: said("share", Promise.resolve(true)), vibrate: said("vibrate", true), haptic: said("haptic", true), open: said("open", Promise.resolve(true)),
-            reload: said("reload", true), pick: said("pick", Promise.resolve(picked)), media: said("media", Promise.resolve(stream)), keys: said("keys", ended), battery: said("battery", Promise.resolve({ level: 0, charging: false })), awake: said("awake", Promise.resolve(ended)), badge: said("badge", Promise.resolve(true)),
+            reload: said("reload", true), capture: said("capture", Promise.resolve(stream)), keys: said("keys", ended), battery: said("battery", Promise.resolve({ level: 0, charging: false })), awake: said("awake", Promise.resolve(ended)), badge: said("badge", Promise.resolve(true)), shield: said("shield", Promise.resolve(ended)),
         }, { schemes: ["https", "MyApp"] });
 
         expect([await full.state("push"), await full.ask("photos"), await full.notify({ title: "t", body: "b" }), await full.pushToken(), await full.position({ accuracy: "high" })]).toEqual(["prompt", "granted", true, "push-1", fix]);
         expect([full.follow({ timeout: 5 }, listener), await full.copy("text"), await full.paste(), await full.share({ url: "https://a.example" }), full.vibrate([1, 2]), full.haptic("error")]).toEqual([ended, true, "", true, true, true]);
         expect(full.reload()).toBe(true);
-        expect([await full.open("  myapp://x  "), await full.open("mailto:a@a.example"), await full.pick({ source: "files" }), await full.media({ audio: true }), full.keys(listener), await full.battery(), await full.awake(), await full.badge(2), await full.badge()]).toEqual([true, false, picked, stream, ended, { level: 0, charging: false }, ended, true, true]);
+        expect([await full.open("  myapp://x  "), await full.open("mailto:a@a.example"), await full.capture({ audio: true }), full.keys(listener), await full.battery(), await full.awake(), await full.badge(2), await full.badge()]).toEqual([true, false, stream, ended, { level: 0, charging: false }, ended, true, true]);
         expect(seen).toEqual([
             ["state", "push"], ["ask", "photos"], ["notify", { title: "t", body: "b" }], ["pushToken"], ["position", { accuracy: "high" }], ["follow", { timeout: 5 }, listener], ["copy", "text"], ["paste"], ["share", { url: "https://a.example" }], ["vibrate", [1, 2]], ["haptic", "error"],
-            ["reload"], ["open", "myapp://x"], ["pick", { source: "files" }], ["media", { audio: true }], ["keys", listener], ["battery"], ["awake"], ["badge", 2], ["badge"],
+            ["reload"], ["open", "myapp://x"], ["capture", { audio: true }], ["keys", listener], ["battery"], ["awake"], ["badge", 2], ["badge"],
         ]);
         seen.length = 0;
         await full.require("push");
@@ -1448,6 +1377,39 @@ describe("device", () => {
 
         listed.length = 0;
         expect([full.capabilities(), device.create(base).capabilities(), device.create({ ...base, badge: undefined, copy: async () => true }).capabilities()]).toEqual([all, [], ["copy"]]);
+
+    });
+    it("a link that opens the app reaches whoever listens while they listen, a host without links stays quiet, and a link reads as an in-app path or is refused", () => {
+
+        const told = new Set<( link: string ) => void>();
+        const linked = device.create({ info: device.unknownInfo, watch: () => () => undefined, links: ( listener ) => { told.add(listener); return () => told.delete(listener); } });
+        const plain = device.create({ info: device.unknownInfo, watch: () => () => undefined });
+        const seen: string[] = [];
+        const stop = linked.links(( link ) => { seen.push(link); });
+
+        for ( const tell of told ) tell("shop://offers?x=1");
+
+        stop();
+
+        for ( const tell of told ) tell("shop://late");
+
+        expect([seen, linked.can("links"), plain.can("links"), typeof plain.links(() => undefined)]).toEqual([["shop://offers?x=1"], true, false, "function"]);
+        expect(["shop://offers", "shop://offers?x=1#h", "shop:///account", "shop://", "https://shop.example.test/offers?a=b", "https://shop.example.test"].map(device.pathOf)).toEqual(["/offers", "/offers?x=1", "/account", "/", "/offers?a=b", "/"]);
+        expect(["shop://a/../b", "shop://a//b", "nope", "javascript:alert(1)", "shop://stock\\x", "shop://a\u0000b", `shop://${"a".repeat(3000)}`].map(device.pathOf)).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+
+    });
+
+    it("a shield is raised through the adapter and lowered by what it hands back; a device without one, or one that fails, answers nothing", async () => {
+
+        const seen: string[] = [];
+        const base: device.Adapter = { info: device.unknownInfo, watch: () => () => undefined };
+        const guarded = device.create({ ...base, shield: async () => { seen.push("up"); return () => { seen.push("down"); }; } });
+        const lower = await guarded.shield();
+
+        expect([guarded.can("shield"), seen.slice(), typeof lower]).toEqual([true, ["up"], "function"]);
+        lower?.();
+        expect(seen).toEqual(["up", "down"]);
+        expect([await device.create(base).shield(), device.create(base).can("shield"), await device.create({ ...base, shield: async () => { throw new Error("blocked"); } }).shield()]).toEqual([undefined, false, undefined]);
 
     });
 

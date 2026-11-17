@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import { awaited, linked } from "./abort.ts";
 import type { Readable, SignalRow as Row, Signal, SignalOptions } from "./arch.ts";
 import { raise, tried } from "./emitter.ts";
@@ -26,15 +26,15 @@ function waited<T> ( get: () => T, watch: Readable<T>["watch"] ): Readable<T>["u
 
         return watch(( next ) => {
 
-            try {
+            exception.rescue(() => {
 
                 if ( test(next) ) done(next);
 
-            } catch ( cause ) {
+            }, ( cause ) => {
 
                 fail(cause);
 
-            }
+            });
 
         });
 
@@ -83,7 +83,7 @@ export function signal<T> ( initial: T, options: (( a: T, b: T ) => boolean) | S
             const next = typeof value === "function" ? (value as ( current: T ) => T)(current) : value;
 
             if ( equal(current, next) ) return;
-            if ( turns && turns.length >= deepest ) throw error.fault("internal", "event.loop");
+            if ( turns && turns.length >= deepest ) throw exception.fault("internal", "event.loop");
 
             const previous = current;
 
@@ -173,17 +173,17 @@ export function derive<S, T> ( source: Readable<S>, pick: ( value: S ) => T, equ
 
         watchers += 1;
 
-        try {
+        exception.rescue(() => {
 
             off = inner.watch(listener, { replay: wanted.replay });
 
-        } catch ( cause ) {
+        }, ( cause ) => {
 
             release();
 
             throw cause;
 
-        }
+        });
 
         return linked(release, wanted.signal);
 

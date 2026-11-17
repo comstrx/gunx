@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as list from "engine-list";
 import * as number from "engine-number";
 import * as strings from "engine-string";
@@ -26,7 +27,7 @@ function known ( charset: string ): readonly string[] {
 
     if ( found ) return found;
 
-    throw new RangeError("not a charset");
+    throw exception.misuse("not a charset");
 
 }
 function worth ( weight: number ): number {
@@ -77,7 +78,7 @@ function generator ( next: () => number, filled: ( size: number ) => Uint8Array<
     const below = ( size: number ): number => Math.floor((size > 4294967296 ? wide() : next()) * size);
     const drawn = ( length: number, letters: readonly string[] ): string => {
 
-        if ( letters.length === 0 ) throw new RangeError("not an alphabet");
+        if ( letters.length === 0 ) throw exception.misuse("not an alphabet");
 
         return list.times(sized(length, most), () => letters[below(letters.length)] ?? "").join("");
 
@@ -173,7 +174,7 @@ function generator ( next: () => number, filled: ( size: number ) => Uint8Array<
             const wanted = [lower ? from.lower : "", upper ? from.upper : "", digits ? from.digits : "", symbols === true ? marks : symbols || ""];
             const classes = wanted.map(( text ) => strings.graphemes(text)).filter(( letters ) => letters.length > 0);
 
-            if ( classes.length === 0 ) throw new RangeError("not a rule");
+            if ( classes.length === 0 ) throw exception.misuse("not a rule");
 
             const pool = classes.flat();
             const size = sized(Math.max(classes.length, number.finite(length, 16)), most);

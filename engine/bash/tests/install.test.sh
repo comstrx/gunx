@@ -153,3 +153,14 @@ test:core:install:unpacks-every-archive-kind () {
     @errors 'Cannot unpack flat from c.tar.xz' core:install:unpack "${work}/c.gz" https://x/c.tar.xz flat "${work}/out"
 
 }
+test:core:install:needs-and-names-what-it-installs () {
+
+    core:install:need bash tar
+    @errors 'A command is required' core:install:command ''
+
+    @errors 'Not a Python tool name' core:install:uv 'bad name'
+    @errors 'Not a version of ruff' core:install:uv ruff latest
+    @errors 'Not a package name' core:install:bun 'Bad Name'
+    @errors 'Not a version of prettier' core:install:bun prettier next
+
+}

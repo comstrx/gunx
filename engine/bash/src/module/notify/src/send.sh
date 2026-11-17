@@ -1,5 +1,3 @@
-declare -ga NOTIFY_CHANNELS=( telegram slack discord webhook email )
-
 module:notify:run () {
 
     local status="" title="" message="" link="" seconds="" channels="" retry="" timeout=""
@@ -73,7 +71,7 @@ module:notify:send () {
     if [[ -z "${event[title]}" ]]; then
 
         event[title]="${CONFIG[PROJECT]:-${context[repo]##*/}}"
-        event[title]="${event[title]:-${MANIFEST[meta.name]:-run}}${context[workflow]:+ ${context[workflow]}}"
+        event[title]="${event[title]:-$(config:meta:name)}${context[workflow]:+ ${context[workflow]}}"
 
     fi
 

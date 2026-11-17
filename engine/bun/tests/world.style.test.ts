@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as world from "engine/world";
 
 describe("world.style", () => {
@@ -50,7 +51,7 @@ describe("world.style", () => {
         expect(["a}b", "a{b", "a/*b*/", "rgb(1", '"abc', "x\u0001", "a;b", "a</", "a<!", "\\", "url(a) b", "calc(1px + 2px)", "'a;b'", "a\\;b"].map(( value ) => world.isToken(value))).toEqual([false, false, false, false, false, false, false, false, false, false, true, true, true, true]);
         expect([world.isToken(Number.POSITIVE_INFINITY), world.isToken(Number.NaN), world.isToken(1.5), world.isToken(null)]).toEqual([false, false, true, false]);
         expect(world.variables({ a: '"<x"', b: "'</x'" })).toEqual(['--a: "\\3C x";', "--b: '\\3C /x';"]);
-        expect([() => world.variables({ a: Number.POSITIVE_INFINITY }), () => world.variables({ "": 1 }), () => world.variables({ a: "x\u0000" }), () => world.block("a{b", []), () => world.block("", []), () => world.block(".a", [], "x"), () => world.css({ base: { a: 1 }, dark: { a: 2 }, darkSelector: "{" })].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof RangeError ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused", "refused", "refused", "refused"]);
+        expect([() => world.variables({ a: Number.POSITIVE_INFINITY }), () => world.variables({ "": 1 }), () => world.variables({ a: "x\u0000" }), () => world.block("a{b", []), () => world.block("", []), () => world.block(".a", [], "x"), () => world.css({ base: { a: 1 }, dark: { a: 2 }, darkSelector: "{" })].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof exception.Fault ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused", "refused", "refused", "refused"]);
         expect(world.variables({ fooBar: 1, "a b": 2, A1: 3 }, "x y")).toEqual(["--x-y-foo-bar: 1;", "--x-y-a-b: 2;", "--x-y-a1: 3;"]);
 
     });
@@ -59,7 +60,7 @@ describe("world.style", () => {
         const button = world.variants({ base: "btn", axes: { look: { solid: "bg-brand", ghost: "bg-transparent" }, size: { sm: "h-8", md: "h-10" } }, defaults: { look: "solid", size: "md" }, compound: [{ when: { look: ["ghost", "outline" as never], size: "sm" }, add: "border" }] });
 
         expect([button({ look: "nope" as never }), button({ look: "ghost" }), button({ look: "nope" as never, size: "nope" as never }), button({ look: "ghost", size: "sm" }), button({ look: "outline" as never, size: "sm" }), button({ look: null, size: undefined }), button({ className: ["x", { y: true }] })]).toEqual(["btn h-10", "btn bg-transparent h-10", "btn", "btn bg-transparent h-8 border", "btn h-8 border", "btn bg-brand h-10", "btn bg-brand h-10 x y"]);
-        expect([() => world.variants({ axes: { className: { a: "x" } } }), () => world.variants({ axes: { look: { a: "x" } }, compound: [{ when: { size: "sm" } as never, add: "y" }] }), () => world.variants({ axes: { look: { a: "x" } }, compound: [{ when: { look: {} as never }, add: "y" }] }), () => world.variants({ axes: null as never })].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof RangeError ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused"]);
+        expect([() => world.variants({ axes: { className: { a: "x" } } }), () => world.variants({ axes: { look: { a: "x" } }, compound: [{ when: { size: "sm" } as never, add: "y" }] }), () => world.variants({ axes: { look: { a: "x" } }, compound: [{ when: { look: {} as never }, add: "y" }] }), () => world.variants({ axes: null as never })].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof exception.Fault ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused"]);
         expect([world.classes("a\u00a0b", "c\u2028d"), world.classes([[[[[[[[[["deep"]]]]]]]]]]), world.classes([[[[[[[["near"]]]]]]]]), world.classes({ "a b": true, c: 0 } as unknown as world.ClassValue, Number.NaN, 2)]).toEqual(["a b c d", "", "near", "a b 2"]);
         expect(world.states({ fooBar: true, off: false, n: Number.NaN, "": true })).toEqual({ "data-foo-bar": "" });
 

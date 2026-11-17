@@ -1,11 +1,11 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Abortable, Wait } from "./arch.ts";
 
 const longest = 2_147_483_647;
 
-function gone ( cause: unknown ): error.Fault {
+function gone ( cause: unknown ): exception.Fault {
 
-    return error.fault("timeout", "event.aborted", { cause });
+    return exception.fault("timeout", "event.aborted", { cause });
 
 }
 function span ( ms: number ): number {
@@ -18,7 +18,7 @@ export function awaited<T> ( reason: string, options: number | Wait | undefined,
 
     const { timeout, signal }: Wait = typeof options === "number" ? { timeout: options } : (options ?? {});
 
-    if ( Number.isNaN(timeout) ) return Promise.reject(new RangeError("not a duration"));
+    if ( Number.isNaN(timeout) ) return Promise.reject(exception.misuse("not a duration"));
 
     return new Promise<T>(( resolve, reject ) => {
 
@@ -34,15 +34,15 @@ export function awaited<T> ( reason: string, options: number | Wait | undefined,
 
             for ( const stop of stops.splice(0) ) {
 
-                try {
+                exception.rescue(() => {
 
                     stop();
 
-                } catch ( cause ) {
+                }, ( cause ) => {
 
                     failed ??= { cause };
 
-                }
+                });
 
             }
 
@@ -90,7 +90,7 @@ export function awaited<T> ( reason: string, options: number | Wait | undefined,
 
         if ( timeout !== undefined && timeout !== Number.POSITIVE_INFINITY ) {
 
-            const late = (): void => close(() => reject(error.fault("timeout", reason, subject === undefined ? {} : { message: `${subject} did not arrive within ${timeout}ms` })));
+            const late = (): void => close(() => reject(exception.fault("timeout", reason, subject === undefined ? {} : { message: `${subject} did not arrive within ${timeout}ms` })));
             const timer = setTimeout(late, span(timeout));
 
             stops.push(() => clearTimeout(timer));
@@ -152,10 +152,10 @@ export function abortable ( ...signals: readonly (AbortSignal | undefined)[] ): 
 }
 export function deadline ( ms: number, ...signals: readonly (AbortSignal | undefined)[] ): Abortable {
 
-    if ( Number.isNaN(ms) ) throw new RangeError("not a duration");
+    if ( Number.isNaN(ms) ) throw exception.misuse("not a duration");
 
     const made = abortable(...signals);
-    const timer = made.signal.aborted || ms === Number.POSITIVE_INFINITY ? undefined : setTimeout(() => made.abort(error.fault("timeout", "event.deadline")), span(ms));
+    const timer = made.signal.aborted || ms === Number.POSITIVE_INFINITY ? undefined : setTimeout(() => made.abort(exception.fault("timeout", "event.deadline")), span(ms));
     const release = (): void => {
 
         if ( timer !== undefined ) clearTimeout(timer);
@@ -200,7 +200,7 @@ export function race<T> ( work: PromiseLike<T>, signal: AbortSignal | undefined 
 
     if ( signal.aborted ) {
 
-        void pending.catch(() => undefined);
+        exception.quiet(pending);
 
         return Promise.reject(gone(signal.reason));
 

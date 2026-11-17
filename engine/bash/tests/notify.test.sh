@@ -214,3 +214,12 @@ test:module:notify:takes-its-text-as-a-flag () {
     @contains "$(bash "${TOOL_BIN}" help notify)" '--channel C'
 
 }
+test:module:notify:duration-reads-only-a-count () {
+
+    @eq "$(module:notify:duration 3725)" 1h2m5s
+    @eq "$(module:notify:duration 59)" 59s
+    @eq "$(module:notify:duration 'not a number')" 0s
+    @eq "$(module:notify:duration '1+1')" 0s
+    @eq "$(module:notify:duration 99999999999999999999)" 0s
+
+}

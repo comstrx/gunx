@@ -3,6 +3,10 @@
 @import "../../.cache/styles/fonts.css";
 
 @layer base {
+    html[data-pending] body {
+        visibility: hidden;
+    }
+
     html {
         color-scheme: light dark;
         -webkit-text-size-adjust: 100%;
@@ -18,12 +22,5 @@
         font-family: var(--font-sans);
         -webkit-font-smoothing: antialiased;
         text-rendering: optimizeLegibility;
-    }
-
-    main {
-        display: flex;
-        flex: 1;
-        flex-direction: column;
-        min-width: 0;
     }
 }

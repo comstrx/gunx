@@ -1,4 +1,4 @@
-import type * as error from "engine-error";
+import type * as exception from "engine-exception";
 import type * as state from "engine-state";
 import type * as validate from "engine-validate";
 
@@ -17,7 +17,7 @@ export type State<V, R> = {
     checking: readonly string[];
     status: Status;
     result: R | undefined;
-    fault: error.Fault | undefined;
+    fault: exception.Fault | undefined;
     submits: number;
     attempts: number;
 };
@@ -82,7 +82,7 @@ export type Form<V extends object, O, R> = {
     reset: ( values?: V ) => void;
     rebase: ( values?: V ) => void;
     status: () => Status;
-    fault: () => error.Fault | undefined;
+    fault: () => exception.Fault | undefined;
     dirty: ( path?: string ) => boolean;
     changes: () => Partial<V>;
     valid: ( paths?: Paths ) => boolean;

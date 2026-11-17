@@ -1,4 +1,5 @@
 import * as date from "engine-date";
+import * as exception from "engine-exception";
 import * as rand from "engine-rand";
 import * as string from "engine-string";
 import * as validate from "engine-validate";
@@ -30,7 +31,7 @@ function latin (): Latin {
 
 function counted ( count: number ): number {
 
-    if ( !Number.isInteger(count) || count < 0 || count > most ) throw new RangeError("not a count");
+    if ( !Number.isInteger(count) || count < 0 || count > most ) throw exception.misuse("not a count");
 
     return count;
 
@@ -47,14 +48,14 @@ function times<T> ( count: number, make: ( index: number ) => T ): T[] {
 }
 function lasting ( days: number ): number {
 
-    if ( !(days > 0) || days > 36_525 ) throw new RangeError("not a duration");
+    if ( !(days > 0) || days > 36_525 ) throw exception.misuse("not a duration");
 
     return Math.max(minute, Math.round(days * day));
 
 }
 function sized ( side: number ): number {
 
-    if ( !Number.isInteger(side) || side < 1 || side > 16_384 ) throw new RangeError("not a size");
+    if ( !Number.isInteger(side) || side < 1 || side > 16_384 ) throw exception.misuse("not a size");
 
     return side;
 
@@ -71,9 +72,9 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
     const { locale = "en", country: home = "EG", formats = {}, images } = options;
     const now = options.now === undefined ? date.now() : Number(options.now);
 
-    if ( !Object.hasOwn(pools, locale) ) throw new RangeError("not a locale");
-    if ( !Object.hasOwn(plans, home) ) throw new RangeError("not a country");
-    if ( !Number.isFinite(now) ) throw new RangeError("not a date");
+    if ( !Object.hasOwn(pools, locale) ) throw exception.misuse("not a locale");
+    if ( !Object.hasOwn(plans, home) ) throw exception.misuse("not a country");
+    if ( !Number.isFinite(now) ) throw exception.misuse("not a date");
 
     const random = rand.seeded(seed);
     const table = pools[locale];
@@ -82,7 +83,7 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
     const edge = table.words[0]?.[0] ?? "x";
     const pick = <T>( items: readonly T[] ): T => {
 
-        if ( items.length === 0 ) throw new RangeError("not a choice");
+        if ( items.length === 0 ) throw exception.misuse("not a choice");
 
         return items[random.index(items.length)] as T;
 
@@ -131,7 +132,7 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
         email: ( name ) => `${handle(name, ".")}${random.int(1, 99)}@${pick(domains)}`,
         phone: ( country = home ) => {
 
-            if ( !Object.hasOwn(plans, country) ) throw new RangeError("not a country");
+            if ( !Object.hasOwn(plans, country) ) throw exception.misuse("not a country");
 
             const plan = plans[country];
 
@@ -145,7 +146,7 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
         postcode: () => random.digits(5),
         coordinates: ( center = cairo, km = 10 ) => {
 
-            if ( !(km >= 0) || km > 1000 || !(Math.abs(center.lat) <= 90) || !(Math.abs(center.lng) <= 180) ) throw new RangeError("not a point");
+            if ( !(km >= 0) || km > 1000 || !(Math.abs(center.lat) <= 90) || !(Math.abs(center.lng) <= 180) ) throw exception.misuse("not a point");
 
             const reach = km * Math.sqrt(random.next());
             const turn = random.next() * 2 * Math.PI;
@@ -214,7 +215,7 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
             const wanted = ending?.trim().toLowerCase().replace(/^\./, "");
             const kinds = wanted === undefined ? files : files.filter(( [known] ) => known === wanted);
 
-            if ( kinds.length === 0 ) throw new RangeError("not a file");
+            if ( kinds.length === 0 ) throw exception.misuse("not a file");
 
             const [end, type] = pick(kinds);
 
@@ -237,7 +238,7 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
         future: ( days = 30 ) => new Date(now + random.int(minute, lasting(days))),
         birthdate: ( youngest = 18, oldest = 70 ) => {
 
-            if ( !(youngest >= 0) || !(oldest >= youngest) || oldest > 130 ) throw new RangeError("not an age");
+            if ( !(youngest >= 0) || !(oldest >= youngest) || oldest > 130 ) throw exception.misuse("not an age");
 
             return date.plain(new Date(now - random.int(Math.round(youngest * year), Math.round(oldest * year))));
 
@@ -248,7 +249,7 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
 
             const found = random.weighted(items);
 
-            if ( found === undefined && !items.some(( one ) => one.weight > 0) ) throw new RangeError("not a choice");
+            if ( found === undefined && !items.some(( one ) => one.weight > 0) ) throw exception.misuse("not a choice");
 
             return found as (typeof items)[number]["item"];
 
@@ -262,7 +263,7 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
 
             for ( let turn = 0; out.length < size; turn += 1 ) {
 
-                if ( turn > size * 20 + 100 ) throw new RangeError("not unique");
+                if ( turn > size * 20 + 100 ) throw exception.misuse("not unique");
 
                 const made = make(out.length);
                 const mark = key(made);
@@ -285,7 +286,7 @@ export function create ( seed: Seed = "engine", given: Locale | Options = "en" )
 
             const draw = matcher(pattern);
 
-            if ( !draw ) throw new RangeError("not a pattern");
+            if ( !draw ) throw exception.misuse("not a pattern");
 
             return draw(random);
 

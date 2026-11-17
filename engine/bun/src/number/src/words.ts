@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Unit } from "./arch.ts";
 import { finite, precision } from "./math.ts";
 import { languageOf } from "./plural.ts";
@@ -103,7 +104,7 @@ export function words ( value: number, locale = "en" ): string {
 
     const language = languageOf(locale);
 
-    if ( language !== "ar" && language !== "en" ) throw new RangeError("unsupported words locale");
+    if ( language !== "ar" && language !== "en" ) throw exception.misuse("unsupported words locale");
 
     const amount = Math.min(precision(Math.abs(finite(value)), 2), 999_999_999_999_999);
     const whole = Math.trunc(amount);

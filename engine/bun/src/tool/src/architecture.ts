@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Analysis, Found, Issue, Resolved, Rule, Rules, Visit } from "./arch.ts";
 import { byText, walk } from "./core.ts";
 
@@ -103,15 +103,7 @@ function truthOf ( text: string, loader: "ts" | "tsx" ): ReadonlySet<string> | u
 
     }
 
-    try {
-
-        return new Set(made.scanImports(text).map(( found ) => found.path));
-
-    } catch {
-
-        return undefined;
-
-    }
+    return exception.probe(() => new Set(made.scanImports(text).map(( found ) => found.path)));
 
 }
 function lineOf ( text: string, target: string ): number {
@@ -249,20 +241,20 @@ export function defineRules ( rules: Rules ): Resolved {
 
     const alias = rules.alias ?? "@/";
 
-    if ( typeof rules.root !== "string" || rules.root === "" ) throw error.fault("internal", "tool.rules", { message: "rules name the root of a surface" });
+    if ( typeof rules.root !== "string" || rules.root === "" ) throw exception.fault("internal", "tool.rules", { message: "rules name the root of a surface" });
 
-    if ( !Array.isArray(rules.layers) || rules.layers.length === 0 ) throw error.fault("internal", "tool.rules", { message: "rules name the layers, lowest first" });
+    if ( !Array.isArray(rules.layers) || rules.layers.length === 0 ) throw exception.fault("internal", "tool.rules", { message: "rules name the layers, lowest first" });
 
-    if ( typeof alias !== "string" || alias === "/" || !alias.endsWith("/") ) throw error.fault("internal", "tool.rules", { message: "an alias is a prefix ending in a slash, such as @/" });
+    if ( typeof alias !== "string" || alias === "/" || !alias.endsWith("/") ) throw exception.fault("internal", "tool.rules", { message: "an alias is a prefix ending in a slash, such as @/" });
 
-    if ( rules.framework !== undefined && (typeof rules.framework !== "object" || Array.isArray(rules.framework) || !Object.values(rules.framework).every(Array.isArray)) ) throw error.fault("internal", "tool.rules", { message: "a framework names the layers it may enter, such as { next: [\"app\"] }" });
+    if ( rules.framework !== undefined && (typeof rules.framework !== "object" || Array.isArray(rules.framework) || !Object.values(rules.framework).every(Array.isArray)) ) throw exception.fault("internal", "tool.rules", { message: "a framework names the layers it may enter, such as { next: [\"app\"] }" });
 
     return {
         root: rules.root,
         source: rules.source ?? "src",
         alias,
         layers: [...rules.layers],
-        vendor: [...(rules.vendor ?? ["native"])],
+        vendor: [...(rules.vendor ?? ["host"])],
         engine: rules.engine ?? "engine",
         members: [...(rules.members ?? [])],
         framework: Object.fromEntries(Object.entries(rules.framework ?? {}).map(([name, layers]) => [name, [...layers]])),

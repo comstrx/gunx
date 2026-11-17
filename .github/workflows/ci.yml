@@ -47,6 +47,7 @@ jobs:
           - product/apex/mobile
           - product/apex/desktop
           - .
+
         os: [ubuntu-latest, macos-latest]
 
     runs-on: ${{ matrix.os }}
@@ -61,28 +62,8 @@ jobs:
       CI_PASS: ${{ (inputs.type || 'default') != 'default' && 'true' || '' }}
 
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - uses: cargo-bins/cargo-binstall@23ee8ab6b7397851bc11705bcdf46f2519ea0285 # v1.9.0
-        if: hashFiles(format('{0}/Cargo.toml', matrix.path)) != ''
-
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        if: hashFiles(format('{0}/pyproject.toml', matrix.path)) != ''
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        if: hashFiles(format('{0}/go.work', matrix.path), format('{0}/go.mod', matrix.path)) != ''
-        with:
-          go-version-file: engine/go/go.work
-          cache: false
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        if: matrix.path == '.' || hashFiles(format('{0}/package.json', matrix.path)) != ''
-        with:
-          bun-version-file: engine/bun/package.json
-
       - uses: $/engine/bash/src/module/gate/template
+        with:
+          path: ${{ matrix.path }}
 
-      - run: infra gate --path "${CI_PATH}" --type "${CI_TYPE}" --timeout "${CI_TIMEOUT}" ${CI_CHANGED:+--only-changed} ${CI_PASS:+--pass}
+      - run: gunx gate --path "${CI_PATH}" --type "${CI_TYPE}" --timeout "${CI_TIMEOUT}" ${CI_CHANGED:+--only-changed} ${CI_PASS:+--pass}

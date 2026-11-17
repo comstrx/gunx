@@ -1,5 +1,5 @@
-import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import type { Action, ActionOptions, ActionState, ActionFlight as Flight } from "./arch.ts";
 import { createStore } from "./zustand.ts";
 
@@ -25,18 +25,14 @@ export function action<I, R> ( perform: ( input: I, signal: AbortSignal ) => Pro
     };
     const work = async ( input: I, mine: Flight<R> ): Promise<void> => {
 
-        let result: R;
+        const done = await exception.attempt(() => event.race(perform(input, mine.controller.signal), mine.controller.signal));
 
-        try {
-
-            result = await event.race(perform(input, mine.controller.signal), mine.controller.signal);
-
-        } catch ( caught ) {
+        if ( !done.ok ) {
 
             if ( current === mine ) {
 
                 current = undefined;
-                store.setState({ status: "failed", error: error.of(caught) });
+                store.setState({ status: "failed", error: done.fault });
 
             }
 
@@ -45,6 +41,8 @@ export function action<I, R> ( perform: ( input: I, signal: AbortSignal ) => Pro
             return;
 
         }
+
+        const result = done.value;
 
         if ( current !== mine ) {
 

@@ -5,6 +5,9 @@
     "session.revoked": "تم إنهاء الجلسة",
     "session.input": "راجع البريد والرمز",
     "session.tenant": "مساحة العمل هذه غير متاحة",
-    "session.member": "أنت لست عضواً في مساحة العمل هذه"
+    "session.member": "أنت لست عضواً في مساحة العمل هذه",
+    "avatar.empty": "اختر صورة أولاً",
+    "avatar.kind": "الصورة يجب أن تكون PNG أو JPG أو WebP",
+    "avatar.missing": "لا توجد صورة لهذا الحساب"
   }
 }

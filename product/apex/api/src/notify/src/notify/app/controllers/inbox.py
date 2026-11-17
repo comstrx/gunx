@@ -16,6 +16,10 @@ class InboxController(Controller[Inbox]):
 
         return self.page(rows, total, page, limit)
 
+    async def test ( self, principal: Actor ) -> Answer:
+
+        return self.created(await self.service.test(principal))
+
     async def read ( self, principal: Actor, notice: str ) -> Answer:
 
         return self.ok(await self.service.read(principal, notice))

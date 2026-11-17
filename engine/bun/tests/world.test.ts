@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, test as it } from "bun:test";
 import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import * as exception from "engine/exception";
 import * as world from "engine/world";
 
 const asset = resolve(import.meta.dir, "../src/world/asset");
@@ -65,7 +66,7 @@ describe("world", () => {
 
         expect(grouped.map(( group ) => group.region.name.en)).toEqual(["Africa", "Americas", "Asia", "Europe", "Oceania"]);
         expect(grouped.find(( group ) => group.region.code === "142")?.subregions.flatMap(( sub ) => sub.countries.map(( country ) => country.code))).toContain("SA");
-        expect(() => world.defineCountries(["EG", "ZZ"])).toThrow(RangeError);
+        expect(() => world.defineCountries(["EG", "ZZ"])).toThrow(exception.Fault);
         expect(world.defineCountries(["sa", "eg"]).all.map(( country ) => country.code)).toEqual(["SA", "EG"]);
         expect(world.isArabic("ar-EG") && !world.isArabic("en")).toBe(true);
         expect(world.nameIn(undefined, "ar", "x")).toBe("x");
@@ -119,7 +120,7 @@ describe("world", () => {
         expect(world.currencies.minor(1, "IQD")).toBe(1000);
         expect(world.currencies.digitsOf("IQD")).toBe(0);
         expect(world.currencies.minor(-0.004, "EGP")).toBe(0);
-        expect(() => world.currencies.minor(Number.NaN, "EGP")).toThrow(RangeError);
+        expect(() => world.currencies.minor(Number.NaN, "EGP")).toThrow(exception.Fault);
         expect(world.currencies.round(10.555, "EGP")).toBe(10.56);
         expect(world.currencies.round(10.5, "JPY")).toBe(11);
         expect(world.currencies.format(1234.5, "egp", "en")).toContain("1,234.50");
@@ -231,7 +232,7 @@ describe("world", () => {
         expect(en.assets().font).toHaveLength(3);
         expect(en.assets().emoji).toHaveLength(1581);
         expect(en.assets().emoji).toEqual([...en.emojis.files]);
-        expect(() => world.define({ currencies: ["NOPE"] })).toThrow(RangeError);
+        expect(() => world.define({ currencies: ["NOPE"] })).toThrow(exception.Fault);
 
     });
     it("every asset the data names exists on disk and nothing on disk is unnamed", () => {
@@ -261,9 +262,9 @@ describe("world", () => {
         expect([world.countries.byNumeric("20")?.code, world.countries.byNumeric("020")?.code, world.countries.byNumeric(" 818 ")?.code, world.countries.byNumeric("0818"), world.countries.byAlpha3(" egy ")?.code, world.countries.byAlpha3("EG")]).toEqual(["AD", "AD", "EG", undefined, "EG", undefined]);
         expect([world.countries.sorted("\u0000")[0]?.code, world.countries.sorted("x".repeat(500))[0]?.code, world.countries.sorted("ar_EG")[0]?.name.ar, world.countries.grouped("ar")[0]?.region.name.ar]).toEqual(["AF", "AF", world.countries.sorted("ar")[0]?.name.ar, "آسيا"]);
         expect([world.define({ locale: "" }).locale, world.define({ locale: " ar-EG " }).locale, world.define({ locale: "AR" }).direction(), world.define({ locale: "ar" }).direction("en"), world.define({ countries: ["eg", "EG"] }).countries.all.length]).toEqual(["en", "ar-EG", "rtl", "ltr", 1]);
-        expect(["\u0000", "e n", "x", "en-", "a".repeat(9)].map(( locale ) => { try { world.define({ locale }); return "ok"; } catch ( caught ) { return caught instanceof RangeError ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused", "refused"]);
+        expect(["\u0000", "e n", "x", "en-", "a".repeat(9)].map(( locale ) => { try { world.define({ locale }); return "ok"; } catch ( caught ) { return caught instanceof exception.Fault ? "refused" : "?"; } })).toEqual(["refused", "refused", "refused", "refused", "refused"]);
         expect([world.currencies.of(" eg ").map(( one ) => one.code), world.currencies.format(1, "nope").replace(/\u00a0/g, " "), world.currencies.major(1005, "EGP"), world.currencies.major(1, "JPY"), world.currencies.major(1, "nope"), world.currencies.exponentOf("nope"), world.currencies.symbolOf("  "), world.currencies.minor(1e13, "EGP"), world.currencies.minor(0.1 + 0.2, "EGP")]).toEqual([["EGP"], "NOPE 1", 10.05, 1, 0.01, 2, "", 1e15, 30]);
-        expect(() => world.currencies.minor(1e15, "EGP")).toThrow(RangeError);
+        expect(() => world.currencies.minor(1e15, "EGP")).toThrow(exception.Fault);
         expect([world.currencies.digitsOf("HUF"), world.currencies.exponentOf("HUF"), world.currencies.minor(1, "HUF"), world.currencies.round(1.234, "HUF"), world.currencies.round(1.234, "BHD"), world.currencies.exponentOf("BHD")]).toEqual([0, 2, 100, 1, 1.234, 3]);
         expect([world.languages.scriptOf("ar-Latn"), world.languages.directionOf("ar-Latn"), world.languages.scriptOf("zh-TW"), world.languages.scriptOf("zh-Hans-TW"), world.languages.scriptOf("sr-Cyrl-RS"), world.languages.directionOf("yi"), world.languages.directionOf("AR_eg"), world.languages.scriptOf(""), world.languages.nameOf(""), world.languages.ofCountry("zz"), world.languages.get("ar-EG")?.code, world.languages.scriptOf("x-Arab"), world.languages.directionOf("x-Hebr")]).toEqual(["Latn", "ltr", "Hant", "Hans", "Cyrl", "rtl", "rtl", "Latn", "", [], "ar", "Arab", "rtl"]);
         expect([world.emojiGlyph(""), world.emojiGlyph("-".repeat(40)), world.emojiGlyph("110000"), world.emojiGlyph("d800"), world.emojiGlyph("1f600-"), world.emojiGlyph("zz"), world.emojiCode(""), world.emojis.imageOf("☺️"), world.emojis.get("☺")?.code, world.emojis.byShortcode(":Grinning Face:")?.glyph, world.emojis.of("nope").length, world.emojis.browse({ group: "nope" }).length, world.emojis.browse({ query: "grin", group: "food" }).length]).toEqual(["", "", "", "", "😀", "", "", "/world/emoji/263a.webp", "263a", "😀", 0, 0, 0]);
@@ -278,8 +279,8 @@ describe("world", () => {
         expect(world.keys.search("96").map(( key ) => key.code)).toEqual(["IQ", "JO", "KW", "LB", "MV", "OM", "SA", "SY", "YE"]);
         expect([world.currencies.primaryOf("LS")?.code, world.currencies.primaryOf("ZW")?.code, world.currencies.of("LS").map(( one ) => one.code)]).toEqual(["ZAR", "ZWG", ["LSL", "ZAR"]]);
         expect([world.fontFor("ar-Latn").startsWith("Figtree"), world.fontFor("en-Arab").startsWith('"Readex Pro"'), world.fontFor("fa").startsWith('"Readex Pro"')]).toEqual([true, true, true]);
-        expect(() => world.fontFaces("/f", "nope" as never)).toThrow(RangeError);
-        await expect(world.load("nope" as never)).rejects.toThrow(RangeError);
+        expect(() => world.fontFaces("/f", "nope" as never)).toThrow(exception.Fault);
+        await expect(world.load("nope" as never)).rejects.toThrow(exception.Fault);
         expect(world.loaded("countries") && !world.loaded("nope" as never)).toBe(true);
 
     });

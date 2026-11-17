@@ -1,31 +1,19 @@
-import * as adapter from "engine-adapter";
+import * as device from "engine-device";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import type { Appearance, Preference, Scheme, Theme, ThemeOptions, ThemeState, Tokens } from "./arch.ts";
+import { isPreference, preferences, remember, stamp } from "./look.ts";
 import { named, css as sheetOf, valued } from "./tokens.ts";
 
 const marked = 16;
 
-export const preferences: readonly Preference[] = ["system", "light", "dark"];
-export const appearance: adapter.Port<Appearance> = adapter.port<Appearance>("appearance", {
+export const appearance: exception.Slot<Appearance> = exception.slot<Appearance>("appearance", {
     fallback: () => ({
-        scheme: () => (sensed()?.matches ? "dark" : "light"),
-        watch: ( listener ) => {
-
-            const list = sensed();
-
-            list?.addEventListener?.("change", listener);
-
-            return () => list?.removeEventListener?.("change", listener);
-
-        },
+        scheme: () => device.port.get().info().scheme,
+        watch: ( listener ) => device.port.get().watch("scheme", () => listener()),
     }),
 });
 
-function sensed (): adapter.MediaList | undefined {
-
-    return adapter.probe(() => adapter.host().matchMedia?.("(prefers-color-scheme: dark)"));
-
-}
 function followed ( listener: () => void ): () => void {
 
     let stop = appearance.get().watch(listener);
@@ -51,18 +39,13 @@ function palette ( value: unknown ): boolean {
 
 }
 
-export function isPreference ( value: unknown ): value is Preference {
-
-    return value === "system" || value === "light" || value === "dark";
-
-}
 export function theme<T extends Tokens> ( options: ThemeOptions<T> ): Theme<T> {
 
     const { tokens, box, key = "theme", prefix = "", selector = ":root", sync = true, fail } = options;
     const first = options.preference ?? "system";
 
-    if ( !isPreference(first) ) throw new RangeError("not a preference");
-    if ( !palette(tokens) || !palette(tokens.light) || !palette(tokens.dark) ) throw new RangeError("not a palette");
+    if ( !isPreference(first) ) throw exception.misuse("not a preference");
+    if ( !palette(tokens) || !palette(tokens.light) || !palette(tokens.dark) ) throw exception.misuse("not a palette");
 
     const sense = options.system ?? (() => appearance.get().scheme());
     const watch = options.watch ?? followed;
@@ -73,7 +56,7 @@ export function theme<T extends Tokens> ( options: ThemeOptions<T> ): Theme<T> {
     let unwatch: (() => void) | undefined;
     let chosen = false;
     let dead = false;
-    const system = (): Scheme => (adapter.probe(sense) === "dark" ? "dark" : "light");
+    const system = (): Scheme => (exception.probe(sense) === "dark" ? "dark" : "light");
     const told = ( cause: unknown ): void => {
 
         if ( fail ) fail(cause);
@@ -100,7 +83,7 @@ export function theme<T extends Tokens> ( options: ThemeOptions<T> ): Theme<T> {
     };
     const set = ( preference: Preference ): void => {
 
-        if ( !isPreference(preference) ) throw new RangeError("not a preference");
+        if ( !isPreference(preference) ) throw exception.misuse("not a preference");
 
         chosen = true;
         state.set(( current ) => make(preference, current.system, current.ready));
@@ -115,7 +98,7 @@ export function theme<T extends Tokens> ( options: ThemeOptions<T> ): Theme<T> {
 
         }
 
-        void box.set(key, preference).then(undefined, ( cause: unknown ) => {
+        void exception.mend(box.set(key, preference), ( cause ) => {
 
             const at = echoes.indexOf(preference);
 
@@ -131,7 +114,7 @@ export function theme<T extends Tokens> ( options: ThemeOptions<T> ): Theme<T> {
         if ( hydrating ) return hydrating;
         if ( !box ) return Promise.resolve();
 
-        hydrating = Promise.resolve().then(() => box.get(key)).then(undefined, ( cause: unknown ) => {
+        hydrating = exception.mend(Promise.resolve().then(() => box.get(key)), ( cause ) => {
 
             told(cause);
 
@@ -145,15 +128,15 @@ export function theme<T extends Tokens> ( options: ThemeOptions<T> ): Theme<T> {
 
             if ( !sync ) return;
 
-            try {
+            exception.rescue(() => {
 
                 unwatch = box.watch(key, heard);
 
-            } catch ( cause ) {
+            }, ( cause ) => {
 
                 told(cause);
 
-            }
+            });
 
         });
 
@@ -179,7 +162,7 @@ export function theme<T extends Tokens> ( options: ThemeOptions<T> ): Theme<T> {
         },
         variables: ( scheme = state.get().scheme ) => {
 
-            if ( scheme !== "light" && scheme !== "dark" ) throw new RangeError("not a scheme");
+            if ( scheme !== "light" && scheme !== "dark" ) throw exception.misuse("not a scheme");
 
             const known = sheets[scheme];
 
@@ -196,24 +179,11 @@ export function theme<T extends Tokens> ( options: ThemeOptions<T> ): Theme<T> {
 
             if ( !root ) return;
 
-            const { preference, scheme } = state.get();
-            const tone = preference === "system" ? "light dark" : scheme;
+            const look = { surface: speak?.surface, lang: speak?.lang, dir: speak?.dir, preference: state.get().preference };
 
-            if ( speak ) {
+            stamp(root, look);
 
-                if ( root.lang !== speak.lang ) root.lang = speak.lang;
-                if ( root.dir !== speak.dir ) root.dir = speak.dir;
-
-            }
-
-            if ( root.dataset ) {
-
-                if ( preference === "system" ) delete root.dataset.theme;
-                else if ( root.dataset.theme !== preference ) root.dataset.theme = preference;
-
-            }
-
-            if ( root.style && root.style.colorScheme !== tone ) root.style.colorScheme = tone;
+            if ( look.surface !== undefined ) remember(look);
 
         },
         hydrate,

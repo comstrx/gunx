@@ -52,3 +52,8 @@ export function navigate ( path: string ): void {
     navigator().push(path);
 
 }
+export function redirect ( path: string ): void {
+
+    navigator().replace(path);
+
+}

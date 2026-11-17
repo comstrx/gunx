@@ -1,5 +1,5 @@
 import { describe, expect, test as it, spyOn } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as rand from "engine/rand";
 import * as strings from "engine/string";
 import * as stage from "engine/test";
@@ -42,7 +42,7 @@ function refused ( work: () => unknown ): string {
 
     } catch ( caught ) {
 
-        return caught instanceof RangeError ? caught.message : "other";
+        return caught instanceof exception.Fault ? caught.message : "other";
 
     }
 
@@ -143,7 +143,7 @@ describe("rand", () => {
         expect(rand.engine.bound()).toBe(false);
         expect(rand.trace(8)).not.toBe("0000000000000000");
 
-        const rejected = error.attemptSync(() => rand.engine.use({} as unknown as rand.Source));
+        const rejected = exception.attemptSync(() => rand.engine.use({} as unknown as rand.Source));
 
         expect(rejected.ok ? undefined : [rejected.fault.code, rejected.fault.reason]).toEqual(["internal", "rand.engine.rejected"]);
         expect(rand.engine.bound()).toBe(false);
@@ -154,10 +154,10 @@ describe("rand", () => {
 
             rand.engine.reset();
 
-            const bare = error.attemptSync(() => rand.bytes(1));
+            const bare = exception.attemptSync(() => rand.bytes(1));
 
-            expect(bare.ok ? undefined : [bare.fault.code, bare.fault.reason]).toEqual(["unavailable", "rand.engine"]);
-            expect(bare.ok ? "" : bare.fault.message).toContain("bind the port");
+            expect(bare.ok ? undefined : [bare.fault.code, bare.fault.reason]).toEqual(["unavailable", "rand.engine.unbound"]);
+            expect(bare.ok ? "" : bare.fault.message).toContain("nothing is bound");
             expect(rand.engine.with(constant(7), () => [...rand.bytes(2)])).toEqual([7, 7]);
 
         } finally {

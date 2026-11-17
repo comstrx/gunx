@@ -1,4 +1,4 @@
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as socket from "engine-socket";
 import * as string from "engine-string";
@@ -56,9 +56,9 @@ export const liveProtocol: socket.Protocol = {
     encode: ( frame, command ) => encodeFrame(command ? { ...frame, event: command } : frame),
     decode: ( text ) => decodeFrame(text, Number.POSITIVE_INFINITY),
     kind: ( frame ) => frame.event === "ping" ? "ping" : frame.event === "pong" || (frame.event === "ack" && frame.id !== undefined) ? "quiet" : frame.event === "error" ? "error" : frame.event === "connected" ? "hello" : undefined,
-    fault: ( frame ) => error.fromJson(frame.data) ?? error.fromEnvelope(frame.data, 400),
+    fault: ( frame ) => exception.fromJson(frame.data) ?? exception.fromEnvelope(frame.data, 400),
     identity: identityOf,
-    ending: ( code, reason ) => error.fault(code === 4001 ? "unauthorized" : code === 1008 ? "forbidden" : "unavailable", code === 4001 || code === 1008 ? "socket.refused" : "socket.closed", { cause: { code, reason } }),
+    ending: ( code, reason ) => exception.fault(code === 4001 ? "unauthorized" : code === 1008 ? "forbidden" : "unavailable", code === 4001 || code === 1008 ? "socket.refused" : "socket.closed", { cause: { code, reason } }),
     retry: ( code ) => code !== 1000 && code !== 1008 && code !== 4001,
 };
 export function connect ( options: Connect ): socket.Connection {

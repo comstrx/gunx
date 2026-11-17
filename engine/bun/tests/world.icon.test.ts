@@ -1,4 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
+import * as exception from "engine/exception";
 import * as world from "engine/world";
 
 describe("world.icon", () => {
@@ -22,7 +23,7 @@ describe("world.icon", () => {
         expect(more.resolve("ok")?.name).toBe("check");
         expect(icons.has("heart")).toBe(false);
         expect([icons.search("arrow", -1), icons.search("arrow", Number.NaN).length, icons.search("", 5), icons.search("arrow", 0), icons.resolve("arrow_right")?.name, icons.nameOf("Next"), icons.nameOf("nope")]).toEqual([[], 1, [], [], "arrow-right", "arrow-right", undefined]);
-        expect([() => world.icons({ a: { path: "M", viewBox: "x" } }), () => world.icons({ a: { path: [] } }), () => world.icons({ a: "" }), () => world.icons({ a: 7 as never }), () => world.icons({ a: "M" }, { x: "y", y: "x" }), () => world.icons({ a: "M" }, { "": "a" }), () => world.icons({ "": "M" })].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof RangeError ? "refused" : "?"; } })).toEqual(Array.from({ length: 7 }, () => "refused"));
+        expect([() => world.icons({ a: { path: "M", viewBox: "x" } }), () => world.icons({ a: { path: [] } }), () => world.icons({ a: "" }), () => world.icons({ a: 7 as never }), () => world.icons({ a: "M" }, { x: "y", y: "x" }), () => world.icons({ a: "M" }, { "": "a" }), () => world.icons({ "": "M" })].map(( work ) => { try { work(); return "ok"; } catch ( caught ) { return caught instanceof exception.Fault ? "refused" : "?"; } })).toEqual(Array.from({ length: 7 }, () => "refused"));
         expect([world.icons({ a: "M" }, { x: "x" }).has("x"), world.icons({ a: "M" }, { a: "a" }).resolve("a")?.name, world.icons({ a: "M", b: "N" }, { b: "a" }).resolve("b")?.path, world.icons({ a: "M" }, { x: "a" }).extend({ x: "N" }).resolve("x")?.path, world.icons({ a: { path: "M", viewBox: " 0 0 16,16 " } }).resolve("a")?.viewBox]).toEqual([false, "a", ["N"], ["N"], "0 0 16,16"]);
 
     });

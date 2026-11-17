@@ -38,6 +38,11 @@ class IndexRequest(Request):
 
         return given
 
+class TestRequest(Request):
+
+    carries : ClassVar[tuple[str, ...]] = ("principal",)
+    reason  : ClassVar[str] = "notice.input"
+
 class ReadRequest(Request):
 
     carries : ClassVar[tuple[str, ...]] = ("principal",)

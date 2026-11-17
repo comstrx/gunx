@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "engine-date": "workspace:*",
+    "engine-exception": "workspace:*",
     "engine-rand": "workspace:*",
     "engine-string": "workspace:*",
     "engine-validate": "workspace:*",

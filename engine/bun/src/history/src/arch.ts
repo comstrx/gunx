@@ -33,3 +33,9 @@ export type Held = { at: number | undefined; state: unknown };
 export type Seen = { href: string; state: unknown; entry: Entry };
 export type Failed = { failure: unknown };
 export type Patch = Record<string, string | number | boolean | readonly (string | number | boolean)[] | null | undefined>;
+export type Host = {
+    location?: { pathname: string; search: string; hash: string };
+    history?: { state: unknown; pushState: ( state: unknown, title: string, href: string ) => void; replaceState: ( state: unknown, title: string, href: string ) => void; go: ( delta: number ) => void };
+    addEventListener?: ( name: "popstate", handler: ( event: { state: unknown } ) => void ) => void;
+    removeEventListener?: ( name: "popstate", handler: ( event: { state: unknown } ) => void ) => void;
+};

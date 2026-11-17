@@ -1,9 +1,11 @@
 import { basename } from "node:path";
-import * as error from "engine-error";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
-import type { Catalog, Directives, Values } from "./arch.ts";
+import * as net from "engine-net";
+import type * as world from "engine-world";
+import type { Directives, Values } from "./arch.ts";
 
-const files: Readonly<Record<string, Catalog>> = { "countries.json": "countries", "currencies.json": "currencies", "languages.json": "languages", "emojis.json": "emoji" };
+const files: Readonly<Record<string, world.Catalog>> = { "countries.json": "countries", "currencies.json": "currencies", "languages.json": "languages", "emojis.json": "emoji" };
 const placeholder = /{{\s*([\w-]+(?:\.[\w-]+)*)\s*}}/g;
 
 function scalar ( value: unknown ): boolean {
@@ -12,29 +14,48 @@ function scalar ( value: unknown ): boolean {
 
 }
 
-export function csp ( api: string, directives: Directives = {} ): string {
+function origins ( api: string ): string[] {
 
-    const endpoint = URL.canParse(api) ? new URL(api) : undefined;
+    const parts = net.parseUrl(api);
 
-    if ( endpoint === undefined || (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") ) throw error.fault("validation", "tool.csp", { message: "the API uses http or https" });
+    if ( parts === undefined || (parts.protocol !== "http" && parts.protocol !== "https") ) throw exception.fault("validation", "tool.csp", { message: "the API uses http or https" });
 
-    const origin = endpoint.origin;
+    return [parts.origin, `${parts.protocol === "https" ? "wss" : "ws"}://${parts.host}`];
 
-    endpoint.protocol = endpoint.protocol === "https:" ? "wss:" : "ws:";
+}
 
-    const base: Directives = {
+function sourced ( api: string | readonly string[], lead: string, more: readonly string[] = [] ): string {
+
+    const served = (typeof api === "string" ? [api] : api).map(( one ) => origins(one)[0] ?? "");
+
+    return ["'self'", lead, ...new Set([...served, ...more])].join(" ");
+
+}
+
+export function pictured ( api: string | readonly string[], media: readonly string[] = [] ): string {
+
+    return sourced(api, "data:", media);
+
+}
+export function csp ( api: string | readonly string[], directives: Directives = {} ): string {
+
+    const reached = [...new Set((typeof api === "string" ? [api] : api).flatMap(origins))];
+
+    if ( reached.length === 0 ) throw exception.fault("validation", "tool.csp", { message: "the API uses http or https" });
+
+    return net.contentSecurityPolicy({
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self'",
         "font-src": "'self'",
-        "img-src": "'self' data:",
-        "connect-src": `'self' ${origin} ${endpoint.origin}`,
+        "img-src": pictured(api),
+        "media-src": sourced(api, "blob:"),
+        "connect-src": `'self' ${reached.join(" ")}`,
         "object-src": "'none'",
         "base-uri": "'none'",
         "form-action": "'none'",
-    };
-
-    return Object.entries({ ...base, ...directives }).map(([name, value]) => `${name} ${value}`).join("; ");
+        ...directives,
+    });
 
 }
 export function render ( template: string, values: Values ): string {
@@ -44,16 +65,16 @@ export function render ( template: string, values: Values ): string {
         const value = key.split(".").reduce<unknown>(( held, part ) => (json.isRecord(held) && Object.hasOwn(held, part) ? held[part] : undefined), values);
         const text: unknown = typeof value === "string" ? value : Array.isArray(value) && value.every(scalar) ? value.join(" ") : JSON.stringify(value);
 
-        if ( typeof text !== "string" ) throw error.fault("validation", "tool.render", { message: `the template names {{${key}}}, which was not given as text or json` });
+        if ( typeof text !== "string" ) throw exception.fault("validation", "tool.render", { message: `the template names {{${key}}}, which was not given as text or json` });
 
         return Bun.escapeHTML(text);
 
     });
 
 }
-export function catalogs ( kept: readonly Catalog[] ): Bun.BunPlugin {
+export function catalogs ( kept: readonly world.Catalog[] ): Bun.BunPlugin {
 
-    const wanted = new Set<Catalog>(kept);
+    const wanted = new Set<world.Catalog>(kept);
 
     return {
         name: "engine-world-catalogs",

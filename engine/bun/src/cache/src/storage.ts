@@ -1,9 +1,13 @@
-import * as adapter from "engine-adapter";
-import * as error from "engine-error";
+import * as device from "engine-device";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
-import type { Change, Codec, CookieOptions, Driver, Jar, Kind, Listeners, Lock, Storage, StorageEvent, Typed, WebStorage } from "./arch.ts";
+import type { Change, Codec, CookieDocument, CookieOptions, Driver, Host, Jar, Kind, Listeners, Lock, Registry, Storage, StorageEvent, Typed, WebStorage } from "./arch.ts";
+import { documentCookies } from "./cookie.ts";
+import { registry } from "./kinds.ts";
 
-export const storages: adapter.Family<Storage> = adapter.family<Storage>("cache.storage");
+export const storages: Registry<Storage> = registry<Storage>("cache.storage");
+
+const fleeting = new WeakSet<Storage>();
 
 const made = new WeakSet<object>();
 
@@ -31,7 +35,7 @@ function listeners (): Listeners {
     };
     const notify = ( onChange: Change, value: string | null ): void => {
 
-        try {
+        exception.rescue(() => {
 
             const result: unknown = onChange(value);
 
@@ -42,11 +46,11 @@ function listeners (): Listeners {
             pending += 1;
             void Promise.resolve(result).then(() => undefined, caught).then(finished);
 
-        } catch ( cause ) {
+        }, ( cause ) => {
 
             caught(cause);
 
-        }
+        });
 
     };
 
@@ -89,11 +93,11 @@ function listeners (): Listeners {
     };
 
 }
-function refused ( cause: unknown ): error.Fault {
+function refused ( cause: unknown ): exception.Fault {
 
     const full = typeof cause === "object" && cause !== null && "name" in cause && /quota/i.test(String(cause.name));
 
-    return error.fault(full ? "too_large" : "unavailable", full ? "storage.full" : "storage.refused", { cause });
+    return exception.fault(full ? "too_large" : "unavailable", full ? "storage.full" : "storage.refused", { cause });
 
 }
 function brand ( out: Storage ): Storage {
@@ -103,21 +107,21 @@ function brand ( out: Storage ): Storage {
     return out;
 
 }
-function named ( target: WebStorage, host: adapter.Host ): "local" | "session" | undefined {
+function named ( target: WebStorage, host: Host ): "local" | "session" | undefined {
 
-    if ( adapter.probe(() => host.localStorage) === target ) return "local";
+    if ( exception.probe(() => host.localStorage) === target ) return "local";
 
-    return adapter.probe(() => host.sessionStorage) === target ? "session" : undefined;
+    return exception.probe(() => host.sessionStorage) === target ? "session" : undefined;
 
 }
-function webLock ( target: WebStorage, host: adapter.Host ): Lock | undefined {
+function webLock ( target: WebStorage, host: Host ): Lock | undefined {
 
     const place = named(target, host);
 
     if ( place === "session" ) return serial();
     if ( place === undefined ) return undefined;
 
-    const locks = adapter.probe(() => host.navigator?.locks);
+    const locks = exception.probe(() => host.navigator?.locks);
 
     if ( locks === undefined ) return undefined;
 
@@ -125,9 +129,9 @@ function webLock ( target: WebStorage, host: adapter.Host ): Lock | undefined {
 
 }
 
-export function unguarded (): error.Fault {
+export function unguarded (): exception.Fault {
 
-    return error.fault("unavailable", "cache.unguarded", { message: "the storage has no shared lock" });
+    return exception.fault("unavailable", "cache.unguarded", { message: "the storage has no shared lock" });
 
 }
 export function serial (): Lock {
@@ -153,9 +157,16 @@ export function serial (): Lock {
 }
 function webKind ( name: "localStorage" | "sessionStorage" ): Storage {
 
-    const found = adapter.probe(() => adapter.host()[name]);
+    const found = exception.probe(() => device.host<Host>()[name]);
 
     return found ? web(found) : memory();
+
+}
+function jarKind (): Storage {
+
+    const found = exception.probe(() => device.host<Host>().document);
+
+    return found !== undefined && typeof found.cookie === "string" ? cookies(documentCookies(found as CookieDocument)) : memory();
 
 }
 
@@ -185,17 +196,17 @@ export function driver ( given: Driver ): Storage {
             const stopLocal = local.add(key, onChange);
             let stopGiven: (() => void) | undefined;
 
-            try {
+            exception.rescue(() => {
 
                 stopGiven = given.watch?.(key, ( value ) => local.notify(onChange, value));
 
-            } catch ( cause ) {
+            }, ( cause ) => {
 
                 stopLocal();
 
                 throw cause;
 
-            }
+            });
 
             let live = true;
 
@@ -225,8 +236,7 @@ export function driver ( given: Driver ): Storage {
 export function memory (): Storage {
 
     const data = new Map<string, string>();
-
-    return driver({
+    const made = driver({
         get: ( key ) => data.get(key) ?? null,
         set: ( key, value ) => {
 
@@ -242,37 +252,41 @@ export function memory (): Storage {
         lock: serial(),
     });
 
+    fleeting.add(made);
+
+    return made;
+
 }
-export function web ( target: WebStorage, host: adapter.Host = adapter.host() ): Storage {
+export function web ( target: WebStorage, host: Host = device.host<Host>() ): Storage {
 
     return driver({
         lock: webLock(target, host),
         get: ( key ) => target.getItem(key),
         set: ( key, value ) => {
 
-            try {
+            exception.rescue(() => {
 
                 target.setItem(key, value);
 
-            } catch ( cause ) {
+            }, ( cause ) => {
 
                 throw refused(cause);
 
-            }
+            });
 
         },
         delete: ( key ) => target.removeItem(key),
         keys: () => Array.from({ length: target.length }, ( _, index ) => target.key(index)).filter(( key ): key is string => key !== null),
         watch: ( key, onChange ) => {
 
-            const handler = (( event: StorageEvent ): void => {
+            const handler = ( event: StorageEvent ): void => {
 
                 if ( event.storageArea !== undefined && event.storageArea !== target ) return;
 
                 if ( event.key === key ) onChange(event.newValue);
                 else if ( event.key === null ) onChange(null);
 
-            }) as adapter.Handler;
+            };
 
             host.addEventListener?.("storage", handler);
 
@@ -377,8 +391,15 @@ export function storage ( kind?: Kind | string ): Storage {
     return storages.pick(kind);
 
 }
+export function volatile ( kind?: Kind | string ): boolean {
+
+    return fleeting.has(storages.pick(kind));
+
+}
 
 storages.lazy("memory", memory);
 storages.lazy("local", () => webKind("localStorage"));
 storages.lazy("session", () => webKind("sessionStorage"));
-storages.prefer(adapter.runtime().runtime === "browser" ? "local" : "memory");
+storages.lazy("cookie", jarKind);
+storages.lazy("secure", memory);
+storages.prefer(device.runtime().runtime === "browser" ? "local" : "memory");

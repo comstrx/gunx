@@ -3,12 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Confirm } from "../src/components/confirm.tsx";
 import { Denied } from "../src/components/denied.tsx";
 import { Greeting } from "../src/components/greeting.tsx";
-import { answer, ask } from "../src/specs/runtime.ts";
+import { host } from "../src/specs/app.ts";
 import { instance } from "../src/stores/preferences.ts";
 
 const noop = (): void => undefined;
 
-afterEach(() => instance.getState().setLocale("ar"));
+afterEach(() => instance().getState().setLocale("ar"));
 
 describe("components", () => {
 
@@ -33,7 +33,7 @@ describe("components", () => {
         expect(arabic).toContain("مرحباً من أكمي");
         expect(arabic).toContain("English");
         expect(arabic).not.toContain('data-testid="skeleton-display-most"');
-        instance.getState().toggleLocale();
+        instance().getState().toggleLocale();
 
         const english = renderToStaticMarkup(<Greeting status="done" message="hello there, world" onRefresh={noop} />);
 
@@ -44,7 +44,7 @@ describe("components", () => {
     });
     it("the greeting turns a failure into a designed state with a retry", () => {
 
-        instance.getState().setLocale("en");
+        instance().getState().setLocale("en");
 
         const failed = renderToStaticMarkup(<Greeting status="failed" message={undefined} onRefresh={noop} />);
 
@@ -79,7 +79,7 @@ describe("components", () => {
 
         expect(renderToStaticMarkup(<Confirm locale="ar" />)).toBe("");
 
-        const asked = ask("hello.refresh");
+        const asked = host.app.ask("hello.refresh");
         const arabic = renderToStaticMarkup(<Confirm locale="ar" />);
         const english = renderToStaticMarkup(<Confirm locale="en" />);
         const id = /aria-labelledby="([^"]+)" aria-modal="true" role="alertdialog"/.exec(arabic)?.[1] ?? "";
@@ -95,7 +95,7 @@ describe("components", () => {
         expect(english).toContain(">New greeting</h2>");
         expect(english).toContain(">No</div>");
         expect(english).toContain(">Yes</div>");
-        answer(true);
+        host.app.answer(true);
         expect(await asked).toBe(true);
         expect(renderToStaticMarkup(<Confirm locale="ar" />)).toBe("");
 

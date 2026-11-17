@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as rand from "engine-rand";
 import * as string from "engine-string";
 import type { Bytes, Gcm, Kept, Lane, Source } from "./arch.ts";
@@ -79,7 +80,7 @@ export async function open ( sealed: string, secret: string | Uint8Array, contex
 
     const [, salt = "", iv = "", cipher = ""] = sealed.split(".");
 
-    try {
+    return await exception.rescueAsync(async () => {
 
         const name = await label(source, material);
         const held = lanes.get(name)?.text === salt ? sealing : opening;
@@ -89,11 +90,11 @@ export async function open ( sealed: string, secret: string | Uint8Array, contex
 
         return string.utf8(new Uint8Array(plain));
 
-    } catch {
+    }, () => {
 
         return undefined;
 
-    }
+    });
 
 }
 export async function sign ( payload: string, secret: string | Uint8Array ): Promise<string> {

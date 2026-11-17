@@ -50,7 +50,8 @@ core:cli:parse () {
                 CLI_ARGS+=( "${1}" )
                 shift
 
-                (( ${#CLI_ARGS[@]} != 1 )) || [[ -z "${CLI_RAW[${CLI_ARGS[0]}]+x}" ]] || { core:cli:raw "$@"; break; }
+                (( ${#CLI_ARGS[@]} != 1 )) || [[ -z "${CLI_ARGS[0]}" || -z "${CLI_RAW[${CLI_ARGS[0]}]+x}" ]] \
+                    || { core:cli:raw "$@"; break; }
             ;;
         esac
 

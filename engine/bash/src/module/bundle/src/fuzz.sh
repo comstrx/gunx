@@ -1,9 +1,19 @@
 module:bundle:fuzz:run () {
 
-    local seconds="${1:-10}" file="" name="" input="" result="" runs="" code="" status=0 verdict="" saved="" crashes="" failed=0
+    local seconds="${1:-}" count=0 budget=0 file="" name="" input="" result="" runs="" code="" status=0 verdict="" saved="" crashes="" failed=0
     local -a names=()
 
-    seconds="$(core:proc:seconds "${seconds}" Seconds)" || return
+    count="$(core:cli:value --count)" || count=0
+    core:num:natural "${count}" || { core:error:fail "--count must be a count of runs: ${count}"; return; }
+
+    if [[ -z "${seconds}" ]] && (( count > 0 )); then seconds=0 budget=86400
+    else
+
+        seconds="$(core:proc:seconds "${seconds:-10}" Seconds)" || return
+        budget=$(( seconds + 5 ))
+
+    fi
+
     [[ "${TOOL_BUNDLED:-false}" != true ]] || { core:error:fail "Fuzz runs from the source checkout"; return; }
 
     while IFS= read -r -d '' file; do
@@ -15,19 +25,19 @@ module:bundle:fuzz:run () {
     (( ${#names[@]} > 0 )) || { core:error:fail "No fuzz targets"; return; }
 
     input="$(core:fs:temp:file)" || return
-    crashes="${TOOL_ROOT}/${MANIFEST[paths.build]}/fuzz"
+    crashes="${TOOL_ENGINE}/${MANIFEST[paths.build]}/fuzz"
 
     for name in "${names[@]}"; do
 
         status=0
-        result="$(core:proc:timeout "$(( seconds + 5 ))" module:bundle:fuzz:loop "${name}" "${input}" "${seconds}")" || status=$?
+        result="$(core:proc:timeout "${budget}" module:bundle:fuzz:loop "${name}" "${input}" "${seconds}" "${count}")" || status=$?
 
         read -r runs code <<< "${result:-? 124}"
 
         case "${status}" in
             0)   verdict=ok ;;
             124) verdict=HANG ;;
-            *)   verdict="CRASH exit ${code}" ;;
+            *)   verdict="CRASH ${code}" ;;
         esac
 
         if [[ "${verdict}" != ok ]]; then
@@ -39,30 +49,41 @@ module:bundle:fuzz:run () {
                 return
             fi
 
-            verdict+=" ${saved#"${TOOL_ROOT}/"}"
+            [[ ! -s "${input}.err" ]] || cp -- "${input}.err" "${saved}.err" || true
+
+            verdict+=" ${saved#"${TOOL_ENGINE}/"}"
             failed=1
 
         fi
 
-        core:log:print "${name}  runs=${runs}  seconds=${seconds}  ${verdict}"
+        core:log:print "${name}  runs=${runs}  ${verdict}"
 
     done
 
-    (( failed == 0 )) || { core:error:fail "Fuzz broke a target; the inputs are under ${crashes#"${TOOL_ROOT}/"}"; return; }
+    rm -f -- "${input}.err"
+
+    (( failed == 0 )) || { core:error:fail "Fuzz broke a target; the inputs are under ${crashes#"${TOOL_ENGINE}/"}"; return; }
 
 }
 module:bundle:fuzz:loop () {
 
-    local name="${1}" input="${2}" seconds="${3}" runs=0 started="${EPOCHSECONDS}" status=0
+    local name="${1}" input="${2}" seconds="${3}" count="${4}" runs=0 started="${EPOCHSECONDS}" status=0 size=0
 
-    while (( EPOCHSECONDS - started < seconds )); do
+    while (( (seconds == 0 || EPOCHSECONDS - started < seconds) && (count == 0 || runs < count) )); do
 
-        head -c "$(( RANDOM % 513 ))" /dev/urandom > "${input}"
+        size=$(( RANDOM % 513 ))
+
+        if (( runs % 2 == 0 )); then head -c "${size}" /dev/urandom > "${input}"
+        else LC_ALL=C tr -dc '[:print:]\n\t' < /dev/urandom 2>/dev/null | head -c "${size}" > "${input}" || true
+        fi
+
         status=0
 
-        ( "${name}" "${input}" ) >/dev/null 2>&1 || status=$?
+        ( "${name}" "${input}" ) >/dev/null 2>"${input}.err" || status=$?
 
-        (( status <= 1 )) || { core:log:print "${runs} ${status}"; return 2; }
+        (( status <= 1 )) || { core:log:print "${runs} exit-${status}"; return 2; }
+
+        [[ ! -s "${input}.err" ]] || ! grep -qE ': line [0-9]+: ' -- "${input}.err" || { core:log:print "${runs} bash-error"; return 2; }
 
         runs=$(( runs + 1 ))
 

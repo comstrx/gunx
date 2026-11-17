@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import type { Bounds, Fit, Point, Viewport } from "./arch.ts";
 import { deg, distance, earthRadius, interpolate, isPoint, rad } from "./point.ts";
 
@@ -82,7 +83,7 @@ function grown ( box: Bounds, pad: number ): Bounds {
 
 export function meters ( value: number ): number {
 
-    if ( !(value >= 0) ) throw new RangeError("not a distance");
+    if ( !(value >= 0) ) throw exception.misuse("not a distance");
 
     return value;
 
@@ -102,7 +103,7 @@ export function around ( point: Point, radiusMeters: number ): Bounds {
     const polar = !(point.lat + lat < 90 && point.lat - lat > -90 && reach < 1);
     const lng = polar ? 180 : Math.asin(reach) * deg;
 
-    if ( !isPoint(point) ) throw new RangeError("not a point");
+    if ( !isPoint(point) ) throw exception.misuse("not a point");
 
     return {
         south: Math.max(-90, point.lat - lat),

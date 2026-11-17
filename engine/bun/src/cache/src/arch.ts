@@ -1,4 +1,3 @@
-import type * as adapter from "engine-adapter";
 
 export type SameSite = "strict" | "lax" | "none";
 export type CookieOptions = {
@@ -16,7 +15,7 @@ export type HeaderJar = Jar & { outgoing: () => string[] };
 export type CookieDocument = { cookie: string };
 export type StorageEvent = { key: string | null; newValue: string | null; storageArea?: unknown };
 export type Listeners = { add: ( key: string, onChange: Change ) => () => void; fire: ( key: string, value: string | null ) => void; notify: ( onChange: Change, value: string | null ) => void; flush: () => Promise<void> };
-export type Kind = "local" | "session" | "memory" | "cookie";
+export type Kind = "local" | "session" | "memory" | "cookie" | "secure";
 export type Change = ( value: string | null ) => void;
 export type Lock = <T>( key: string, work: () => Promise<T> ) => Promise<T>;
 export type Storage = {
@@ -37,7 +36,26 @@ export type Driver = {
     lock?: Lock | undefined;
     flush?: (() => Promise<void>) | undefined;
 };
-export type WebStorage = adapter.WebStorage;
+export type WebStorage = { getItem: ( key: string ) => string | null; setItem: ( key: string, value: string ) => void; removeItem: ( key: string ) => void; key: ( index: number ) => string | null; readonly length: number };
+export type Host = {
+    localStorage?: WebStorage;
+    sessionStorage?: WebStorage;
+    document?: { cookie?: string };
+    navigator?: { locks?: { request: ( name: string, work: () => Promise<unknown> ) => Promise<unknown> } };
+    addEventListener?: ( name: "storage", handler: ( event: StorageEvent ) => void ) => void;
+    removeEventListener?: ( name: "storage", handler: ( event: StorageEvent ) => void ) => void;
+};
+export type Registry<T> = {
+    readonly name: string;
+    add: ( kind: string, value: T ) => () => void;
+    lazy: ( kind: string, make: () => T ) => () => void;
+    pick: ( kind?: string ) => T;
+    has: ( kind: string ) => boolean;
+    prefer: ( kind: string ) => void;
+    use: ( kind: string ) => () => void;
+    preferred: () => string | undefined;
+    kinds: () => string[];
+};
 export type Codec<T> = { encode: ( value: T ) => string; decode: ( text: string ) => T | undefined };
 export type Typed<T> = { read: ( key: string ) => Promise<T | undefined>; write: ( key: string, value: T ) => Promise<void>; remove: ( key: string ) => Promise<void> };
 export type Envelope = { v: unknown; e?: number | undefined; k?: string | undefined };

@@ -1,6 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
 import * as api from "engine/api";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as validate from "engine/validate";
 
 const user = validate.object({ id: validate.number(), name: validate.string() });
@@ -10,7 +10,7 @@ const users = api.feature("users", {
     file: api.get("/files/{path*}", validate.object({ path: validate.string() }), user),
     make: api.post("/users", validate.object({ name: validate.string() }), user),
 });
-const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return error.isFault(caught) ? caught.reason ?? "?" : "?"; } };
+const reasonOf = ( work: () => unknown ): string => { try { work(); return "ok"; } catch ( caught ) { return exception.isFault(caught) ? caught.reason ?? "?" : "?"; } };
 const server = (): api.Stub => api.stub({ "GET /users": () => [{ id: 1, name: "a" }], "GET /users/{id}": ({ params }) => ({ id: 1, name: params.id ?? "" }), "GET /files/{path*}": ({ params }) => ({ id: 1, name: params.path ?? "" }), "POST /users": () => ({ id: 2, name: "b" }) });
 const signal = (): AbortSignal => new AbortController().signal;
 
@@ -100,7 +100,7 @@ describe("api.client", () => {
         expect((await api.create({ baseUrl: "https://a.io", fetcher: api.stub({ "GET /users": () => ({ data: [], code: "weird", message: "m", errors: null, reason: null, meta: {} }) }).fetcher }).call(users.list, {})).message).toBe("m");
         await expect(api.create({ baseUrl: "https://a.io", fetcher: stub.fetcher, token: async () => { throw new Error("boom"); } }).call(users.list, {})).rejects.toMatchObject({ code: "internal", reason: "api.token" });
         await expect(api.create({ baseUrl: "https://a.io", fetcher: stub.fetcher, token: () => { throw new Error("boom"); } }).call(users.list, {})).rejects.toMatchObject({ code: "internal", reason: "api.token" });
-        await expect(api.create({ baseUrl: "https://a.io", fetcher: stub.fetcher, token: async () => { throw error.fault("unauthorized", "auth.expired"); } }).call(users.list, {})).rejects.toMatchObject({ code: "unauthorized", reason: "auth.expired" });
+        await expect(api.create({ baseUrl: "https://a.io", fetcher: stub.fetcher, token: async () => { throw exception.fault("unauthorized", "auth.expired"); } }).call(users.list, {})).rejects.toMatchObject({ code: "unauthorized", reason: "auth.expired" });
         await expect(api.create({ baseUrl: "https://a.io", fetcher: async () => { throw new TypeError("net down"); }, retries: 0 }).call(users.list, {})).rejects.toMatchObject({ code: "network" });
         await expect(client.call(users.make, { name: "x" }, { idempotencyKey: "bad key" })).rejects.toMatchObject({ reason: "api.idempotency" });
         await expect(client.call(users.make, { name: "x" }, { idempotencyKey: "k".repeat(256) })).rejects.toMatchObject({ reason: "api.idempotency" });
@@ -135,7 +135,7 @@ describe("api.client", () => {
         for ( let turn = 0; turn < 3; turn += 1 ) statuses.push((await made.fetcher("https://x/a/c", { method: "GET", headers: { "x-request-id": "r1" }, signal: signal() })).status);
 
         expect(statuses).toEqual([429, 429, 200]);
-        made.refuse("GET /a/c", error.fault("conflict", "x.taken", { retryAfter: 2.2 }));
+        made.refuse("GET /a/c", exception.fault("conflict", "x.taken", { retryAfter: 2.2 }));
 
         const refused = await made.fetcher("https://x/a/c", { method: "GET", headers: { "x-request-id": "r9" }, signal: signal() });
 
@@ -152,6 +152,39 @@ describe("api.client", () => {
         slow.latency(1000);
         setTimeout(() => controller.abort(), 1);
         await expect(slow.fetcher("https://x/x", { method: "GET", headers: {}, signal: controller.signal })).rejects.toBeDefined();
+
+    });
+    it("an endpoint carries one file as its whole body: its kind is the content type, every other field travels in the query, and a wrong or a second file is refused", async () => {
+
+        const stored = validate.object({ size: validate.number() });
+        const media = api.feature("media", {
+            avatar: api.put("/users/{id}/avatar", validate.object({ id: validate.string(), file: api.file({ max: 8, accept: ["image/*"] }), crop: validate.optional(validate.boolean()) }), stored),
+            pair: api.post("/pair", validate.object({ a: api.file(), b: api.file() }), stored),
+        });
+        const seen: { url: string; type: string | undefined; body: unknown }[] = [];
+        const client = api.create({
+            baseUrl: "https://a.io",
+            trace: false,
+            fetcher: async ( url, init ) => {
+
+                seen.push({ url, type: init.headers["content-type"], body: init.body });
+
+                return new Response(JSON.stringify(api.answer({ size: 3 })), { headers: { "content-type": "application/json" } });
+
+            },
+        });
+        const image = new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" });
+        const faultOf = async ( work: () => Promise<unknown> ): Promise<string> => work().then(() => "ok", ( caught: unknown ) => (exception.isFault(caught) ? caught.reason ?? caught.code : "?"));
+        const reply = await client.call(media.avatar, { id: "7", file: image, crop: true });
+
+        expect([reply.data, seen[0]?.url, seen[0]?.type, seen[0]?.body === image]).toEqual([{ size: 3 }, "https://a.io/users/7/avatar?crop=true", "image/png", true]);
+        expect(await Promise.all([
+            faultOf(() => client.call(media.avatar, { id: "7", file: new Blob([new Uint8Array(9)], { type: "image/png" }) })),
+            faultOf(() => client.call(media.avatar, { id: "7", file: new Blob(["abc"], { type: "text/plain" }) })),
+            faultOf(() => client.call(media.avatar, { id: "7", file: new Blob([], { type: "image/png" }) })),
+            faultOf(() => client.call(media.pair, { a: image, b: image })),
+        ])).toEqual(["media.avatar.input", "media.avatar.input", "media.avatar.input", "api.file"]);
+        expect(seen.length).toBe(1);
 
     });
     it("patches keep foreign rows, compare versions as numbers or text, never touch a row without the key and refuse a deleted single", () => {

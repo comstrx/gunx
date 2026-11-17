@@ -17,6 +17,20 @@ core:install:command () {
     core:sys:has "${command}" || { core:error:fail "${command} is still missing after installing $*"; return; }
 
 }
+core:install:need () {
+
+    local tool=""
+
+    for tool in "$@"; do
+
+        case "${tool}" in
+            xz) core:install:command xz apt=xz-utils || return ;;
+            *)  core:install:command "${tool}" || return ;;
+        esac
+
+    done
+
+}
 core:install:package () {
 
     local manager="" item="" name=""
@@ -57,6 +71,8 @@ core:install:archive () {
 
     [[ -n "${into}" ]] || { core:error:fail "A destination folder is required for ${name}"; return; }
 
+    core:install:need curl || return
+
     ! core:install:holds "${into}/${name}" "${digest}" || return 0
 
     core:fs:dir:new "${into}" 755 || return
@@ -86,9 +102,15 @@ core:install:fetch () {
     staging="$(core:fs:temp:dir)" || return
 
     core:net:fetch "${url}" "${archive}" || return
-
     actual="$(core:fs:file:hash "${archive}")" || return
-    [[ "${actual}" == "${digest}" ]] || { rm -f -- "${archive}"; core:error:fail "${name} checksum mismatch: expected ${digest}, got ${actual}"; return; }
+
+    [[ "${actual}" == "${digest}" ]] || {
+
+        rm -f -- "${archive}"
+        core:error:fail "${name} checksum mismatch: expected ${digest}, got ${actual}"
+        return
+
+    }
 
     core:install:unpack "${archive}" "${url}" "${member}" "${staging}" || return
 
@@ -105,11 +127,11 @@ core:install:unpack () {
     local archive="${1}" url="${2%%[?#]*}" member="${3}" into="${4}" status=0
 
     case "${url}" in
-        *.tar.gz|*.tgz) core:sys:need tar gzip && tar -xzf "${archive}" -C "${into}" -- "${member}" || status=$? ;;
-        *.tar.xz)       core:sys:need tar xz && tar -xJf "${archive}" -C "${into}" -- "${member}" || status=$? ;;
-        *.tar.bz2)      core:sys:need tar bzip2 && tar -xjf "${archive}" -C "${into}" -- "${member}" || status=$? ;;
-        *.zip)          core:sys:need unzip && unzip -q -o "${archive}" "${member}" -d "${into}" || status=$? ;;
-        *.gz)           core:sys:need gzip && gzip -dc "${archive}" > "${into}/${member}" || status=$? ;;
+        *.tar.gz|*.tgz) core:install:need tar gzip && tar -xzf "${archive}" -C "${into}" -- "${member}" || status=$? ;;
+        *.tar.xz)       core:install:need tar xz && tar -xJf "${archive}" -C "${into}" -- "${member}" || status=$? ;;
+        *.tar.bz2)      core:install:need tar bzip2 && tar -xjf "${archive}" -C "${into}" -- "${member}" || status=$? ;;
+        *.zip)          core:install:need unzip && unzip -q -o "${archive}" "${member}" -d "${into}" || status=$? ;;
+        *.gz)           core:install:need gzip && gzip -dc "${archive}" > "${into}/${member}" || status=$? ;;
         *)              cp -- "${archive}" "${into}/${member}" || status=$? ;;
     esac
 
@@ -133,11 +155,14 @@ core:install:cargo () {
     else [[ "${listed}" != *$'\n'"${crate} v"* ]] || return 0
     fi
 
-    if [[ "${crate}" != cargo-binstall ]] && cargo binstall -V >/dev/null 2>&1; then argv=( binstall -y --locked "${crate}${version:+@${version}}" )
-    else argv=( install --locked "${crate}" ); [[ -z "${version}" ]] || argv+=( --version "${version}" )
+    if [[ "${crate}" != cargo-binstall ]] && cargo binstall -V >/dev/null 2>&1; then
+        argv=( binstall -y --locked "${crate}${version:+@${version}}" )
+    else
+        argv=( install --locked "${crate}" ); [[ -z "${version}" ]] || argv+=( --version "${version}" )
     fi
 
-    core:proc:io cargo "${argv[@]}" >/dev/null || { core:error:fail "Cannot install ${crate}${version:+ ${version}} with cargo"; return; }
+    core:proc:io cargo "${argv[@]}" >/dev/null \
+        || { core:error:fail "Cannot install ${crate}${version:+ ${version}} with cargo"; return; }
 
 }
 core:install:go () {
@@ -181,6 +206,37 @@ core:install:rustup () {
         argv+=( --component "${component}" )
     done
 
-    core:proc:io rustup "${argv[@]}" >/dev/null || { core:error:fail "Cannot install the ${toolchain} toolchain with rustup"; return; }
+    core:proc:io rustup "${argv[@]}" >/dev/null \
+        || { core:error:fail "Cannot install the ${toolchain} toolchain with rustup"; return; }
+
+}
+core:install:uv () {
+
+    local tool="${1:-}" version="${2:-}"
+
+    [[ "${tool}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { core:error:fail "Not a Python tool name: ${tool}"; return; }
+    [[ -z "${version}" ]] || core:validate:semver "${version}" || { core:error:fail "Not a version of ${tool}: ${version}"; return; }
+
+    core:sys:need uv || return
+
+    [[ $'\n'"$(uv tool list 2>/dev/null)" != *$'\n'"${tool} v${version}"* ]] || return 0
+
+    core:proc:io uv tool install --force "${tool}${version:+==${version}}" >/dev/null \
+        || { core:error:fail "Cannot install ${tool}${version:+ ${version}} with uv"; return; }
+
+}
+core:install:bun () {
+
+    local package="${1:-}" version="${2:-}"
+
+    [[ "${package}" =~ ^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$ ]] || { core:error:fail "Not a package name: ${package}"; return; }
+    [[ -z "${version}" ]] || core:validate:semver "${version}" || { core:error:fail "Not a version of ${package}: ${version}"; return; }
+
+    core:sys:need bun || return
+
+    [[ "$(bun pm ls -g 2>/dev/null)" != *" ${package}@${version}"* ]] || return 0
+
+    core:proc:io bun add -g "${package}${version:+@${version}}" >/dev/null \
+        || { core:error:fail "Cannot install ${package}${version:+ ${version}} with bun"; return; }
 
 }

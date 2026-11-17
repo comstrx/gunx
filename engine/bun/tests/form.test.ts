@@ -1,5 +1,5 @@
 import { describe, expect, test as it } from "bun:test";
-import * as error from "engine/error";
+import * as exception from "engine/exception";
 import * as form from "engine/form";
 import * as validate from "engine/validate";
 
@@ -26,7 +26,7 @@ function told ( run: () => unknown ): string {
 
     } catch ( failure ) {
 
-        if ( error.is(failure) ) return `${failure.code}/${failure.reason}`;
+        if ( exception.is(failure) && failure.reason !== "misuse" ) return `${failure.code}/${failure.reason}`;
 
         return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
 
@@ -65,7 +65,7 @@ describe("form", () => {
 
                 keys.push(key);
 
-                if ( fail ) throw error.fault("validation", "taken", { errors: { email: ["taken"] } });
+                if ( fail ) throw exception.fault("validation", "taken", { errors: { email: ["taken"] } });
 
                 return { id: value.qty };
 
@@ -433,7 +433,7 @@ describe("form", () => {
     });
     it("a failed submit keeps the fault and its field errors beside the root until the next send, counts attempts and halts asks", async () => {
 
-        let answer: unknown = error.fault("validation", "taken", { errors: { email: ["taken"], "address.city": ["unknown"] } });
+        let answer: unknown = exception.fault("validation", "taken", { errors: { email: ["taken"], "address.city": ["unknown"] } });
         const made = define({ submit: async () => {
 
             if ( answer !== undefined ) throw answer;
@@ -452,7 +452,7 @@ describe("form", () => {
         expect(made.errors()).toEqual({ email: "taken", "address.city": "unknown" });
         made.set("address.city", "Giza");
         expect(made.errors()).toEqual({ email: "taken" });
-        answer = error.fault("unavailable", "down");
+        answer = exception.fault("unavailable", "down");
         made.set("email", "bob@example.com");
         expect(await made.submit()).toBeUndefined();
         expect<unknown[]>([made.fault()?.code, made.errors()]).toEqual(["unavailable", { _form: made.fault()?.message }]);
@@ -461,7 +461,7 @@ describe("form", () => {
         answer = new TypeError("broken");
         expect(await made.submit()).toBeUndefined();
         expect([made.fault()?.code, made.errors()._form]).toEqual(["internal", made.fault()?.message]);
-        answer = error.fault("validation", "bad", { message: "" });
+        answer = exception.fault("validation", "bad", { message: "" });
         expect(await made.submit()).toBeUndefined();
         expect(made.errors()).toEqual({ _form: "invalid" });
         answer = undefined;
@@ -607,7 +607,7 @@ describe("form", () => {
 
             keys.push(key);
 
-            if ( failing ) throw error.fault("unavailable", "down");
+            if ( failing ) throw exception.fault("unavailable", "down");
 
             return 1;
 

@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as list from "engine-list";
 import * as string from "engine-string";
 import fontRows from "../data/fonts.json" with { type: "json" };
@@ -69,7 +70,7 @@ export function fontFaces ( folder = fontFolder, display: Display = "swap" ): st
 
     const root = rootOf(word(folder));
 
-    if ( !displays.includes(display) ) throw new RangeError("not a display");
+    if ( !displays.includes(display) ) throw exception.misuse("not a display");
 
     return families.flatMap(( family ) => family.files.map(( face ) => [
         "@font-face {",

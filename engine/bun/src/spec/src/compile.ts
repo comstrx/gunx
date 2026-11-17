@@ -1,22 +1,23 @@
 import * as auth from "engine-auth";
-import * as error from "engine-error";
 import * as event from "engine-event";
+import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as list from "engine-list";
 import * as parse from "engine-parse";
 import * as string from "engine-string";
 import * as validate from "engine-validate";
-import type { Binding, Block, Catalogue, Compiled, CompiledFeature, CompiledScreen, Edge, Effect, Feature, Issue, Manifest, Options, Ranked, Scope, Screen, Shared, Surface, Trigger, Value, When } from "./arch.ts";
+import type { Binding, Block, Catalogue, Compiled, CompiledFeature, CompiledScreen, Edge, Effect, Feature, Issue, Manifest, Options, Plan, Ranked, Scope, Screen, Shared, Trigger, Value, When } from "./arch.ts";
 import { maxDepth as deepest, namespaces, pathPattern } from "./arch.ts";
 import { named, screenOf } from "./compiled.ts";
 import { isBuilt } from "./define.ts";
-import { blockShapeOf, featureShapeOf, screenShapeOf, surfaceShape } from "./shapes.ts";
+import { blockShapeOf, featureShapeOf, planShape, screenShapeOf } from "./shapes.ts";
 import { isReference, pathsOf, referencePath } from "./when.ts";
 
 const roots: ReadonlySet<string> = new Set(namespaces);
 const writable: ReadonlySet<string> = new Set(["form", "signals", "query"]);
 const flowing: readonly string[] = ["step", "index", "first", "last", "done"];
 const slotted = /\{([a-z][a-z0-9_]*)\}/g;
+const longest = 600_000;
 
 function own<T> ( held: Readonly<Record<string, T>> | undefined, key: string ): T | undefined {
 
@@ -171,21 +172,11 @@ function targetIssue ( scope: Scope, target: string, at: string ): void {
     if ( !scope.ids.has(target) && !scope.features.has(target) ) told(scope.issues, at, "effect.target", `${target}: no block or feature on this screen carries this id`, nearest(target, [...scope.ids, ...scope.features]), "give the block an id or name the feature");
 
 }
-function answered ( shared: Shared, target: string ): boolean {
+function landed ( scope: Scope, written: string, at: string ): void {
 
-    if ( shared.paths.has(target) ) return true;
+    const target = bare(written);
 
-    try {
-
-        const probe = parse.fill(target, Object.fromEntries(parse.templateKeys(target).map(( key ) => [key, "x"])));
-
-        return shared.surface.screens.some(( found ) => parse.match(found.path, probe) !== undefined);
-
-    } catch {
-
-        return false;
-
-    }
+    if ( !scope.shared.paths.has(target) && !answers(scope.shared.surface.screens, target) ) told(scope.issues, at, "effect.screen", `${written}: no screen answers this path`, nearest(target, scope.shared.paths));
 
 }
 function effectIssues ( scope: Scope, effects: readonly Effect[], at: string, source: string | undefined ): void {
@@ -194,12 +185,47 @@ function effectIssues ( scope: Scope, effects: readonly Effect[], at: string, so
 
         const here = `${at}[${index}]`;
 
-        if ( "set" in effect ) {
+        if ( "transfer" in effect ) {
+
+            scope.shared.transfers.push({ name: effect.transfer, ...(effect.to === undefined ? {} : { to: effect.to }), at: here });
+            inputIssues(scope, effect.with, here);
+
+            const known = scope.shared.options.carries;
+
+            for ( const asked of effect.carry ?? [] ) if ( known && !known.includes(asked) ) told(scope.issues, here, "transfer.carry", `${asked}: the part hands no such thing over`, nearest(asked, known), "name something the part's carries list offers");
+
+            if ( effect.reload === true && (effect.carry?.length ?? 0) > 0 ) told(scope.issues, here, "transfer.carry", "a transfer that reloads the page hands over only the config map; what it carries would not survive", undefined, "drop refresh, or drop carry");
+
+        } else if ( "open" in effect ) {
+
+            const schema = own(scope.shared.options.blocks, "popup");
+            const checked = schema ? validate.check(schema, effect.props ?? {}, "spec.popup") : undefined;
+
+            landed(scope, effect.open, here);
+
+            if ( checked && !checked.ok ) for ( const field of Object.keys(checked.fault.errors) ) told(scope.issues, here, "popup.props", `popup: ${field} ${(checked.fault.errors[field] ?? []).join(",")}`);
+
+            inputIssues(scope, effect.with, here);
+
+        } else if ( "close" in effect ) {
+
+            if ( effect.close !== "top" && effect.close !== "all" ) told(scope.issues, here, "effect.close", `${effect.close}: close takes top or all`);
+
+        } else if ( "set" in effect ) {
 
             writeIssue(scope, effect.set, here, source);
             valueIssues(scope, effect.to, here);
 
         } else if ( "clear" in effect ) writeIssue(scope, effect.clear, here, source);
+        else if ( "toggle" in effect ) writeIssue(scope, effect.toggle, here, source);
+        else if ( "after" in effect ) {
+
+            if ( !Number.isInteger(effect.after) || effect.after < 0 || effect.after > longest ) told(scope.issues, here, "effect.after", `${String(effect.after)}: a wait is whole milliseconds, up to ${longest}`);
+            if ( scope.leaving ) told(scope.issues, here, "effect.after", "a leave hook runs as its owner goes; nothing waits after it", undefined, "run the effects at once, or from another hook");
+
+            effectIssues(scope, effect.do, `${here}.do`, source);
+
+        }
         else if ( "show" in effect ) targetIssue(scope, effect.show, here);
         else if ( "hide" in effect ) targetIssue(scope, effect.hide, here);
         else if ( "enable" in effect ) targetIssue(scope, effect.enable, here);
@@ -226,11 +252,7 @@ function effectIssues ( scope: Scope, effects: readonly Effect[], at: string, so
 
         } else if ( "navigate" in effect ) {
 
-            const mark = effect.navigate.indexOf("?");
-            const target = mark === -1 ? effect.navigate : effect.navigate.slice(0, mark);
-
-            if ( !answered(scope.shared, target) ) told(scope.issues, here, "effect.screen", `${effect.navigate}: no screen answers this path`, nearest(target, scope.shared.paths));
-
+            landed(scope, effect.navigate, here);
             inputIssues(scope, effect.with, here);
 
         } else {
@@ -260,7 +282,14 @@ function effectIssues ( scope: Scope, effects: readonly Effect[], at: string, so
 }
 function hookIssues ( scope: Scope, hooks: Readonly<Record<string, readonly Effect[] | undefined>>, at: string ): void {
 
-    for ( const hook of Object.keys(hooks) ) effectIssues(scope, hooks[hook] ?? [], `${at}.on.${hook}`, undefined);
+    for ( const hook of Object.keys(hooks) ) {
+
+        scope.leaving = hook === "leave";
+        effectIssues(scope, hooks[hook] ?? [], `${at}.on.${hook}`, undefined);
+
+    }
+
+    scope.leaving = false;
 
 }
 function triggerIssues ( scope: Scope, triggers: readonly Trigger[], at: string ): void {
@@ -303,7 +332,14 @@ function listingIssues ( scope: Scope, binding: Extract<Binding, { read: string 
 
     }
 
-    if ( binding.live !== undefined && binding.live !== false ) scope.listened.add(typeof binding.live === "string" ? binding.live : `${binding.read.split(".")[0] ?? binding.read}.*`);
+    if ( binding.live !== undefined && binding.live !== false ) {
+
+        const topic = typeof binding.live === "string" ? binding.live : `${binding.read.split(".")[0] ?? binding.read}.*`;
+
+        scope.listened.add(topic);
+        scope.emitted.add(topic);
+
+    }
 
 }
 function bindingIssues ( scope: Scope, feature: Feature, manifest: Manifest | undefined, at: string ): void {
@@ -436,16 +472,29 @@ function written ( effects: readonly Effect[], out: Set<string> ): void {
     for ( const effect of effects ) {
 
         if ( "set" in effect && effect.set.startsWith("signals.") ) out.add(effect.set.slice(8).split(".")[0] ?? "");
+        if ( "toggle" in effect && effect.toggle.startsWith("signals.") ) out.add(effect.toggle.slice(8).split(".")[0] ?? "");
         if ( "check" in effect ) out.add("errors");
 
         if ( "do" in effect ) {
 
             written(effect.do, out);
-            written(effect.else ?? [], out);
+            written("else" in effect ? effect.else ?? [] : [], out);
 
         }
 
     }
+
+}
+function reached ( surface: Plan ): Set<string> {
+
+    const out = new Set<string>();
+
+    written(surface.on.enter ?? [], out);
+    written(surface.on.leave ?? [], out);
+
+    for ( const trigger of surface.triggers ) written(trigger.do, out);
+
+    return out;
 
 }
 function writtenSignals ( found: Screen ): Set<string> {
@@ -491,6 +540,50 @@ function blockIssues ( scope: Scope, blocks: readonly Block[], at: string, level
     }
 
 }
+function scoped ( at: string, shared: Shared, found: Pick<Screen, "query" | "signals" | "flow">, params: readonly string[], ids: readonly string[], signals: Iterable<string> ): Scope {
+
+    return {
+        at,
+        issues: shared.issues,
+        shared,
+        params: new Set(params),
+        query: new Set(found.query),
+        signals: new Set([...shared.signals, ...found.signals, ...signals]),
+        fields: new Set(),
+        ids: new Set(ids),
+        actions: new Set(),
+        features: new Set(),
+        emitted: new Set(),
+        listened: new Set(),
+        watches: [],
+        inTrigger: false,
+        leaving: false,
+        steps: new Set(found.flow),
+        forms: new Map(),
+    };
+
+}
+function unspoken ( surface: Plan, held: Readonly<Record<string, string>> ): string[] {
+
+    return Object.keys(held).length === 0 ? [] : surface.locales.filter(( code ) => typeof own(held, code) !== "string" || held[code] === "");
+
+}
+function compileSurface ( shared: Shared ): Scope {
+
+    const { surface } = shared;
+    const scope = scoped("surface", shared, { query: [], signals: [], flow: [] }, [], [], []);
+
+    scope.inTrigger = true;
+    effectIssues(scope, surface.on.enter ?? [], "surface.on.enter", undefined);
+    scope.inTrigger = false;
+    scope.leaving = true;
+    effectIssues(scope, surface.on.leave ?? [], "surface.on.leave", undefined);
+    scope.leaving = false;
+    triggerIssues(scope, surface.triggers, "surface.triggers");
+
+    return scope;
+
+}
 function compileScreen ( found: Screen, shared: Shared ): CompiledScreen {
 
     const { surface, options, issues } = shared;
@@ -501,24 +594,9 @@ function compileScreen ( found: Screen, shared: Shared ): CompiledScreen {
     const blockIds: string[] = [];
     const depth = measured(found.blocks, kinds, blockIds, 0);
     const allIds = [...blockIds, ...features.map(( feature ) => feature.id)];
-    const scope: Scope = {
-        at,
-        issues,
-        shared,
-        params: new Set(params),
-        query: new Set(found.query),
-        signals: new Set([...surface.signals, ...found.signals, ...writtenSignals(found)]),
-        fields: new Set(),
-        ids: new Set(allIds),
-        actions: new Set(),
-        features: new Set(),
-        emitted: new Set(),
-        listened: new Set(),
-        watches: [],
-        inTrigger: false,
-        steps: new Set(found.flow),
-        forms: new Map(),
-    };
+    const scope = scoped(at, shared, found, params, allIds, writtenSignals(found));
+    const schema = options.screen;
+    const fitting = schema ? validate.check(schema, found.settings, "spec.screen") : undefined;
 
     for ( const feature of features ) {
 
@@ -538,10 +616,13 @@ function compileScreen ( found: Screen, shared: Shared ): CompiledScreen {
     }
 
     const sorted = [...kinds].sort();
-    const missing = surface.locales.filter(( code ) => typeof own(found.title, code) !== "string" || found.title[code] === "");
+    const missing = unspoken(surface, found.title);
+    const untold = unspoken(surface, found.description);
 
     if ( options.maxDepth !== undefined && depth > options.maxDepth ) told(issues, at, "depth", `blocks nest ${depth} deep, limit ${options.maxDepth}`);
     if ( missing.length ) told(issues, at, "locale.missing", `title misses a locale: ${missing.join(", ")}`);
+    if ( untold.length ) told(issues, at, "locale.missing", `description misses a locale: ${untold.join(", ")}`);
+    if ( fitting && !fitting.ok ) for ( const field of Object.keys(fitting.fault.errors) ) told(issues, at, "screen.settings", `${found.name}: ${field} ${(fitting.fault.errors[field] ?? []).join(",")}`);
     if ( found.role !== "any" && found.role !== surface.role ) told(issues, at, "role", `screen role ${found.role} is not the surface role ${surface.role}`);
 
     for ( const id of repeated(allIds) ) told(issues, at, "id.duplicate", `duplicate id ${id}`);
@@ -574,15 +655,15 @@ function compileScreen ( found: Screen, shared: Shared ): CompiledScreen {
 
         for ( const field of Object.keys(feature.form) ) {
 
-            try {
+            exception.rescue(() => {
 
                 validate.rules(feature.form[field] as string);
 
-            } catch ( caught ) {
+            }, ( caught ) => {
 
-                told(issues, `${here}.form.${field}`, "form.rule", `${field}: ${error.messageOf(caught)}`);
+                told(issues, `${here}.form.${field}`, "form.rule", `${field}: ${exception.messageOf(caught)}`);
 
-            }
+            });
 
         }
 
@@ -732,20 +813,44 @@ function blockLines ( blocks: readonly Block[], depth: number, out: string[] ): 
 
 }
 
+export function bare ( written: string ): string {
+
+    const mark = written.indexOf("?");
+
+    return mark === -1 ? written : written.slice(0, mark);
+
+}
+export function answers ( screens: readonly Pick<Screen, "path">[], target: string ): boolean {
+
+    return exception.rescue(() => {
+
+        const probe = parse.fill(bare(target), Object.fromEntries(parse.templateKeys(bare(target)).map(( key ) => [key, "x"])));
+
+        return screens.some(( found ) => parse.match(found.path, probe) !== undefined);
+
+    }, () => {
+
+        return false;
+
+    });
+
+}
 export function nearest ( given: string, known: Iterable<string> ): string | undefined {
 
     return string.closest([...known], given, ( item ) => item, 0.5)?.item;
 
 }
-export function compile ( given: Surface, options: Options = {} ): Compiled {
+export function compile ( given: Plan, options: Options = {} ): Compiled {
 
-    const surface = trusted(given, surfaceShape as unknown as validate.Schema<Surface>, "spec.surface");
+    const surface = trusted(given, planShape as unknown as validate.Schema<Plan>, "spec.surface");
     const issues: Issue[] = [];
     const shared: Shared = {
         surface,
         options,
         issues,
         manifests: manifestsOf(options.features),
+        transfers: [],
+        signals: new Set([...surface.signals, ...reached(surface)]),
         paths: new Set(surface.screens.map(( found ) => found.path)),
         texts: options.texts ? new Set(options.texts) : undefined,
         kinds: options.kinds ?? (options.blocks ? Object.keys(options.blocks) : undefined),
@@ -773,8 +878,9 @@ export function compile ( given: Surface, options: Options = {} ): Compiled {
 
     }
 
-    const emitted = list.unique([...ranked.flatMap(( found ) => found.screen.emits), ...(options.topics ?? [])]).sort();
-    const consumed = list.unique(ranked.flatMap(( found ) => found.screen.listens)).sort();
+    const whole = compileSurface(shared);
+    const emitted = list.unique([...ranked.flatMap(( found ) => found.screen.emits), ...whole.emitted, ...(options.topics ?? [])]).sort();
+    const consumed = list.unique([...ranked.flatMap(( found ) => found.screen.listens), ...whole.listened]).sort();
 
     for ( const topic of consumed ) {
 
@@ -798,6 +904,7 @@ export function compile ( given: Surface, options: Options = {} ): Compiled {
         features: list.unique(ordered.flatMap(( found ) => found.features.map(( feature ) => feature.name))).sort(),
         kinds: list.unique(ordered.flatMap(( found ) => found.kinds)).sort(),
         topics: { emitted, consumed },
+        transfers: shared.transfers,
         issues,
     };
 
@@ -806,7 +913,7 @@ export function explain ( compiled: Compiled, name: string ): string {
 
     const screen = screenOf(compiled, name);
 
-    if ( !screen ) throw error.fault("not_found", "spec.screen", { errors: { screen: [String(name).slice(0, 80)] } });
+    if ( !screen ) throw exception.fault("not_found", "spec.screen", { errors: { screen: [String(name).slice(0, 80)] } });
 
     const out: string[] = [
         `${screen.name} ${screen.path} · role ${screen.role} · ${screen.menu ? "in the menu" : "off the menu"} · ${screen.auth ? "needs a session" : "open"}`,

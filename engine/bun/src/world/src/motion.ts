@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as number from "engine-number";
 import type { Curve, Easing, Path, Spring } from "./arch.ts";
 
@@ -37,7 +38,7 @@ function sure ( curve: Curve ): Curve {
 
     const parts: readonly unknown[] = Array.isArray(curve) ? curve : [];
 
-    if ( parts.length !== 4 || !parts.every(( part ) => Number.isFinite(part)) || !inside(parts[0]) || !inside(parts[2]) ) throw new RangeError("not a curve");
+    if ( parts.length !== 4 || !parts.every(( part ) => Number.isFinite(part)) || !inside(parts[0]) || !inside(parts[2]) ) throw exception.misuse("not a curve");
 
     return curve;
 
@@ -45,7 +46,7 @@ function sure ( curve: Curve ): Curve {
 function curveOf ( easing: Exclude<Easing, "linear"> | Curve ): Curve {
 
     if ( typeof easing !== "string" ) return sure(easing);
-    if ( !Object.hasOwn(curves, easing) ) throw new RangeError("not an easing");
+    if ( !Object.hasOwn(curves, easing) ) throw exception.misuse("not an easing");
 
     return curves[easing];
 
@@ -54,7 +55,7 @@ function sprung ( given: Spring ): Spring {
 
     const { damping, stiffness, mass } = given;
 
-    if ( !(Number.isFinite(damping) && damping >= 0 && Number.isFinite(stiffness) && stiffness > 0 && Number.isFinite(mass) && mass > 0) ) throw new RangeError("not a spring");
+    if ( !(Number.isFinite(damping) && damping >= 0 && Number.isFinite(stiffness) && stiffness > 0 && Number.isFinite(mass) && mass > 0) ) throw exception.misuse("not a spring");
 
     return given;
 
@@ -100,7 +101,7 @@ function bezier ( curve: Curve, t: number ): number {
 
 export function spring ( ratio = 0.8, stiffness = 180, mass = 1 ): Spring {
 
-    if ( !(Number.isFinite(ratio) && ratio >= 0) ) throw new RangeError("not a spring");
+    if ( !(Number.isFinite(ratio) && ratio >= 0) ) throw exception.misuse("not a spring");
 
     return sprung({ damping: ratio * 2 * Math.sqrt(stiffness * mass), stiffness, mass });
 
@@ -135,7 +136,7 @@ export function toLinear ( given: Path ): string {
 
     const points: readonly unknown[] = Array.isArray(given.points) ? given.points : [];
 
-    if ( points.length < 2 || !points.every(( point ) => Number.isFinite(point)) ) throw new RangeError("not a path");
+    if ( points.length < 2 || !points.every(( point ) => Number.isFinite(point)) ) throw exception.misuse("not a path");
 
     return `linear(${points.join(", ")})`;
 
@@ -143,7 +144,7 @@ export function toLinear ( given: Path ): string {
 export function ease ( kind: Easing | Curve ): string {
 
     if ( typeof kind !== "string" ) return bent(sure(kind));
-    if ( !Object.hasOwn(easings, kind) ) throw new RangeError("not an easing");
+    if ( !Object.hasOwn(easings, kind) ) throw exception.misuse("not an easing");
 
     return easings[kind];
 
@@ -152,13 +153,13 @@ export function transition ( properties: readonly string[], duration: number = d
 
     const curve = ease(easing);
 
-    if ( !(Number.isFinite(duration) && duration >= 0) || !Number.isFinite(delay) ) throw new RangeError("not a duration");
+    if ( !(Number.isFinite(duration) && duration >= 0) || !Number.isFinite(delay) ) throw exception.misuse("not a duration");
 
     const tail = delay === 0 ? "" : ` ${delay}ms`;
 
     return properties.map(( name ) => {
 
-        if ( typeof name !== "string" || !property.test(name) ) throw new RangeError("not a property");
+        if ( typeof name !== "string" || !property.test(name) ) throw exception.misuse("not a property");
 
         return `${name} ${duration}ms ${curve}${tail}`;
 

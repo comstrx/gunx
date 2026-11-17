@@ -1,3 +1,4 @@
+import * as exception from "engine-exception";
 import * as number from "engine-number";
 import type { Changes, Direction, Key, Order, Scalar } from "./arch.ts";
 
@@ -12,17 +13,7 @@ function collator ( locale: string ): Intl.Collator {
     if ( found ) return found;
     if ( collators.size >= 64 ) collators.clear();
 
-    let crafted: Intl.Collator;
-
-    try {
-
-        crafted = new Intl.Collator(locale.replace(/_/g, "-"), settings);
-
-    } catch {
-
-        crafted = new Intl.Collator("en", settings);
-
-    }
+    const crafted = exception.rescue(() => new Intl.Collator(locale.replace(/_/g, "-"), settings), () => new Intl.Collator("en", settings));
 
     collators.set(locale, crafted);
 
@@ -31,28 +22,16 @@ function collator ( locale: string ): Intl.Collator {
 }
 function told ( value: unknown ): string {
 
-    try {
+    const text = exception.run(String, value);
 
-        return String(value);
-
-    } catch {
-
-        return Object.prototype.toString.call(value);
-
-    }
+    return exception.threw(text) ? Object.prototype.toString.call(value) : text;
 
 }
 function packed ( value: unknown ): string {
 
-    try {
+    const text = exception.run(JSON.stringify, value);
 
-        return JSON.stringify(value) ?? told(value);
-
-    } catch {
-
-        return told(value);
-
-    }
+    return exception.threw(text) ? told(value) : (text ?? told(value));
 
 }
 function measured ( value: unknown ): number | bigint | undefined {
@@ -240,7 +219,7 @@ export function range ( from: number, to: number, step = 1 ): number[] {
     const count = number.near(steps, Math.round(steps)) ? Math.round(steps) : Math.floor(steps);
 
     if ( count === 0 ) return [from];
-    if ( count >= longest ) throw new RangeError(`a range too long to hold: ${count + 1}`);
+    if ( count >= longest ) throw exception.misuse(`a range too long to hold: ${count + 1}`);
 
     const turn = from <= to ? stride : 0 - stride;
     const whole = Number.isInteger(from) && Number.isInteger(stride);

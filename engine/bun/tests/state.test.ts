@@ -1,7 +1,7 @@
 import { describe, expect, test as it, jest } from "bun:test";
 import * as cache from "engine/cache";
-import * as error from "engine/error";
 import * as event from "engine/event";
+import * as exception from "engine/exception";
 import * as state from "engine/state";
 import { createElement, useRef, useState, useSyncExternalStore } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -31,7 +31,7 @@ const cart = state.define<Cart, CartActions>({
 
 function told ( failure: unknown ): string {
 
-    if ( error.is(failure) ) return `${failure.code}/${failure.reason}`;
+    if ( exception.is(failure) && failure.reason !== "misuse" ) return `${failure.code}/${failure.reason}`;
 
     return failure instanceof Error ? `${failure.name}: ${failure.message}` : String(failure);
 
@@ -462,6 +462,42 @@ describe("state", () => {
         expect(calls).toEqual({ get: 1, set: 1, delete: 0 });
 
     });
+    it("a seed is planted and written once when nothing was saved, passes through accept, and never overrides a saved copy or an earlier change", async () => {
+
+        const define = ( box: cache.Box, seed: { locale?: string; theme?: string } | undefined, accept?: ( saved: { locale?: string } ) => { locale?: string } | undefined ) => state.define<{ locale: string; theme: string }, { speak: ( locale: string ) => void }>({
+            name: "prefs",
+            initial: { locale: "en", theme: "light" },
+            persist: { box, keys: ["locale"], seed, accept },
+            actions: ( set ) => ({ speak: ( locale ) => set({ locale }) }),
+        }).create();
+        const fresh = cache.open({ storage: cache.memory() });
+        const planted = define(fresh, { locale: "ar", theme: "dark" });
+
+        await planted.hydrate();
+        await planted.flush();
+        expect([planted.getState().locale, planted.getState().theme, planted.getState().kept, await fresh.get(planted.key)]).toEqual(["ar", "light", true, { version: 1, state: { locale: "ar" } }]);
+
+        const again = define(fresh, { locale: "fr" });
+
+        await again.hydrate();
+        expect(again.getState().locale).toBe("ar");
+
+        const refused = cache.open({ storage: cache.memory() });
+        const picky = define(refused, { locale: "xx" }, ( saved ) => (saved.locale === "xx" ? undefined : saved));
+
+        await picky.hydrate();
+        await picky.flush();
+        expect([picky.getState().locale, await refused.get(picky.key)]).toEqual(["en", undefined]);
+
+        const touched = cache.open({ storage: cache.memory() });
+        const early = define(touched, { locale: "ar" });
+
+        early.getState().speak("de");
+        await early.hydrate();
+        await early.flush();
+        expect([early.getState().locale, (await touched.get<{ state: { locale: string } }>(early.key))?.state.locale]).toEqual(["de", "de"]);
+
+    });
     it("a saved copy is left untouched by reading: nothing saved, junk, an older copy without migrate, a refused accept", async () => {
 
         for ( const saved of [undefined, "junk", { version: "1", state: {} }, { version: 1.5, state: {} }, { version: 1, state: [] }, { version: 0, state: { items: ["old"] } }] ) {
@@ -885,7 +921,7 @@ describe("state", () => {
         expect(told(await rejected(Promise.resolve().then(() => state.define<{ n: number }, { n: () => void }>({ name: "s", initial: { n: 1 }, actions: () => ({ n: () => undefined }) }).create())))).toBe("internal/state.shadow");
         expect(told(await rejected(Promise.resolve().then(() => state.define<{ n: number }, { ready: () => void }>({ name: "s", initial: { n: 1 }, actions: () => ({ ready: () => undefined }) }).create())))).toBe("internal/state.shadow");
 
-        for ( const version of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY, 2 ** 53] ) expect(told(await rejected(Promise.resolve().then(() => state.define<Bag, BagActions>({ name: "s", initial: { items: [], user: null, n: 0 }, actions: () => ({ add: () => undefined, put: () => undefined, sign: () => undefined }), persist: { box, version } }))))).toBe("RangeError: not a version");
+        for ( const version of [Number.NaN, -1, 1.5, Number.POSITIVE_INFINITY, 2 ** 53] ) expect(told(await rejected(Promise.resolve().then(() => state.define<Bag, BagActions>({ name: "s", initial: { items: [], user: null, n: 0 }, actions: () => ({ add: () => undefined, put: () => undefined, sign: () => undefined }), persist: { box, version } }))))).toBe("Fault: not a version");
 
         expect(state.define<Bag, BagActions>({ name: "s", initial: { items: [], user: null, n: 0 }, actions: () => ({ add: () => undefined, put: () => undefined, sign: () => undefined }), persist: { box, version: 0 } }).create().key).toBe("s@2");
 
@@ -926,7 +962,7 @@ describe("state", () => {
             await tick(input === "slow" ? 10 : 1);
 
             if ( signal.aborted ) throw new Error("aborted");
-            if ( input === "bad" ) throw error.fault("conflict", "x");
+            if ( input === "bad" ) throw exception.fault("conflict", "x");
 
             return input;
 
@@ -1029,7 +1065,7 @@ describe("state", () => {
         hanging.abort();
         expect(hanging.getState().status).toBe("idle");
 
-        for ( const bad of [Number.NaN, -1] ) expect(() => state.resource<number>({ load: async () => 1, staleAfter: bad })).toThrow(new RangeError("not a duration"));
+        for ( const bad of [Number.NaN, -1] ) expect(() => state.resource<number>({ load: async () => 1, staleAfter: bad })).toThrow(exception.misuse("not a duration"));
 
         expect(state.resource<number>({ load: async () => 1, staleAfter: Number.POSITIVE_INFINITY, seed: 3 }).getState().stale).toBe(true);
 

@@ -1,4 +1,5 @@
-import * as error from "engine-error";
+import type * as error from "engine-error";
+import * as exception from "engine-exception";
 import type { Def, Facts, Field, Found, Issue, Mark, Open, output, CheckRule as Rule, Schema, Stamp } from "./arch.ts";
 import * as zod from "./zod.ts";
 
@@ -211,22 +212,22 @@ export function issuesOf ( failure: readonly Issue[] ): error.Errors {
     return { ...out };
 
 }
-export function check<T extends Schema> ( schema: T, payload: unknown, reason = "validation" ): error.Result<output<T>> {
+export function check<T extends Schema> ( schema: T, payload: unknown, reason = "validation" ): exception.Result<output<T>> {
 
     const result = schema.safeParse(payload, { reportInput: true });
 
     if ( result.success ) return { ok: true, value: result.data };
 
-    return { ok: false, fault: error.fault("validation", reason, { errors: issuesOf(result.error.issues) }) };
+    return { ok: false, fault: exception.fault("validation", reason, { errors: issuesOf(result.error.issues) }) };
 
 }
-export async function checkAsync<T extends Schema> ( schema: T, payload: unknown, reason = "validation" ): Promise<error.Result<output<T>>> {
+export async function checkAsync<T extends Schema> ( schema: T, payload: unknown, reason = "validation" ): Promise<exception.Result<output<T>>> {
 
     const result = await schema.safeParseAsync(payload, { reportInput: true });
 
     if ( result.success ) return { ok: true, value: result.data };
 
-    return { ok: false, fault: error.fault("validation", reason, { errors: issuesOf(result.error.issues) }) };
+    return { ok: false, fault: exception.fault("validation", reason, { errors: issuesOf(result.error.issues) }) };
 
 }
 export function assert<T extends Schema> ( schema: T, payload: unknown, reason = "validation" ): output<T> {
@@ -258,7 +259,7 @@ export function stamp ( facts: Facts ): Stamp {
 }
 export function format ( name: string, size?: number ): Stamp {
 
-    if ( name === "" || (size !== undefined && !(Number.isInteger(size) && size >= 0)) ) throw new RangeError("not a format");
+    if ( name === "" || (size !== undefined && !(Number.isInteger(size) && size >= 0)) ) throw exception.misuse("not a format");
 
     const id = `${name}:${size ?? ""}`;
     const made = stamped.get(id) ?? stamp(size === undefined ? { format: name } : { format: name, min: size, max: size });
