@@ -10,15 +10,6 @@ module:extract:session () {
     @print "${tree}"
 
 }
-module:extract:timeout () {
-
-    local seconds=""
-
-    seconds="$(core:cli:value --timeout)" || seconds="${CONFIG[RUN_TIMEOUT]:-600}"
-
-    core:proc:seconds "${seconds}" --timeout
-
-}
 module:extract:tag () {
 
     local name="${1}" tag=""

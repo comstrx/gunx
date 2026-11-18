@@ -50,13 +50,3 @@ module:bundle:expect:discover () {
     return 0
 
 }
-#cfg[test]
-module:bundle:expect:proves-itself () {
-
-    local file="${TMPDIR}/hashed"
-
-    printf 'proof' > "${file}"
-
-    module:bundle:expect:equal "$(core:fs:file:hash "${file}")" "$(sha256sum -- "${file}" | cut -d' ' -f1)"
-
-}

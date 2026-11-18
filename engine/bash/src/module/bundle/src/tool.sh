@@ -55,7 +55,7 @@ module:bundle:tool:run () {
 
         core:sys:need "${runner}" || return
 
-        core:proc:timeout "${CONFIG[RUN_TIMEOUT]:-300}" "${runner}" "${name}@$(config:tools:version "${name}")" "$@"
+        core:proc:timeout "${CONFIG[RUN_TIMEOUT]:-${CONFIG_BASE[RUN_TIMEOUT]}}" "${runner}" "${name}@$(config:tools:version "${name}")" "$@"
         return
 
     fi

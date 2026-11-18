@@ -123,6 +123,11 @@ test:module:extract:changelog-cuts-one-block () {
     module:extract:changelog "${root}" "${tree}" rust demo 'demo-*'
     @eq "$(cat "${tree}/CHANGELOG.md")" $'# Changelog\n\n## v1\n\n### rust\n\n- r\n\n### demo\n\n- whole\n\n### api\n\n- a'
 
+    printf '## v1\n\n### rust\n\n- cut \350\224\n' > "${root}/CHANGELOG.md"
+    module:extract:changelog "${root}" "${tree}" rust
+    @eq "$(wc -l < "${tree}/CHANGELOG.md")" 7
+    @eq "$(tail -c 3 "${tree}/CHANGELOG.md" | od -An -to1 | tr -d ' ')" '350224012'
+
 }
 test:module:extract:verify-refuses-what-must-not-leave () {
 
@@ -206,7 +211,7 @@ test:module:extract:a-product-leaves-flat () {
     @eq "$(cat "${tree}/product/api/pyproject.toml")" $'one = { path = "../../engine/demo/src/one" }\ntwo = { path = "../web" }'
     @eq "$(cat "${tree}/product/api/package.json")" '{"deps":"cd ../../engine/demo && pwd"}'
     @eq "$(cat "${tree}/product/api/src/code.ts")" 'import x from "../../engine/local";'
-    @eq "$(cat "${tree}/.github/flow.yml")" $'path:\n  - product/demo/api\n  - product/web/\nglob: product/api/**\nother: product/other/api/'
+    @eq "$(cat "${tree}/.github/flow.yml")" $'path:\n  - product/api\n  - product/web/\nglob: product/api/**\nother: product/other/api/'
 
 }
 test:module:extract:verify-refuses-the-files-of-secrets () {
@@ -319,9 +324,9 @@ test:module:extract:commands-guard-their-usage () {
 
     CLI_VALUED=( [--timeout]=true )
     CLI_FLAGS=( [--timeout]=x )
-    @errors '--timeout must be a positive number' module:extract:timeout
+    @errors '--timeout must be a positive number' config:settings:timeout
     CLI_FLAGS=()
-    @eq "$(module:extract:timeout)" "${CONFIG[RUN_TIMEOUT]}"
+    @eq "$(config:settings:timeout)" "${CONFIG[RUN_TIMEOUT]}"
 
     @contains "$(NO_COLOR=1 module:extract:targets 2>/dev/null)" 'engine/demo'
     @absent "$(NO_COLOR=1 module:extract:targets 2>/dev/null)" 'missing'
@@ -764,7 +769,8 @@ test:module:extract:extracts-every-target-in-order () {
     @eq "$(module:extract:order | tr '\n' ' ')" 'corex demox otherx lastx '
     @eq "$(module:extract:needs lastx | tr '\n' ' ')" 'otherx corex '
 
-    printf 'made in mono\n' > "${TMPDIR}/source/product/other/web/note.txt"
+    printf 'KEY=1\n' > "${TMPDIR}/source/product/other/web/.secrets"
+    git -C "${TMPDIR}/source" add product/other/web/.secrets
 
     CLI_VALUED=( [--to]=true [--tag]=true )
     CLI_FLAGS=( [--no-gates]=true [--to]="${all}" )
@@ -845,6 +851,8 @@ test:module:extract:a-product-carries-the-engines-it-names () {
     printf 'lock\n' > "${root}/product/demo/api/uv.lock"
     printf 'contract\n' > "${root}/tutor/index.md"
     printf 'go 1.25\n' > "${root}/engine/go/go.work"
+    printf -- '- name: api\n  color: 3\n  description: The backend (product/*/api)\n\n- name: tutor\n  color: 4\n  description: The contract (tutor/)\n\n- name: go\n  color: 5\n  description: The go engine (engine/go)\n' >> "${root}/.github/labels.yml"
+    printf "\napi:\n  - changed-files:\n      - any-glob-to-any-file: ['product/*/api/**']\n\ntutor:\n  - changed-files:\n      - any-glob-to-any-file: ['tutor/**']\n\ngo:\n  - changed-files:\n      - any-glob-to-any-file: ['engine/go/**']\n" >> "${root}/.github/labeler.yml"
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
         "notesx = { type = \"tutor\", path = \"tutor\", repo = \"notesx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
@@ -858,6 +866,14 @@ test:module:extract:a-product-carries-the-engines-it-names () {
     @absent "$(cat "${tree}/engine/bash/bash.toml")" '[deps]'
     [[ -f "${tree}/engine/demo/Cargo.toml" && -f "${tree}/product/api/pyproject.toml" && -f "${tree}/LICENSE" && -f "${tree}/CHANGELOG.md" ]]
     [[ ! -e "${tree}/tutor" && ! -e "${tree}/product/other" && ! -e "${tree}/engine/go" ]] || @err 'the product carries what it did not name'
+    @contains "$(cat "${tree}/.github/labels.yml")" '(product/api)'
+    @contains "$(cat "${tree}/.github/labels.yml")" '(engine/demo)'
+    @absent "$(cat "${tree}/.github/labels.yml")" 'tutor'
+    @absent "$(cat "${tree}/.github/labels.yml")" 'engine/go'
+    @contains "$(cat "${tree}/.github/labeler.yml")" "'product/api/**'"
+    @contains "$(cat "${tree}/.github/labeler.yml")" "'engine/demo/**'"
+    @absent "$(cat "${tree}/.github/labeler.yml")" 'tutor'
+    @absent "$(cat "${tree}/.github/labeler.yml")" 'engine/go'
     [[ ! -e "${tree}/README.md" && ! -e "${tree}/AGENTS.md" && ! -e "${tree}/product/api/uv.lock" && ! -e "${tree}/product/demo" && ! -e "${tree}/engine/demo/Cargo.lock" ]] \
         || @err 'a root readme or a lock went with the product'
 
@@ -935,9 +951,9 @@ test:module:extract:a-fragment-reaches-its-engine-by-the-mirror () {
     tree="$(fixture:module:extract:build partx)"
     file="$(cat "${tree}/pyproject.toml")"
 
-    @contains "${file}" "engine = { git = \"${engine}\", subdirectory = \"src/engine\" }"
-    @contains "${file}" "engine-log = { git = \"${engine}\", subdirectory = \"src/log\" }"
-    @contains "${file}" "whole = { git = \"${engine}\" }"
+    @contains "${file}" "engine = { git = \"file://${engine}\", subdirectory = \"src/engine\" }"
+    @contains "${file}" "engine-log = { git = \"file://${engine}\", subdirectory = \"src/log\" }"
+    @contains "${file}" "whole = { git = \"file://${engine}\" }"
     @contains "${file}" 'api-one = { workspace = true }'
     @absent "${file}" '../'
 
@@ -950,7 +966,7 @@ test:module:extract:a-fragment-reaches-its-engine-by-the-mirror () {
     @fails core:git:newest "${TMPDIR}/none.git"
 
     tree="$(fixture:module:extract:build partx)"
-    @contains "$(cat "${tree}/pyproject.toml")" "engine = { git = \"${engine}\", subdirectory = \"src/engine\", tag = \"v0.10.0\" }"
+    @contains "$(cat "${tree}/pyproject.toml")" "engine = { git = \"file://${engine}\", subdirectory = \"src/engine\", tag = \"v0.10.0\" }"
 
     TARGETS[partx.deps.0.tag]=0.2.0
     tree="$(fixture:module:extract:build partx)"

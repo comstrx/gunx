@@ -47,6 +47,10 @@ module:extract:table () {
     (( ${#homes[@]} > 0 )) \
         || { @err "No distribution table: no [deps] in the tool nor in a ${MANIFEST_NAMES[0]} or ${MANIFEST_NAMES[1]} of ${TOOL_ROOT}"; return; }
 
+    for home in "${EXTRACT_STAYS[@]}"; do
+        [[ ! -d "${TOOL_ROOT}/${home}" ]] || homes["${home}"]=1
+    done
+
     EXTRACT_HOMES="$(printf '%s\n' "${!homes[@]}" | LC_ALL=C sort | paste -sd '|' -)"
     EXTRACT_HOMES="${EXTRACT_HOMES//./[.]}"
 

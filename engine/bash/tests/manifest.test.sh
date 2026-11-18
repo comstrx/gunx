@@ -85,7 +85,6 @@ test:config:manifest:guards-the-shell-version-and-empty-keys () {
     config:manifest:check x.toml
 
     @errors 'Missing manifest key: ' config:manifest:get ''
-    @fails config:manifest:counted ''
     @eq "$(config:manifest:list '')" ''
 
 }

@@ -10,7 +10,7 @@ fuzz:module:extract:keep () {
 
     module:extract:keep "${kind}" product/demo "${path}" 'engine/rust|engine/go' || true
 
-    ! module:extract:stays "${path}" || [[ "${path}" == *.lock || "${path}" != */* ]] || return 3
+    ! module:extract:stays "${path}" || [[ "${path}" == *.lock ]] || core:list:has "${path%%/*}" "${EXTRACT_STAYS[@]}" || return 3
 
 }
 fuzz:module:extract:notes () {
@@ -82,5 +82,45 @@ fuzz:module:extract:name () {
     out="$(module:extract:name rowx 2>/dev/null)" || return 0
 
     [[ "${out}" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]] || return 3
+
+}
+fuzz:module:extract:changelog () {
+
+    local root="" tree="" out=""
+
+    root="$(core:fs:temp:dir)" || return 0
+    tree="$(core:fs:temp:dir)" || return 0
+
+    { printf '## v1\n\n### one\n\n- kept\n\n### two\n\n### demo-part\n'; tr -d '\0' < "${1}"; } > "${root}/CHANGELOG.md"
+
+    module:extract:changelog "${root}" "${tree}" one 'demo-*' two=shown || return 3
+
+    out="$(cat "${tree}/CHANGELOG.md")"
+
+    [[ "${out}" == '# Changelog'$'\n\n''## v1'$'\n\n''### one'$'\n\n''- kept'* ]] || return 3
+    [[ "${out}" != *$'\n\n\n'* && "${out}" != *$'\n''### two'* && "${out}" != *$'\n''### demo-'* ]] || return 3
+    [[ -n "$(tail -n 1 "${tree}/CHANGELOG.md")" ]] || return 3
+
+}
+fuzz:module:extract:shallow () {
+
+    local tree="" text="" before=""
+
+    tree="$(core:fs:temp:dir)" || return 0
+    text="$(tr -d '\0' < "${1}" | head -c 300)"
+
+    mkdir -p "${tree}/product/api" "${tree}/.github"
+    printf 'path = "../../../engine/demo"\n%s\n' "${text}" > "${tree}/product/api/part.toml"
+    printf 'at: product/demo/api\nany: product/*/web\n%s\n' "${text}" > "${tree}/.github/flow.yml"
+    printf '%s\n' "${text}" > "${tree}/product/api/code.ts"
+    before="$(cat "${tree}/product/api/code.ts")"
+
+    EXTRACT_HOMES='engine|product'
+
+    module:extract:shallow "${tree}" product product/demo || return 3
+
+    [[ "$(head -n 1 "${tree}/product/api/part.toml")" == 'path = "../../engine/demo"' ]] || return 3
+    [[ "$(head -n 2 "${tree}/.github/flow.yml")" == 'at: product/api'$'\n''any: product/web' ]] || return 3
+    [[ "$(cat "${tree}/product/api/code.ts")" == "${before}" ]] || return 3
 
 }

@@ -64,27 +64,3 @@ module:bundle:load:resolve () {
     fi
 
 }
-module:bundle:load:list () {
-
-    local folder="${1:-}" file="" LC_ALL=C
-
-    [[ -n "${folder}" && "${folder}" != *[!a-z0-9_/-]* && "${folder}" != /* && "${folder}" != */ ]] \
-        || { printf '%s\n' "[-] Invalid source folder: ${folder}" >&2; return 1; }
-
-    if declare -F bundle:sources >/dev/null; then
-
-        while IFS= read -r file; do
-            [[ "${file}" == "${folder}/"* && "${file#"${folder}/"}" != */* ]] && printf '%s\n' "${file}"
-        done < <(bundle:sources)
-
-        return 0
-
-    fi
-
-    for file in "${TOOL_SOURCE}/${folder}"/*.sh; do
-        [[ -f "${file}" && ! -L "${file}" ]] && printf '%s\n' "${file#"${TOOL_SOURCE}/"}"
-    done
-
-    return 0
-
-}

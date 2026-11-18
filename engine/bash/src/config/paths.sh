@@ -34,8 +34,3 @@ config:paths:sbom () {
     core:log:print "${TOOL_LAB}/sbom/sbom.spdx.json"
 
 }
-config:paths:lock () {
-
-    core:log:print "${TOOL_LAB}/lock/${1}"
-
-}

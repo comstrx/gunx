@@ -84,8 +84,8 @@ test:module:bundle:bench:samples-and-reports () {
     @contains "${line}" 'max=900ns'
     @contains "${line}" 'n=5'
     @contains "${line}" 'p50ns=300'
-    @eq "$(module:bundle:bench:p50 "${line}")" 300
-    @errors 'No p50ns' module:bundle:bench:p50 'demo p95=1'
+    @eq "$(module:bundle:bench:field "${line}" p50ns)" 300
+    @errors 'No p50ns' module:bundle:bench:field 'demo p95=1' p50ns
 
     @errors 'No samples' module:bundle:bench:report demo
     @errors 'Bench subject failed' module:bundle:bench:samples 1 1 false
@@ -1071,13 +1071,6 @@ test:module:bundle:load:refuses-a-bad-path () {
     @eq "${LOAD_PATH}" core/log.sh
     module:bundle:load:resolve module/gate
     @eq "${LOAD_PATH}" module/gate/index.sh
-
-}
-test:module:bundle:load:lists-a-folder () {
-
-    @contains "$(module:bundle:load:list core)" core/log.sh
-    @absent "$(module:bundle:load:list core)" app/
-    @errors 'Invalid source folder' module:bundle:load:list 'core/'
 
 }
 test:module:bundle:load:loads-once () {

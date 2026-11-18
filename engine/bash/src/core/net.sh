@@ -49,14 +49,14 @@ core:net:config () {
 }
 core:net:common () {
 
-    local seconds="${NET_SECONDS:-${CONFIG[RUN_TIMEOUT]:-300}}"
+    local seconds="${NET_SECONDS:-${CONFIG[RUN_TIMEOUT]:-${CONFIG_BASE[RUN_TIMEOUT]}}}"
 
     printf 'silent\nshow-error\ntlsv1.2\nmax-time = %s\nconnect-timeout = %s\n' "${seconds}" "$(( seconds < 30 ? seconds : 30 ))"
 
 }
 core:net:try () {
 
-    local config="${1}" errors="${2}" label="${3}" url="${4}" metrics="" attempt=1 tries="${NET_TRIES:-${CONFIG[RUN_RETRIES]:-3}}" delay=""
+    local config="${1}" errors="${2}" label="${3}" url="${4}" metrics="" attempt=1 tries="${NET_TRIES:-${CONFIG[RUN_RETRIES]:-${CONFIG_BASE[RUN_RETRIES]}}}" delay=""
 
     while true; do
 
@@ -68,7 +68,7 @@ core:net:try () {
 
         (( NET_STATUS != 0 )) && core:net:unsent && (( attempt < tries )) || return 0
 
-        delay="$(core:proc:backoff "${CONFIG[RUN_BACKOFF]:-2}" "${attempt}")" || return 0
+        delay="$(core:proc:backoff "${CONFIG[RUN_BACKOFF]:-${CONFIG_BASE[RUN_BACKOFF]}}" "${attempt}")" || return 0
 
         core:log:warn "${label}: attempt ${attempt} of ${tries} never left ($(core:net:reason "${errors}" "${url}")); retrying in ${delay}s"
         sleep "${delay}"
@@ -80,13 +80,13 @@ core:net:try () {
 }
 core:net:budget () {
 
-    core:num:between "${NET_SECONDS:-${CONFIG[RUN_TIMEOUT]:-300}}" 1 || {
+    core:num:between "${NET_SECONDS:-${CONFIG[RUN_TIMEOUT]:-${CONFIG_BASE[RUN_TIMEOUT]}}}" 1 || {
 
         core:error:fail "A request budget is whole seconds above 0: ${NET_SECONDS}"
         return
 
     }
-    core:num:between "${NET_TRIES:-${CONFIG[RUN_RETRIES]:-3}}" 1 10 || {
+    core:num:between "${NET_TRIES:-${CONFIG[RUN_RETRIES]:-${CONFIG_BASE[RUN_RETRIES]}}}" 1 10 || {
 
         core:error:fail "A request is tried 1 to 10 times: ${NET_TRIES}"
         return

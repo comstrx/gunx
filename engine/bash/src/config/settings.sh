@@ -69,8 +69,12 @@ config:settings:validate () {
     core:cfg:number BENCH_TOLERANCE 0 1000 || return
 
 }
-config:settings:keys () {
+config:settings:timeout () {
 
-    core:log:print "${CONFIG_KEYS[@]}"
+    local seconds=""
+
+    seconds="$(core:cli:value --timeout)" || seconds="${CONFIG[RUN_TIMEOUT]:-${CONFIG_BASE[RUN_TIMEOUT]}}"
+
+    core:proc:seconds "${seconds}" --timeout
 
 }

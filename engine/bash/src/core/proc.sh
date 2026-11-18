@@ -137,7 +137,7 @@ core:proc:retry () {
 }
 core:proc:io () {
 
-    core:proc:retry "${CONFIG[RUN_RETRIES]:-3}" "${CONFIG[RUN_BACKOFF]:-2}" core:proc:timeout "${CONFIG[RUN_TIMEOUT]:-300}" "$@"
+    core:proc:retry "${CONFIG[RUN_RETRIES]:-${CONFIG_BASE[RUN_RETRIES]}}" "${CONFIG[RUN_BACKOFF]:-${CONFIG_BASE[RUN_BACKOFF]}}" core:proc:timeout "${CONFIG[RUN_TIMEOUT]:-${CONFIG_BASE[RUN_TIMEOUT]}}" "$@"
 
 }
 core:proc:within () {

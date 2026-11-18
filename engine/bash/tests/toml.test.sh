@@ -22,7 +22,7 @@ test:core:toml:reads-inline-tables-and-arrays () {
     local file="${TMPDIR}/inline.toml"
     local -A table=()
 
-    printf '[meta]\nauthors = ["a", "b"]\nnone = []\n[tools]\ntrivy = { version = "0.1.0", binary = "trivy" }\n[deps]\napix = { path = "p", deps = [{ name = "engine", repo = "o/basex" }] }\nesc = "a \\"b\\""\n' > "${file}"
+    printf '[meta]\nauthors = ["a", "b"]\nnone = []\n[tools]\ntrivy = { version = "0.1.0", binary = "trivy" }\n[deps]\npartx = { path = "p", deps = [{ name = "engine", repo = "o/basex" }] }\nesc = "a \\"b\\""\n' > "${file}"
     core:parse:toml table "${file}"
 
     @eq "${table[meta.authors]} ${table[meta.authors.0]} ${table[meta.authors.1]} ${table[meta.none]}" '2 a b 0'
@@ -81,6 +81,12 @@ test:core:toml:drops-a-whole-section () {
 
     @eq "${table[meta.name]}|${table[deploy.stack]}" 'x|native'
     @absent "$(cat "${file}")" 'deps'
+    @eq "$(cat "${file}")" $'[meta]\nname = "x"\n\n[deploy]\nstack = "native"'
+
+    printf '[a]\nx = 1\n\n[deps.one]\ny = 1\n\n[deps.two]\nz = [\n\n    1,\n]\n\n\n[b]\nw = 2\n\n[deps.three]\nv = 3\n\n' > "${file}"
+    core:parse:toml:drop "${file}" deps
+    @eq "$(cat "${file}")" $'[a]\nx = 1\n\n[b]\nw = 2'
+    @eq "$(tail -c 6 "${file}" | od -An -c | tr -d ' ')" 'w=2\n'
     @errors 'Not a section name' core:parse:toml:drop "${file}" 'Bad Name'
 
 }

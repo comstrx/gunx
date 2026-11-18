@@ -47,3 +47,18 @@ test:core:cfg:requires-and-counts () {
     @errors 'must be a number' core:cfg:number RUN_RETRIES 1
 
 }
+test:core:cfg:base-matches-the-documented-defaults () {
+
+    local key=""
+    local -A pairs=()
+    local -a order=()
+
+    bundle:schema pairs order
+
+    (( ${#CONFIG_BASE[@]} == 6 ))
+
+    for key in "${!CONFIG_BASE[@]}"; do
+        @eq "${key}=${pairs[${key}]-missing}" "${key}=${CONFIG_BASE[${key}]}"
+    done
+
+}

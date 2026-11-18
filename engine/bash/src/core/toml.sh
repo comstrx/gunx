@@ -272,7 +272,7 @@ core:toml:drop () {
 }
 core:toml:without () {
 
-    local file="${1}" section="${2}" line="" trimmed="" skip=0 depth=0 LC_ALL=C
+    local file="${1}" section="${2}" line="" trimmed="" skip=0 depth=0 gap=0 printed=0 LC_ALL=C
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
 
@@ -293,7 +293,15 @@ core:toml:without () {
 
         fi
 
-        (( skip == 1 )) || printf '%s\n' "${line}"
+        (( skip == 0 )) || continue
+
+        if [[ -z "${trimmed}" && depth -eq 0 ]]; then gap=1; continue; fi
+
+        (( gap == 0 || printed == 0 )) || printf '\n'
+
+        printf '%s\n' "${line}"
+
+        gap=0 printed=1
 
     done < "${file}"
 

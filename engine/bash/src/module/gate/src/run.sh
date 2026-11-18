@@ -26,12 +26,10 @@ module:gate:each () {
     local wanted="${1}" seconds="" pass=false list="" row="" chain="" dir="" explicit=1
     local -a types=() rows=() failed=()
 
-    seconds="$(core:cli:value --timeout)" || seconds="${CONFIG[RUN_TIMEOUT]:-600}"
-
     ! core:cli:flag --pass || pass=true
     [[ "${wanted}" != default && "${wanted}" != all ]] || explicit=0
 
-    seconds="$(core:proc:seconds "${seconds}" --timeout)" || return
+    seconds="$(config:settings:timeout)" || return
     list="$(module:gate:types "${wanted}")" || return
     mapfile -t types <<< "${list}"
 

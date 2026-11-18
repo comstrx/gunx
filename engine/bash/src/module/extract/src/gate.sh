@@ -3,7 +3,7 @@ module:extract:gate () {
     local tree="${1}" name="${2}" seconds="" row="" chain="" dir="" failed=0
     local -a rows=()
 
-    seconds="$(module:extract:timeout)" || return
+    seconds="$(config:settings:timeout)" || return
 
     mapfile -t rows < <(module:gate:within "${tree}")
 

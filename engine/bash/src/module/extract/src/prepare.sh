@@ -1,6 +1,6 @@
 module:extract:changelog () {
 
-    local root="${1}" tree="${2}" line="" text="# Changelog" block=0 name="" spec="" shown=""
+    local root="${1}" tree="${2}" line="" text="# Changelog" block=0 name="" spec="" shown="" LC_ALL=C
 
     shift 2
 
@@ -23,14 +23,20 @@ module:extract:changelog () {
                     esac
 
                     block=1
-                    text+=$'\n\n'"### ${shown}"$'\n'
+                    text+=$'\n\n'"### ${shown}"
 
                     break
 
                 done
             ;;
-            '# '*|'') ;;
-            *) (( block == 0 )) || text+=$'\n'"${line}" ;;
+            '# '*) ;;
+            *)
+                [[ "${block}" != 0 && -n "${line//[[:space:]]/}" ]] || continue
+                [[ "${block}" != 1 ]] || text+=$'\n'
+
+                block=2
+                text+=$'\n'"${line}"
+            ;;
         esac
 
     done < "${root}/CHANGELOG.md"

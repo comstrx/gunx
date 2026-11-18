@@ -33,3 +33,34 @@ bench:module:extract:shapes () {
     @measure 'module:extract:shapes one word' 20 200 module:extract:shapes ToolName
 
 }
+bench:module:extract:changelog () {
+
+    local root="" tree="" version=0
+
+    root="$(core:fs:temp:dir)" || return
+    tree="$(core:fs:temp:dir)" || return
+
+    for (( version = 0; version < 40; version++ )); do
+        printf '## v0.%s.0\n\n### one\n\n- a\n- b\n\n### two\n\n- c\n\n### demo-part\n\n- d\n- e\n\n### other\n\n- f\n\n' "${version}"
+    done > "${root}/CHANGELOG.md"
+
+    @measure 'module:extract:changelog 40 versions, 3 of 4 blocks' 10 5 module:extract:changelog "${root}" "${tree}" one two=shown 'demo-*'
+
+}
+bench:module:extract:shallow () {
+
+    local tree="" index=0
+
+    tree="$(core:fs:temp:dir)" || return
+    mkdir -p "${tree}/product/part" "${tree}/.github"
+
+    for (( index = 0; index < 20; index++ )); do
+        printf 'one = { path = "../../../engine/demo/src/one-%s" }\n' "${index}" > "${tree}/product/part/file-${index}.toml"
+        printf 'path: product/demo/part-%s\n' "${index}" > "${tree}/.github/flow-${index}.yml"
+    done
+
+    EXTRACT_HOMES='engine|product'
+
+    @measure 'module:extract:shallow 40 files' 5 3 module:extract:shallow "${tree}" product product/demo
+
+}

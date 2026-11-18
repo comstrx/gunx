@@ -28,7 +28,7 @@ module:bundle:bench:run () {
         count=$(( count + 1 ))
 
         ! core:cli:flag --save || module:bundle:bench:save "${baseline}" "${name}" "${line}" || return
-        ! core:cli:flag --compare || module:bundle:bench:compare "${baseline}" "${name}" "${line}" "${CONFIG[BENCH_TOLERANCE]:-25}" || failed=1
+        ! core:cli:flag --compare || module:bundle:bench:compare "${baseline}" "${name}" "${line}" "${CONFIG[BENCH_TOLERANCE]:-${CONFIG_BASE[BENCH_TOLERANCE]}}" || failed=1
 
     done < <({ module:bundle:expect:discover bench:; module:bundle:cfg:sources bench; } | sort -u)
 
@@ -175,11 +175,6 @@ module:bundle:bench:measure () {
     (( ${#samples[@]} == rounds )) || { core:error:fail "Bench ${label} lost samples"; return; }
 
     module:bundle:bench:report "${label}" "${samples[@]}"
-
-}
-module:bundle:bench:p50 () {
-
-    module:bundle:bench:field "${1}" p50ns
 
 }
 module:bundle:bench:field () {

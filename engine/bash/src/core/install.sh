@@ -78,7 +78,7 @@ core:install:archive () {
     core:fs:dir:new "${into}" 755 || return
 
     lock="${into}/.${name}.lock"
-    core:fs:lock "${lock}" "${CONFIG[RUN_TIMEOUT]:-600}" || return
+    core:fs:lock "${lock}" "${CONFIG[RUN_TIMEOUT]:-${CONFIG_BASE[RUN_TIMEOUT]}}" || return
 
     core:install:holds "${into}/${name}" "${digest}" || core:install:fetch "${name}" "${url}" "${digest}" "${into}" "${member}" || status=$?
 

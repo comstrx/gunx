@@ -20,7 +20,7 @@ test:config:settings:precedence () {
     @eq "${CONFIG_SOURCE[RELEASE]}" cli
     @eq "${CONFIG_DEFAULTS[LOG_LEVEL]}" info
     @eq "${CONFIG[RUN_RETRIES]}" 3
-    @contains "$(config:settings:keys)" TEST_TIMEOUT
+    core:list:has TEST_TIMEOUT "${CONFIG_KEYS[@]}"
 
 }
 test:config:settings:refuses-the-unknown () {

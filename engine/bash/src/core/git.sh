@@ -73,11 +73,6 @@ core:git:release () {
     git -C "${1}" describe --tags --exact-match --match 'v*' HEAD 2>/dev/null
 
 }
-core:git:latest () {
-
-    git -C "${1}" describe --tags --abbrev=0 --match 'v*' 2>/dev/null
-
-}
 core:git:baseline () {
 
     git -C "${1}" describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null
@@ -150,7 +145,15 @@ core:git:address () {
 
     local url="${1:-}" path=""
 
-    [[ "${url}" != /* ]] || { core:log:print "${url%/}"; return 0; }
+    if [[ "${url}" == /* ]]; then
+
+        [[ -n "${url%/}" ]] || { core:error:fail "Not a repository address: ${url}"; return; }
+
+        core:log:print "${url%/}"
+
+        return 0
+
+    fi
 
     url="${url%/}"
     url="${url%.git}"

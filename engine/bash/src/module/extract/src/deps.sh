@@ -38,7 +38,7 @@ module:extract:deps:python () {
 
     local tree="${1}" path="${2}" address="${3}" tag="${4}" file="" url="" pin="" from=""
 
-    url="${address}"
+    url="file://${address}"
     [[ "${address}" == /* ]] || url="https://${address}"
 
     [[ -z "${tag}" ]] || pin=", tag = \"${tag}\""

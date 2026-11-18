@@ -75,7 +75,7 @@ core:gh:create () {
 
     if [[ -z "${GIT_TOKEN:-}" ]] && core:sys:has gh; then
 
-        GH_HOST="${host}" core:proc:timeout "${CONFIG[RUN_TIMEOUT]:-300}" gh repo create "${owner}/${name}" --private > /dev/null \
+        GH_HOST="${host}" core:proc:timeout "${CONFIG[RUN_TIMEOUT]:-${CONFIG_BASE[RUN_TIMEOUT]}}" gh repo create "${owner}/${name}" --private > /dev/null \
             || { core:error:fail "gh could not create ${address}"; return; }
 
         return 0

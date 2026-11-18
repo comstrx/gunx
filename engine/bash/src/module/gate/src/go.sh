@@ -87,7 +87,13 @@ module:gate:go:sanitize () {
     [[ "${kind}" == thread || "$(core:sys:os)" == linux ]] || { @info "${kind} sanitizer: linux only; skipped"; return 0; }
 
     if [[ -n "${compiler}" ]]; then core:sys:has "${compiler}" || { @info "${kind} sanitizer: needs ${compiler}; skipped"; return 0; }
-    elif [[ "${kind}" != thread ]]; then core:sys:has gcc || core:sys:has clang || { @info "${kind} sanitizer: no C compiler; skipped"; return 0; }
+    elif [[ "${kind}" != thread ]]; then
+
+        if core:sys:has gcc; then compiler=gcc
+        elif core:sys:has clang; then compiler=clang
+        else @info "${kind} sanitizer: no C compiler; skipped"; return 0
+        fi
+
     fi
 
     CGO_ENABLED=1 CC="${compiler:-${CC:-cc}}" go test "${flag}" -count=1 "${@/%//...}"

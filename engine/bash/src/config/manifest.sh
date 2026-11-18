@@ -110,17 +110,6 @@ config:manifest:list () {
     core:parse:list MANIFEST "${1}"
 
 }
-config:manifest:counted () {
-
-    local count=""
-
-    [[ -n "${1:-}" ]] || return 1
-
-    count="${MANIFEST[${1}]:-}"
-
-    core:num:natural "${count}" && (( count > 0 ))
-
-}
 config:manifest:embedded () {
 
     declare -F bundle:manifest >/dev/null || return 1

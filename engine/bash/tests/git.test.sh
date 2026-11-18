@@ -91,6 +91,7 @@ test:core:git:parses-every-address () {
     @eq "$(core:git:address "git@github.com:${owner}/alphax.git")" "github.com/${owner}/alphax"
     @eq "$(core:git:address "github.com/${owner}/alphax")" "github.com/${owner}/alphax"
     @eq "$(core:git:address /srv/git/alphax.git)" /srv/git/alphax.git
+    @errors 'Not a repository address: /' core:git:address /
     @errors 'Not a repository address' core:git:address "${owner}"
     @errors 'Not a repository address' core:git:address 'https://github.com/a/b;c'
 

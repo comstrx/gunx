@@ -54,10 +54,20 @@ module:extract:flows:rewrite () {
 }
 module:extract:flows:labels () {
 
-    local tree="${1}"
+    local tree="${1}" file="" path=""
 
-    core:parse:yaml:prune "${tree}/.github/labels.yml" "[(](${EXTRACT_HOMES})/" || return
-    core:parse:yaml:prune "${tree}/.github/labeler.yml" "'(${EXTRACT_HOMES})/" || return
+    for file in "${tree}/.github/labels.yml" "${tree}/.github/labeler.yml"; do
+
+        [[ -f "${file}" ]] || continue
+
+        while IFS= read -r path; do
+
+            [[ -z "${path}" || -d "${tree}/${path}" ]] || core:parse:yaml:prune "${file}" "[('](${path//./[.]})(/|[)'])" || return
+
+        done < <(grep -oE "[('](${EXTRACT_HOMES})(/[A-Za-z0-9_.-]+)*" -- "${file}" | cut -c2- | sort -u || true)
+
+    done
+
     core:parse:yaml:hollow "${tree}/.github/labeler.yml" '[a-z][a-z0-9-]*' || return
 
 }

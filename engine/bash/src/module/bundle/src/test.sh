@@ -37,7 +37,7 @@ module:bundle:test:one () {
     sandbox="$(mktemp -d "${TOOL_TEMP}/test.XXXXXXXX")" || { core:error:fail "Cannot create a test sandbox"; return; }
     report="${sandbox}.log"
 
-    core:proc:timeout "${CONFIG[TEST_TIMEOUT]:-120}" \
+    core:proc:timeout "${CONFIG[TEST_TIMEOUT]:-${CONFIG_BASE[TEST_TIMEOUT]}}" \
         env -i PATH="${PATH}" HOME="${sandbox}" TMPDIR="${sandbox}" GIT_CEILING_DIRECTORIES="${TOOL_TEMP}" LC_ALL=C.UTF-8 INFRA_ENGINE="${TOOL_ENGINE}" NO_COLOR=1 \
         bash "${bundle}" --root "${sandbox}" __test "${name}" > "${report}" 2>&1 || status=$?
 
@@ -45,7 +45,7 @@ module:bundle:test:one () {
 
     if (( status == 0 )); then core:log:info "pass ${name}"; rm -f -- "${report}"; return 0; fi
 
-    if (( status == 124 )); then core:log:warn "fail ${name}: timed out after ${CONFIG[TEST_TIMEOUT]:-120}s"
+    if (( status == 124 )); then core:log:warn "fail ${name}: timed out after ${CONFIG[TEST_TIMEOUT]:-${CONFIG_BASE[TEST_TIMEOUT]}}s"
     else core:log:warn "fail ${name}: exit ${status}"
     fi
 

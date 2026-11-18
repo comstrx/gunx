@@ -57,7 +57,7 @@ core:log:level () {
 
     local -n _rank="${1}"
 
-    case "${LOG_LEVEL:-${CONFIG[LOG_LEVEL]:-info}}" in
+    case "${LOG_LEVEL:-${CONFIG[LOG_LEVEL]:-${CONFIG_BASE[LOG_LEVEL]}}}" in
         debug) _rank=0 ;;
         info)  _rank=1 ;;
         warn)  _rank=2 ;;

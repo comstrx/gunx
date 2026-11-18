@@ -16,7 +16,6 @@ test:config:paths:picks-the-lab () {
 
     @eq "$(TOOL_LAB=/lab config:paths:tools)" /lab/tools
     @eq "$(TOOL_LAB=/lab config:paths:sbom)" /lab/sbom/sbom.spdx.json
-    @eq "$(TOOL_LAB=/lab config:paths:lock x)" /lab/lock/x
     @eq "$(config:paths:cache)" .infra
 
 }

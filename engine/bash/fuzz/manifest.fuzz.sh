@@ -14,7 +14,6 @@ fuzz:config:manifest:get () {
     key="$(tr -d '\0\n' < "${1}" | head -c 80)"
 
     config:manifest:get "${key}" >/dev/null || true
-    config:manifest:counted "${key}" || true
     config:manifest:list "${key}" >/dev/null
 
 }
