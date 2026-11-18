@@ -1,7 +1,7 @@
 import { Shell } from "@/app/shell.tsx";
-import { boot } from "@/host/index.ts";
-import { Frame } from "@/host/screen.tsx";
-import { useTheme } from "@/styles/theme.ts";
+import { useTheme } from "@/hooks/use-theme.ts";
+import { boot } from "@/render/bridge/index.ts";
+import { Frame } from "@/render/host/screen.tsx";
 
 boot();
 

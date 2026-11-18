@@ -23,8 +23,3 @@ module:extract:gate () {
     (( failed == 0 )) || { @err "gates failed for ${name}"; return; }
 
 }
-module:extract:language () {
-
-    [[ -n "$(module:gate:chains "${1}")" ]]
-
-}

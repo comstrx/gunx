@@ -10,9 +10,9 @@ python:
   - changed-files:
       - any-glob-to-any-file: ['engine/python/**']
 
-bun:
+typescript:
   - changed-files:
-      - any-glob-to-any-file: ['engine/bun/**']
+      - any-glob-to-any-file: ['engine/typescript/**']
 
 bash:
   - changed-files:
@@ -29,10 +29,6 @@ web:
 mobile:
   - changed-files:
       - any-glob-to-any-file: ['product/*/mobile/**']
-
-desktop:
-  - changed-files:
-      - any-glob-to-any-file: ['product/*/desktop/**']
 
 tutor:
   - changed-files:
@@ -60,7 +56,6 @@ deps:
           - '**/bunfig.toml'
           - '**/bun.lock'
           - '**/bash.toml'
-          - '**/Bash.toml'
           - '**/infra.toml'
 
 docs:

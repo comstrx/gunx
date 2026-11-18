@@ -4,7 +4,6 @@ import { useStage } from "@/hooks/use-stage.ts";
 import { host } from "@/specs/app.ts";
 import { bind } from "@/stores/bind.ts";
 import { session } from "@/stores/session.ts";
-import type { Locale } from "@/types/index.ts";
 
 type Bound = { session: ReturnType<typeof bind<spec.Context>>; viewing: ReturnType<typeof bind<spec.Visibility>> };
 
@@ -55,7 +54,7 @@ export function useVisible ( id: string ): boolean {
     return boundTo(live).session.useSelect(() => live.visible(id)) && placed;
 
 }
-export function useMenu ( locale: Locale, at: string ): spec.MenuItem[] {
+export function useMenu ( locale: string, at: string ): spec.MenuItem[] {
 
     return boundTo(host.app.live).session.useSelect(() => host.app.menu(locale, at), json.equal);
 

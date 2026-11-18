@@ -19,7 +19,7 @@ fuzz:config:targets:load () {
         config:targets:get "${name}" path >/dev/null || true
         config:targets:get "${name}" tag >/dev/null
         config:targets:get "${name}" branch >/dev/null
-        config:targets:get "${name}" title >/dev/null
+        config:targets:get "${name}" logo >/dev/null
         config:targets:deps "${name}" >/dev/null
         config:targets:engines "${name}" >/dev/null
 

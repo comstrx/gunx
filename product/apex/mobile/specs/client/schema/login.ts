@@ -13,8 +13,7 @@ export const login = spec.screen("login", {
         stack({ padding: "md", gap: "lg" }, [
             spec.feature("account"),
             stack({ direction: "row", gap: "sm", wrap: true }, [
-                spec.feature("action", { id: "back", settings: { label: "account.back", look: "ghost" }, on: { success: spec.navigate("/enroll") } }),
-                spec.feature("action", { id: "other", settings: { label: "account.asCourier", look: "soft" }, on: { success: spec.transfer("courier", { to: "/login" }) } }),
+                spec.feature("action", { id: "back", settings: { label: "account.back", look: "ghost" }, on: { success: spec.navigate("/") } }),
             ]),
         ]),
     ],

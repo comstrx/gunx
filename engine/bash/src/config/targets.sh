@@ -11,6 +11,10 @@ config:targets:load () {
     done
 
     for key in "${!TARGETS[@]}"; do
+        [[ "${key}" != *.type || "${key}" == *.*.* ]] || TARGETS["${key%.type}"]="${TARGETS[${key%.type}]:-1}"
+    done
+
+    for key in "${!TARGETS[@]}"; do
 
         [[ "${key}" != *.*.* && "${key}" == *.path ]] || continue
 
@@ -29,16 +33,6 @@ config:targets:list () {
     done | sort
 
 }
-config:targets:title () {
-
-    local name="${1}" title=""
-
-    title="${name^}"
-    [[ "${title}" != *x ]] || title="${title%x}X"
-
-    core:log:print "${title}"
-
-}
 config:targets:get () {
 
     local name="${1:-}" key="${2:-}"
@@ -47,8 +41,8 @@ config:targets:get () {
 
     case "${key}" in
         tag)    core:log:print "${TARGETS[${name}.tag]:-}"; return 0 ;;
+        logo)   core:log:print "${TARGETS[${name}.logo]:-}"; return 0 ;;
         branch) core:log:print "${TARGETS[${name}.branch]:-$(core:git:trunk "${TOOL_ROOT:-}")}"; return 0 ;;
-        title)  [[ -n "${TARGETS[${name}.title]+x}" ]] || { config:targets:title "${name}"; return; } ;;
     esac
 
     [[ -n "${TARGETS[${name}.${key}]+x}" ]] || { core:error:fail "Target ${name} has no ${key}"; return; }

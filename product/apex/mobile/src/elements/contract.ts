@@ -1,7 +1,8 @@
 import type * as media from "engine/media";
 import type * as spec from "engine/spec";
 import type { ReactNode } from "react";
-import type { Space } from "@/styles/tokens.ts";
+
+export type Space = "none" | "xs" | "sm" | "md" | "lg" | "xl";
 
 export type BlockProps = {
     children?: ReactNode;

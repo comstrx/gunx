@@ -86,16 +86,14 @@ class Domains:
 
         await self._manager.close()
 
-    def apex ( self, host: str ) -> str:
+    def root ( self, host: str ) -> str:
 
         parts = self.normalize(host).split(".")
 
         return ".".join(parts[-2:])
 
-    def subdomains ( self, hosts: Sequence[str], apex: str ) -> list[str]:
+    def subdomains ( self, hosts: Sequence[str], root: str ) -> list[str]:
 
-        root = self.normalize(apex)
-
-        suffix = f".{root}"
+        suffix = f".{self.normalize(root)}"
 
         return [found for host in hosts if (found := self.normalize(host)).endswith(suffix)]

@@ -12,6 +12,7 @@ import { Reveal } from "@/elements/reveal.tsx";
 import { Title } from "@/elements/title.tsx";
 import { registry } from "@/features/index.ts";
 import { useLinked } from "@/hooks/use-linked.ts";
+import { useMotion } from "@/hooks/use-motion.ts";
 import { redirect, usePath, useQuery } from "@/hooks/use-path.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
 import { useLeaving } from "@/hooks/use-presence.ts";
@@ -19,8 +20,6 @@ import { useOpens, usePopups, useSigning, useVisible } from "@/hooks/use-session
 import { StageContext, useStage } from "@/hooks/use-stage.ts";
 import { host } from "@/specs/app.ts";
 import type { PopupProps, StackProps } from "@/specs/part.ts";
-import { motion } from "@/styles/tokens.ts";
-import type { Locale } from "@/types/index.ts";
 
 type Keyed = { block: spec.Block; key: string };
 
@@ -67,8 +66,9 @@ function Board ({ screen, live }: { screen: spec.CompiledScreen; live: spec.Runt
     return <StageContext value={stage}>{keyed(screen.blocks, screen.name).map(( child ) => <Piece key={child.key} block={child.block} at={child.key} />)}</StageContext>;
 
 }
-export function Popups ({ locale }: { locale: Locale } ) {
+export function Popups ({ locale }: { locale: string } ) {
 
+    const motion = useMotion();
     const popups = useLeaving(usePopups(), motion.base);
     const text = host.app.labels(locale, "nav");
 

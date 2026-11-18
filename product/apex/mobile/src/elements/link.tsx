@@ -1,14 +1,15 @@
 import { useCallback } from "react";
 import { Linking, Pressable, StyleSheet, Text } from "react-native";
 import type { LinkProps } from "@/elements/contract.ts";
-import { useTheme } from "@/styles/theme.ts";
-import { radius } from "@/styles/tokens.ts";
+import { useTheme } from "@/hooks/use-theme.ts";
+import { sheeted } from "@/styles/globals.ts";
 
-const base = StyleSheet.create({ button: { height: 44, paddingHorizontal: 16, borderRadius: radius.md, justifyContent: "center" }, label: { fontSize: 14, lineHeight: 20, fontWeight: "500" } });
+const baseOf = sheeted(( radius ) => StyleSheet.create({ button: { height: 44, paddingHorizontal: 16, borderRadius: radius.md, justifyContent: "center" }, label: { fontSize: 14, lineHeight: 20, fontWeight: "500" } }));
 
 export function Link ({ children, href, external = false, look = "text", current = false, onNavigate }: LinkProps ) {
 
-    const { palette } = useTheme();
+    const { palette, radius } = useTheme();
+    const base = baseOf(radius);
     const filled = look === "solid";
     const open = useCallback(() => {
 

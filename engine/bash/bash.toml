@@ -35,43 +35,6 @@ taplo = "0.10.0"
 [deploy]
 stack = "native"
 
-[deps]
-bashx = { type = "engine", path = "engine/bash", repo = "comstrx/bashx" }
-rustx = { type = "engine", path = "engine/rust", repo = "comstrx/rustx", deps = [
-    { name = "engine", repo = "comstrx/bashx" }
-] }
-pyx = { type = "engine", path = "engine/python", repo = "comstrx/pyx", deps = [
-    { name = "engine", repo = "comstrx/bashx" }
-] }
-gox = { type = "engine", path = "engine/go", repo = "comstrx/gox", deps = [
-    { name = "engine", repo = "comstrx/bashx" }
-] }
-bunx = { type = "engine", path = "engine/bun", repo = "comstrx/bunx", deps = [
-    { name = "engine", repo = "comstrx/bashx" }
-] }
-skillx = { type = "tutor", path = "tutor", repo = "comstrx/skillx", deps = [
-    { name = "engine", repo = "comstrx/bashx" }
-] }
-apix = { type = "fragment", path = "product/apex/api", repo = "comstrx/apix", deps = [
-    { name = "engine", repo = "comstrx/pyx" },
-    { name = "engine", repo = "comstrx/bashx" },
-] }
-webx = { type = "fragment", path = "product/apex/web", repo = "comstrx/webx", deps = [
-    { name = "engine", repo = "comstrx/bunx" },
-    { name = "engine", repo = "comstrx/bashx" },
-] }
-mobilex = { type = "fragment", path = "product/apex/mobile", repo = "comstrx/mobilex", deps = [
-    { name = "engine", repo = "comstrx/bunx" },
-    { name = "engine", repo = "comstrx/bashx" },
-] }
-deskx = { type = "fragment", path = "product/apex/desktop", repo = "comstrx/deskx", deps = [
-    { name = "engine", repo = "comstrx/bunx" },
-    { name = "engine", repo = "comstrx/bashx" },
-] }
-apex = { type = "product", path = "product/apex", repo = "comstrx/apex", engines = [
-    "bash", "python", "bun"
-]}
-
 [archive]
 shellcheck_linux_x86_64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.x86_64.tar.xz"
 shellcheck_linux_aarch64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.aarch64.tar.xz"
@@ -131,3 +94,56 @@ taplo_linux_x86_64 = "8fe196b894ccf9072f98d4e1013a180306e17d244830b03986ee5e8eab
 taplo_linux_aarch64 = "033681d01eec8376c3fd38fa3703c79316f5e14bb013d859943b60a07bccdcc3"
 taplo_darwin_x86_64 = "898122cde3a0b1cd1cbc2d52d3624f23338218c91b5ddb71518236a4c2c10ef2"
 taplo_darwin_aarch64 = "713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d"
+
+[deps.bashx]
+type = "engine"
+path = "engine/bash"
+repo = "comstrx/bashx"
+
+[deps.rustx]
+type = "engine"
+path = "engine/rust"
+repo = "comstrx/rustx"
+deps = [{ name = "engine", repo = "comstrx/bashx" }]
+
+[deps.gox]
+type = "engine"
+path = "engine/go"
+repo = "comstrx/gox"
+deps = [{ name = "engine", repo = "comstrx/bashx" }]
+
+[deps.pyx]
+type = "engine"
+path = "engine/python"
+repo = "comstrx/pyx"
+deps = [{ name = "engine", repo = "comstrx/bashx" }]
+
+[deps.tsx]
+type = "engine"
+path = "engine/typescript"
+repo = "comstrx/tsx"
+deps = [{ name = "engine", repo = "comstrx/bashx" }]
+
+[deps.apix]
+type = "fragment"
+path = "product/apex/api"
+repo = "comstrx/apix"
+deps = [{ name = "engine", repo = "comstrx/pyx" }, { name = "engine", repo = "comstrx/bashx" }]
+
+[deps.webx]
+type = "fragment"
+path = "product/apex/web"
+repo = "comstrx/webx"
+deps = [{ name = "engine", repo = "comstrx/tsx" }, { name = "engine", repo = "comstrx/bashx" }]
+
+[deps.mobx]
+type = "fragment"
+path = "product/apex/mobile"
+repo = "comstrx/mobx"
+deps = [{ name = "engine", repo = "comstrx/tsx" }, { name = "engine", repo = "comstrx/bashx" }]
+
+[deps.apex]
+type = "product"
+path = "product/apex"
+repo = "comstrx/apex"
+engines = ["bash", "python", "typescript"]

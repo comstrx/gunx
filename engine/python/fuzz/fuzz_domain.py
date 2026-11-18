@@ -36,7 +36,7 @@ def normalized ( host: Any ) -> None:
     assert made == made.lower()
     assert HOST.match(made)
     assert domains.normalize(made) == made
-    assert domains.apex(made).count(".") == 1
+    assert domains.root(made).count(".") == 1
     assert domains.challenge(made).name == f"_engine-verify.{made}"
 
 @settings(max_examples=EXAMPLES, deadline=None, database=None, suppress_health_check=list(HealthCheck))

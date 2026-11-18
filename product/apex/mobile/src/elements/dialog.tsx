@@ -1,20 +1,22 @@
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import type { DialogProps } from "@/elements/contract.ts";
-import { useTheme } from "@/styles/theme.ts";
-import { paddings, radius } from "@/styles/tokens.ts";
+import { useTheme } from "@/hooks/use-theme.ts";
+import { sheeted } from "@/styles/globals.ts";
+import { paddings } from "@/styles/tokens.ts";
 
 const widths = { sm: 448, md: 640, lg: 896 } as const;
-const base = StyleSheet.create({
+const baseOf = sheeted(( radius ) => StyleSheet.create({
     scrim: { flex: 1, alignItems: "center", justifyContent: "center", padding: paddings.md },
     filled: { flex: 1 },
     sheet: { width: "100%", borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth },
     whole: { flex: 1, width: "100%" },
     mark: { position: "absolute", top: 8, end: 8, width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: radius.md, zIndex: 1 },
-});
+}));
 
 export function Dialog ({ children, open, kind = "plain", size = "sm", label, labelledBy, closeLabel, onDismiss }: DialogProps ) {
 
-    const { palette, direction } = useTheme();
+    const { palette, direction, radius } = useTheme();
+    const base = baseOf(radius);
     const full = size === "full";
 
     return (

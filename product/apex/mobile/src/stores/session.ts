@@ -27,10 +27,10 @@ const made = host.own(( app ) => {
 
     if ( app.address === undefined ) throw exception.fault("internal", "spec.address", { message: "the surface names no api address; set contracts.baseUrl" });
 
-    const open: api.Client = createClient({ baseUrl: app.address, locale: () => instance().getState().locale });
+    const open: api.Client = createClient({ baseUrl: app.address, wire: app.config.contracts.wire, locale: () => instance().getState().locale });
     const held = auth.session<Person>({
         name: "session",
-        box: cache.open({ kind: app.config.settings.storage.secure, prefix: `${app.id}.session` }),
+        box: cache.open({ kind: cache.volatile("secure") ? app.config.settings.storage.secure : "secure", prefix: `${app.id}.session` }),
         renew: async ( refresh, signal ) => auth.withExpiry((await open.call(transport.renew, { refresh }, { signal })).data),
         fail: ( fault ) => app.report(fault, "session"),
     });

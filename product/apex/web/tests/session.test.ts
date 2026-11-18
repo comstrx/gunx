@@ -20,12 +20,12 @@ describe("session", () => {
 
             expect([session().signed(), await session().token(), carried([]), carried(["session"]), host.app.live.get("user.email"), host.app.live.get("user.abilities")]).toEqual([true, "a.b.c", {}, { session: { tokens, user } }, "admin@lab.test", ["admin"]]);
 
-            await host.resume("acme.vendor");
+            await host.resume("acme.client");
 
-            expect([host.active.getState(), session().signed()]).toEqual(["acme.vendor", false]);
+            expect([host.active.getState(), session().signed()]).toEqual(["acme.client", false]);
 
             await host.resume(current);
-            await host.resume("acme.vendor", { locale: "en", ...carried(["session"]) });
+            await host.resume("acme.client", { locale: "en", ...carried(["session"]) });
 
             expect([session().signed(), session().user()?.email, host.app.live.get("user.name")]).toEqual([true, "admin@lab.test", "Admin"]);
 

@@ -10,9 +10,9 @@
   color: '3572A5'
   description: The Python engine (engine/python)
 
-- name: bun
+- name: typescript
   color: 'F9F1E1'
-  description: The TypeScript engine (engine/bun)
+  description: The TypeScript engine (engine/typescript)
 
 - name: bash
   color: '1D76DB'
@@ -24,15 +24,11 @@
 
 - name: web
   color: '0075CA'
-  description: The SEO sites and panels (product/*/web)
+  description: The sites, panels and desktop apps (product/*/web)
 
 - name: mobile
   color: 'C2E0C6'
   description: The mobile apps (product/*/mobile)
-
-- name: desktop
-  color: 'F4B183'
-  description: The desktop apps (product/*/desktop)
 
 - name: tutor
   color: 'C5DEF5'

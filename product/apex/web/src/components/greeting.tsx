@@ -1,12 +1,12 @@
 "use client";
 
+import type { Status } from "@/api/index.ts";
 import { Block } from "@/elements/block.tsx";
 import { Button } from "@/elements/button.tsx";
 import { Heading } from "@/elements/heading.tsx";
 import { Skeleton } from "@/elements/skeleton.tsx";
 import { Text } from "@/elements/text.tsx";
 import { useGreeting } from "@/hooks/use-greeting.ts";
-import type { Status } from "@/types/index.ts";
 
 export type GreetingProps = { status: Status; message: string | undefined; onRefresh: () => void };
 

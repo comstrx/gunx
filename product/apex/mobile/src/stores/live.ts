@@ -4,12 +4,12 @@ import { session } from "@/stores/session.ts";
 
 export function live ( app: spec.App ): spec.Feeder | undefined {
 
-    const path = app.config.contracts.live;
+    const told = app.config.contracts.live;
 
-    if ( app.address === undefined || typeof path !== "string" || path === "" ) return undefined;
+    if ( app.address === undefined || told.path === "" ) return undefined;
 
     const held = session();
-    const door = api.live({ url: `${app.address}${path}`, token: () => held.token(), fail: ( caught ) => app.report(caught, "live") });
+    const door = api.live({ url: `${app.address}${told.path}`, channel: told.channel, events: told.events, key: told.key, token: () => held.token(), fail: ( caught ) => app.report(caught, "live") });
 
     let last = held.state.getState().user?.id;
 

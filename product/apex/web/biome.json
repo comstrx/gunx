@@ -9,8 +9,15 @@
       "!**/*.d.ts",
       "!.next",
       "!out",
+      "!dist",
       "!.cache",
-      "!public"
+      "!public",
+      "!build",
+      "!artifacts",
+      "!.hutch",
+      "!.cottontail-tmp",
+      "!**/*.d.ts",
+      "!src/app/**/index.html"
     ]
   },
   "formatter": {
@@ -82,6 +89,22 @@
     ]
   },
   "overrides": [
+    {
+      "includes": [
+        "src/render/**",
+        "electrobun.config.ts",
+        "tests/setup.ts",
+        "tests/host.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredDependencies": "off",
+            "noUnresolvedImports": "off"
+          }
+        }
+      }
+    },
     {
       "includes": [
         "src/elements/image.tsx"

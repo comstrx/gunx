@@ -1,0 +1,89 @@
+@theme {
+    --color-brand: #2c46b6;
+    --color-brand-strong: #1e3393;
+    --color-brand-soft: #f1f5ff;
+    --color-brand-soft-strong: #dae5ff;
+    --color-on-brand: #ffffff;
+    --color-ink: #1c1917;
+    --color-ink-muted: #57534e;
+    --color-surface: #fcfbfa;
+    --color-surface-raised: #ffffff;
+    --color-surface-sunken: #f2efec;
+    --color-line: #e7e3df;
+    --color-danger: #b91c1c;
+    --color-danger-strong: #991b1b;
+    --color-danger-soft: #fef2f2;
+    --color-success: #15803d;
+    --color-success-soft: #f0fdf4;
+    --color-warning: #a16207;
+    --color-warning-soft: #fefce8;
+    --color-scrim: rgba(28, 25, 23, 0.45);
+    --color-shade: rgba(28, 25, 23, 0.22);
+    --shadow-raised: 0 1px 2px rgb(28 25 23 / 0.05), 0 12px 32px -16px rgb(28 25 23 / 0.22);
+    --radius-md: 0.625rem;
+    --radius-lg: 1.125rem;
+    --font-sans: "Readex Pro", "Figtree", ui-sans-serif, system-ui, sans-serif;
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root {
+    --motion-fast: 140ms;
+    --motion-base: 220ms;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --color-brand: #5c7fec;
+        --color-brand-strong: #80a1fd;
+        --color-brand-soft: #040441;
+        --color-brand-soft-strong: #070c50;
+        --color-on-brand: #000000;
+        --color-ink: #f5f3f1;
+        --color-ink-muted: #a8a29e;
+        --color-surface: #0f0d0c;
+        --color-surface-raised: #1a1715;
+        --color-surface-sunken: #262220;
+        --color-line: #2e2926;
+        --color-danger: #f87171;
+        --color-danger-strong: #fca5a5;
+        --color-danger-soft: #2a1212;
+        --color-success: #4ade80;
+        --color-success-soft: #0f2416;
+        --color-warning: #facc15;
+        --color-warning-soft: #2a2208;
+        --color-scrim: rgba(0, 0, 0, 0.62);
+        --color-shade: rgba(0, 0, 0, 0.8);
+        --shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 16px 40px -20px rgb(0 0 0 / 0.8);
+    }
+}
+
+:root[data-theme="dark"] {
+    --color-brand: #5c7fec;
+    --color-brand-strong: #80a1fd;
+    --color-brand-soft: #040441;
+    --color-brand-soft-strong: #070c50;
+    --color-on-brand: #000000;
+    --color-ink: #f5f3f1;
+    --color-ink-muted: #a8a29e;
+    --color-surface: #0f0d0c;
+    --color-surface-raised: #1a1715;
+    --color-surface-sunken: #262220;
+    --color-line: #2e2926;
+    --color-danger: #f87171;
+    --color-danger-strong: #fca5a5;
+    --color-danger-soft: #2a1212;
+    --color-success: #4ade80;
+    --color-success-soft: #0f2416;
+    --color-warning: #facc15;
+    --color-warning-soft: #2a2208;
+    --color-scrim: rgba(0, 0, 0, 0.62);
+    --color-shade: rgba(0, 0, 0, 0.8);
+    --shadow-raised: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 16px 40px -20px rgb(0 0 0 / 0.8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --motion-fast: 0ms;
+        --motion-base: 0ms;
+    }
+}

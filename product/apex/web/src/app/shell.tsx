@@ -8,7 +8,8 @@ import { useEffect, useRef, useState } from "react";
 import { Nav } from "@/app/nav.tsx";
 import { Screen } from "@/app/screen.tsx";
 import { Block } from "@/elements/block.tsx";
-import { navigate, redirect, usePath } from "@/hooks/use-path.ts";
+import { arrived, navigate, redirect, usePath, watched } from "@/hooks/use-path.ts";
+import { Spoken } from "@/hooks/use-preferences.ts";
 import { useActive } from "@/hooks/use-session.ts";
 import { useShield } from "@/hooks/use-shield.ts";
 import { host } from "@/specs/app.ts";
@@ -16,8 +17,8 @@ import type { ScreenProps } from "@/specs/part.ts";
 import { passing, shared } from "@/stores/box.ts";
 import { live } from "@/stores/live.ts";
 import { instance } from "@/stores/preferences.ts";
+import { scheme } from "@/stores/scheme.ts";
 import { carried } from "@/stores/session.ts";
-import { scheme } from "@/styles/theme.ts";
 
 host.bind({ live });
 
@@ -50,7 +51,7 @@ async function restore (): Promise<boolean> {
     return saved === host.active.getState() && map === undefined ? false : host.resume(saved, map);
 
 }
-export function Shell ({ path }: { path: string } ) {
+export function Shell ({ path, locale }: { path: string; locale?: string | undefined } ) {
 
     const active = useActive();
     const at = usePath(path);
@@ -64,6 +65,7 @@ export function Shell ({ path }: { path: string } ) {
     const { home } = host.app;
 
     useEffect(() => host.bind({ navigate, reload, carry }), []);
+    useEffect(watched, []);
     useEffect(() => {
 
         let stop: () => void = () => undefined;
@@ -89,6 +91,7 @@ export function Shell ({ path }: { path: string } ) {
 
             restored.current = true;
 
+            arrived();
             setSettled(true);
             setTimeout(unveil, 0);
 
@@ -108,12 +111,14 @@ export function Shell ({ path }: { path: string } ) {
     }, [lost, home]);
 
     return (
-        <React.Fragment key={active}>
-            <Nav path={path} />
-            <Block as="main" gap="none" height="screen" width={frame.width}>
-                <Screen path={path} />
-            </Block>
-        </React.Fragment>
+        <Spoken value={locale}>
+            <React.Fragment key={active}>
+                <Nav path={path} />
+                <Block as="main" gap="none" height="screen" width={frame.width}>
+                    <Screen path={path} />
+                </Block>
+            </React.Fragment>
+        </Spoken>
     );
 
 }

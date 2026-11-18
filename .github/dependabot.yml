@@ -58,7 +58,7 @@ updates:
       prefix: 'python(deps)'
 
   - package-ecosystem: bun
-    directory: /engine/bun
+    directory: /engine/typescript
     schedule:
       interval: weekly
       day: monday
@@ -69,7 +69,7 @@ updates:
         patterns: ['*']
     labels: [deps]
     commit-message:
-      prefix: 'bun(deps)'
+      prefix: 'typescript(deps)'
 
   - package-ecosystem: uv
     directory: /product/apex/api
@@ -112,17 +112,3 @@ updates:
     labels: [deps]
     commit-message:
       prefix: 'apex-mobile(deps)'
-
-  - package-ecosystem: bun
-    directory: /product/apex/desktop
-    schedule:
-      interval: weekly
-      day: monday
-    cooldown:
-      default-days: 7
-    groups:
-      bun:
-        patterns: ['*']
-    labels: [deps]
-    commit-message:
-      prefix: 'apex-desktop(deps)'

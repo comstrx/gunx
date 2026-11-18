@@ -84,13 +84,13 @@ test:core:git:parses-every-address () {
 
     owner="$(config:meta:owner)"
 
-    @eq "$(core:git:address "https://github.com/${owner}/rustx.git")" "github.com/${owner}/rustx"
-    @eq "$(core:git:address "https://github.com/${owner}/rustx/")" "github.com/${owner}/rustx"
+    @eq "$(core:git:address "https://github.com/${owner}/alphax.git")" "github.com/${owner}/alphax"
+    @eq "$(core:git:address "https://github.com/${owner}/alphax/")" "github.com/${owner}/alphax"
     @eq "$(core:git:address http://git.example.com:8443/team/tool)" git.example.com:8443/team/tool
-    @eq "$(core:git:address "ssh://git@github.com/${owner}/rustx.git")" "github.com/${owner}/rustx"
-    @eq "$(core:git:address "git@github.com:${owner}/rustx.git")" "github.com/${owner}/rustx"
-    @eq "$(core:git:address "github.com/${owner}/rustx")" "github.com/${owner}/rustx"
-    @eq "$(core:git:address /srv/git/rustx.git)" /srv/git/rustx.git
+    @eq "$(core:git:address "ssh://git@github.com/${owner}/alphax.git")" "github.com/${owner}/alphax"
+    @eq "$(core:git:address "git@github.com:${owner}/alphax.git")" "github.com/${owner}/alphax"
+    @eq "$(core:git:address "github.com/${owner}/alphax")" "github.com/${owner}/alphax"
+    @eq "$(core:git:address /srv/git/alphax.git)" /srv/git/alphax.git
     @errors 'Not a repository address' core:git:address "${owner}"
     @errors 'Not a repository address' core:git:address 'https://github.com/a/b;c'
 
@@ -104,29 +104,29 @@ test:core:git:resolves-from-the-origin () {
 
     root="$(fixture:core:git:repo)"
 
-    @errors 'no owner' core:git:resolve rustx "${root}"
-    @eq "$(core:git:resolve "${owner}/rustx" "${root}")" "github.com/${owner}/rustx"
+    @errors 'no owner' core:git:resolve alphax "${root}"
+    @eq "$(core:git:resolve "${owner}/alphax" "${root}")" "github.com/${owner}/alphax"
 
     git -C "${root}" remote add origin "git@github.com:${owner}/${mono}.git"
 
-    @eq "$(core:git:resolve rustx "${root}")" "github.com/${owner}/rustx"
-    @eq "$(core:git:resolve other/rustx "${root}")" github.com/other/rustx
-    @eq "$(core:git:resolve gitlab.com/o/rustx "${root}")" gitlab.com/o/rustx
-    @eq "$(core:git:resolve https://gitlab.com/o/rustx.git "${root}")" gitlab.com/o/rustx
-    @eq "$(core:git:resolve /srv/rustx.git "${root}")" /srv/rustx.git
+    @eq "$(core:git:resolve alphax "${root}")" "github.com/${owner}/alphax"
+    @eq "$(core:git:resolve other/alphax "${root}")" github.com/other/alphax
+    @eq "$(core:git:resolve gitlab.com/o/alphax "${root}")" gitlab.com/o/alphax
+    @eq "$(core:git:resolve https://gitlab.com/o/alphax.git "${root}")" gitlab.com/o/alphax
+    @eq "$(core:git:resolve /srv/alphax.git "${root}")" /srv/alphax.git
     @eq "$(core:git:home "${root}")" "github.com/${owner}/${mono}"
 
     git -C "${root}" remote set-url origin "https://code.example.com/team/${mono}"
-    @eq "$(core:git:resolve rustx "${root}")" code.example.com/team/rustx
-    @eq "$(core:git:resolve other/rustx "${root}")" code.example.com/other/rustx
+    @eq "$(core:git:resolve alphax "${root}")" code.example.com/team/alphax
+    @eq "$(core:git:resolve other/alphax "${root}")" code.example.com/other/alphax
     @eq "$(core:git:host "${root}")" code.example.com
     @eq "$(core:git:owner "${root}")" team
     @eq "$(core:git:trunk "${root}")" "$(git -C "${root}" symbolic-ref --short HEAD)"
     @eq "$(core:git:host "${TMPDIR}/no-repository")" "${GIT_HOST}"
     @eq "$(core:git:trunk "${TMPDIR}/no-repository")" "${GIT_BRANCH}"
     @fails core:git:owner "${TMPDIR}/no-repository"
-    @eq "$(core:git:resolve gitlab.com/group/sub/rustx "${root}")" gitlab.com/group/sub/rustx
-    @eq "$(core:git:resolve https://dev.azure.com/org/project/_git/rustx "${root}")" dev.azure.com/org/project/_git/rustx
+    @eq "$(core:git:resolve gitlab.com/group/sub/alphax "${root}")" gitlab.com/group/sub/alphax
+    @eq "$(core:git:resolve https://dev.azure.com/org/project/_git/alphax "${root}")" dev.azure.com/org/project/_git/alphax
 
     @errors 'An empty repository address' core:git:resolve '' "${root}"
     @errors 'Not a repository address' core:git:resolve 'a b' "${root}"

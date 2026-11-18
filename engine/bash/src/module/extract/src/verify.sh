@@ -20,15 +20,17 @@ module:extract:words () {
     @print "\b(${words})\b"
 
 }
-module:extract:manifest () {
+module:extract:loose () {
 
-    local tree="${1}" kind="${2}" part="${3}"
+    local kind="${1}" path="${2}"
 
     case "${kind}" in
-        tutor)   [[ -f "${tree}/index.md" ]] || @err "verify: no index.md at the root of ${tree}" ;;
-        product) [[ -d "${tree}/${part}" ]] || @err "verify: no ${part} in ${tree}" ;;
-        *)       module:extract:language "${tree}" || @err "verify: no manifest of a language at the root of ${tree}" ;;
+        fragment) [[ "${path}" != .github/* ]] || return ;;
+        product)  [[ "${path}" == "${EXTRACT_PRODUCTS}"/* ]] || return ;;
+        *)        return 1 ;;
     esac
+
+    [[ "${path}" != *.@(md|toml|yml|yaml) ]]
 
 }
 module:extract:verify () {
@@ -40,14 +42,12 @@ module:extract:verify () {
 
     [[ -z "${name}" ]] || part="$(config:targets:get "${name}" path)" || return
 
-    module:extract:manifest "${tree}" "${kind}" "${part}" || failed=1
-
     if [[ "${kind}" == product ]]; then
 
         words="$(module:extract:words "${word}" "${part##*/}")" || return
         left="$(module:extract:left "${name}")" || return
 
-        module:extract:scan "${tree}" "${words}" "the monorepo name or another product's name" || failed=1
+        module:extract:scan "${tree}" "${words}" "the monorepo name or another product's name" '' "${kind}" || failed=1
 
         [[ -z "${left}" ]] || module:extract:scan "${tree}/.github" "(^|[^A-Za-z0-9_-])(${left})(/|[^A-Za-z0-9_/-]|\$)" 'an engine that stayed behind' sensitive || failed=1
 
@@ -56,8 +56,7 @@ module:extract:verify () {
         words="$(module:extract:words "${word}")" || return
 
         module:extract:scan "${tree}/.github" "(^|[^A-Za-z0-9_./-]|[$]/|[.]/|[.][.]/)(${EXTRACT_HOMES})/|main[.]sh" 'a monorepo path' sensitive || failed=1
-        module:extract:scan "${tree}" "${words}" 'a monorepo or product name' || failed=1
-        module:extract:scan "${tree}" "\.\./(\.\./)*(${EXTRACT_HOMES})/" 'a path out of the tree' sensitive || failed=1
+        module:extract:scan "${tree}" "${words}" 'a monorepo or product name' '' "${kind}" || failed=1
 
     fi
 
@@ -67,8 +66,10 @@ module:extract:verify () {
 
         [[ "${file}" != */.git/* ]] || continue
 
-        [[ "${file##*/}" != .env* || "${file##*/}" == .env.example ]] \
-            || { @err "verify: an env file in the tree: ${file#"${tree}/"}" || failed=1; }
+        case "${file##*/}" in
+            .env.example|.secret.example|.secrets.example) ;;
+            .env*|.secret*) @err "verify: a secrets file in the tree: ${file#"${tree}/"}" || failed=1 ;;
+        esac
 
     done < <(core:fs:tree:files "${tree}")
 
@@ -79,7 +80,7 @@ module:extract:verify () {
 }
 module:extract:scan () {
 
-    local tree="${1}" pattern="${2}" what="${3}" sensitive="${4:-}" file="" failed=0
+    local tree="${1}" pattern="${2}" what="${3}" sensitive="${4:-}" kind="${5:-}" file="" path="" failed=0
     local -a flags=( -rIlE --exclude-dir=.git )
 
     [[ -n "${pattern}" && -d "${tree}" ]] || return 0
@@ -89,7 +90,11 @@ module:extract:scan () {
 
         [[ -n "${file}" ]] || continue
 
-        @err "verify: ${what} in ${file#"${tree%/.github}/"}: $(grep -IoE "${flags[@]:2}" -- "${pattern}" "${file}" | sort -u | tr '\n' ' ')" || failed=1
+        path="${file#"${tree%/.github}/"}"
+
+        [[ -z "${kind}" ]] || ! module:extract:loose "${kind}" "${path}" || continue
+
+        @err "verify: ${what} in ${path}: $(grep -IoE "${flags[@]:2}" -- "${pattern}" "${file}" | sort -u | tr '\n' ' ')" || failed=1
 
     done < <(grep "${flags[@]}" -- "${pattern}" "${tree}" 2>/dev/null || true)
 

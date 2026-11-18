@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The web surface: every web role from its spec, on Next over the engine.",
+  "description": "The web and desktop surfaces: every role from its spec, on Next or in an Electrobun window.",
   "packageManager": "bun@1.4.4",
   "engines": {
     "bun": ">=1.4.4"
@@ -25,7 +25,7 @@
     "typescript": "7.0.2"
   },
   "scripts": {
-    "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/bun && pwd)/.bun\" bun install --frozen-lockfile",
+    "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/typescript && pwd)/.bun\" bun install --frozen-lockfile",
     "tool": "bun node_modules/engine/bin/tool.ts",
     "compile": "bun run tool compile",
     "check": "bun run tool check",
@@ -34,6 +34,7 @@
     "build": "bun run tool build",
     "release": "bun run tool release",
     "dev": "bun run tool dev",
+    "app": "bun run tool app",
     "audit": "bun run tool audit",
     "gate": "bun run deps && bun run tool gate"
   }

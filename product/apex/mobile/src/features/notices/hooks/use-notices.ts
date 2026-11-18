@@ -3,13 +3,13 @@ import * as exception from "engine/exception";
 import * as json from "engine/json";
 import * as state from "engine/state";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Status } from "@/api/index.ts";
 import { type Notice, transport } from "@/api/notices.ts";
 import { useStage } from "@/hooks/use-stage.ts";
 import { host } from "@/specs/app.ts";
 import { bind } from "@/stores/bind.ts";
 import { client } from "@/stores/client.ts";
 import { held } from "@/stores/device.ts";
-import type { Status } from "@/types/index.ts";
 
 export type Notices = {
     status: Status;

@@ -215,6 +215,6 @@ mock.module("@react-native-async-storage/async-storage", () => {
 
 });
 
-const host = await import("../src/host/index.ts");
+const host = await import("../src/render/bridge/index.ts");
 
 host.boot();

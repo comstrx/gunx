@@ -21,18 +21,3 @@ fuzz:core:sys:prune () {
     core:sys:prune "${run}"
 
 }
-fuzz:core:sys:kept () {
-
-    local run="" name=""
-
-    run="$(core:fs:temp:dir)" || return 0
-    name="20261115-101010-2147483646.$(tr -cd 'a-z0-9' < "${1}" | head -c 8)x"
-
-    mkdir -p -- "${run}/${name}" "${run}/${name}.gone"
-    : > "${run}/${name}/keep"
-
-    core:sys:prune "${run}"
-
-    [[ -d "${run}/${name}" && ! -e "${run}/${name}.gone" ]] || return 3
-
-}

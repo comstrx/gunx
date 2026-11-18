@@ -24,7 +24,7 @@ config.resolver.resolveRequest = ( context, moduleName, platform ) => {
     const file = moduleName.split("/").pop();
     const catalog = moduleName.includes("/data/") && context.originModulePath.includes("/world/") ? catalogFiles[file] : undefined;
 
-    if ( catalog && !catalogs.has(catalog) ) return { type: "sourceFile", filePath: resolve(root, "src/host/unavailable.json") };
+    if ( catalog && !catalogs.has(catalog) ) return { type: "sourceFile", filePath: resolve(root, "src/render/host/unavailable.json") };
 
     return context.resolveRequest(context, moduleName, platform);
 

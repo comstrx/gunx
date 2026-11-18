@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test as it } from "bun:test";
 import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server";
-import { generateMetadata, generateStaticParams } from "../src/app/[[...path]]/page.tsx";
+import { generateMetadata, generateStaticParams } from "../src/app/(web)/[[...path]]/page.tsx";
 import { Nav } from "../src/app/nav.tsx";
 import { Screen } from "../src/app/screen.tsx";
 import { toneOf } from "../src/features/hello/hooks/use-hello.ts";
@@ -76,7 +76,7 @@ describe("screen", () => {
         const owned = await generateMetadata({ params: Promise.resolve({ path: ["about"] }) });
         const foreign = await generateMetadata({ params: Promise.resolve({ path: ["offers"] }) });
 
-        expect(paths).toEqual(["/", "/about", "/account", "/device", "/enroll", "/login", "/offers", "/stock", "/storage"]);
+        expect(paths).toEqual(["/", "/about", "/account", "/ar", "/ar/account", "/ar/login", "/ar/offers", "/device", "/en", "/en/account", "/en/login", "/en/offers", "/login", "/offers", "/storage"]);
         expect([host.app.paths(), typeof owned.description, foreign]).toEqual([["/", "/about", "/storage", "/device"], "string", { title: null, robots: { index: false, follow: false } }]);
 
     });

@@ -38,14 +38,13 @@ jobs:
       matrix:
         path:
           - engine/rust
-          - engine/python
           - engine/go
-          - engine/bun
+          - engine/python
+          - engine/typescript
           - engine/bash
           - product/apex/api
           - product/apex/web
           - product/apex/mobile
-          - product/apex/desktop
           - .
 
         os: [ubuntu-latest, macos-latest]
@@ -66,4 +65,5 @@ jobs:
         with:
           path: ${{ matrix.path }}
 
-      - run: gunx gate --path "${CI_PATH}" --type "${CI_TYPE}" --timeout "${CI_TIMEOUT}" ${CI_CHANGED:+--only-changed} ${CI_PASS:+--pass}
+      - run: gunx gate --path "${CI_PATH}" --type "${CI_TYPE}" \
+              --timeout "${CI_TIMEOUT}" ${CI_CHANGED:+--only-changed} ${CI_PASS:+--pass}

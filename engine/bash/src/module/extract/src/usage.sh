@@ -9,6 +9,4 @@
 @flag extract '--gates' 'Run every default gate in the tree; this is the default' || return
 @flag extract '--no-gates' 'Run no gate at all: no lock is written, the tree goes as it is' || return
 @flag extract '--force' 'Deliver even when a gate failed' || return
-@flag extract '--clean' 'Remove the tree from the lab afterwards; this is the default' || return
-@flag extract '--no-clean' 'Keep the tree in the lab and print its path' || return
 @flag extract '--timeout S' 'Seconds every gate may take, RUN_TIMEOUT (600) by default' || return

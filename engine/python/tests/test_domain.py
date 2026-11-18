@@ -20,7 +20,7 @@ async def test_domains_normalize_verify_and_point () -> None:
 
     assert domains.normalize(" Shop.Example.IO. ") == "shop.example.io"
     assert domains.normalize("متجر.مصر") == "xn--pgbep1f.xn--wgbh1c"
-    assert domains.apex("a.b.shop.io") == "shop.io" and domains.subdomains(["x.shop.io", "other.net", "y.shop.io"], "shop.io") == ["x.shop.io", "y.shop.io"]
+    assert domains.root("a.b.shop.io") == "shop.io" and domains.subdomains(["x.shop.io", "other.net", "y.shop.io"], "shop.io") == ["x.shop.io", "y.shop.io"]
 
     for bad in ("localhost", "example.com", "x", "-bad.io", "a..b", "a b.io"):
 

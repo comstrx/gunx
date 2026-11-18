@@ -2,7 +2,7 @@ fixture:module:extract:table () {
 
     fixture:config:targets:table
 
-    TARGETS+=( [webx]=3 [webx.type]=fragment [webx.path]=product/demo/web [webx.repo]=github.com/x/webx )
+    TARGETS+=( [facex]=3 [facex.type]=fragment [facex.path]=product/demo/web [facex.repo]=github.com/x/facex )
 
     module:extract:table
 
@@ -41,6 +41,9 @@ test:module:extract:knows-what-stays-behind () {
     @fails module:extract:stays engine/demo/README.md
     @fails module:extract:stays engine/demo/supply-chain/imports.lock
     @fails module:extract:stays LICENSE
+    module:extract:stays tutor/index.md
+    module:extract:stays tutor/index.md engine/demo
+    @fails module:extract:stays tutor/index.md tutor
 
     module:extract:travels engine engine/demo .gitignore
     module:extract:travels engine engine/demo Bash.toml
@@ -53,6 +56,9 @@ test:module:extract:knows-what-stays-behind () {
     module:extract:travels product product/demo CHANGELOG.md
     @fails module:extract:travels product product/demo README.md
     @fails module:extract:travels product product/demo product/demo/api/uv.lock
+    @fails module:extract:travels product product/demo tutor/index.md
+    @fails module:extract:travels engine engine/demo tutor/index.md
+    module:extract:travels tutor tutor tutor/index.md
 
 }
 test:module:extract:names-the-pieces () {
@@ -60,15 +66,15 @@ test:module:extract:names-the-pieces () {
     fixture:module:extract:table
 
     TARGETS+=( [demo]=4 [demo.type]=product [demo.path]=product/demo [demo.repo]=x/demo [demo.engines]=1 [demo.engines.0]=demo )
-    TARGETS+=( [gox]=3 [gox.type]=engine [gox.path]=engine/go [gox.repo]=x/gox )
+    TARGETS+=( [sidex]=3 [sidex.type]=engine [sidex.path]=engine/go [sidex.repo]=x/sidex )
     module:extract:table
 
-    @eq "$(module:extract:block engine engine/rust)" rust
-    @eq "$(module:extract:block tutor tutor)" tutor
-    @eq "$(module:extract:block fragment product/demo/web)" demo-web
-    @eq "$(module:extract:block product product/demo)" ''
-    @eq "$(module:extract:shapes ToolX | tr '\n' ' ')" 'toolx TOOLX Toolx ToolX toolX '
-    @eq "$(module:extract:shapes bashx | tr '\n' ' ')" 'bashx BASHX Bashx BashX bashX '
+    @eq "$(module:extract:blocks sidex engine engine/rust)" rust
+    @eq "$(module:extract:blocks sidex tutor tutor)" tutor
+    @eq "$(module:extract:blocks facex fragment product/demo/web)" demo-web=web
+    @eq "$(module:extract:blocks demo product product/demo | tr '\n' ' ')" 'demo demo demo-* '
+    @eq "$(module:extract:shapes DemoX | tr '\n' ' ')" 'demox DEMOX Demox DemoX demoX '
+    @eq "$(module:extract:shapes corex | tr '\n' ' ')" 'corex COREX Corex CoreX coreX '
     @eq "$(module:extract:anycase a.b/c-1)" '[Aa][.][Bb]/[Cc]-1'
 
     @eq "$(module:extract:name demox)" demox
@@ -106,6 +112,16 @@ test:module:extract:changelog-cuts-one-block () {
     @contains "$(cat "${tree}/CHANGELOG.md")" '- old'
     @absent "$(cat "${tree}/CHANGELOG.md")" '- three'
     @absent "$(cat "${tree}/CHANGELOG.md")" 'Intro'
+    @eq "$(cat "${tree}/CHANGELOG.md")" $'# Changelog\n\n## Unreleased\n\n### rust\n\n- one\n- two\n\n## v0.1.0\n\n### rust\n\n- old'
+    @eq "$(tail -n 1 "${tree}/CHANGELOG.md")" '- old'
+
+    module:extract:changelog "${root}" "${tree}" bun=shown
+    @eq "$(cat "${tree}/CHANGELOG.md")" $'# Changelog\n\n## Unreleased\n\n### shown\n\n- three\n\n## v0.1.0'
+
+    printf '# Changelog\n\n## v1\n\n### rust\n\n- r\n\n### go\n\n- g\n\n### demo\n\n- whole\n\n### demo-api\n\n- a\n\n### other-api\n\n- o\n\n### demolition\n\n- d\n' > "${root}/CHANGELOG.md"
+
+    module:extract:changelog "${root}" "${tree}" rust demo 'demo-*'
+    @eq "$(cat "${tree}/CHANGELOG.md")" $'# Changelog\n\n## v1\n\n### rust\n\n- r\n\n### demo\n\n- whole\n\n### api\n\n- a'
 
 }
 test:module:extract:verify-refuses-what-must-not-leave () {
@@ -121,15 +137,123 @@ test:module:extract:verify-refuses-what-must-not-leave () {
     printf 'the %s word\n' "${word}" > "${tree}/note.txt"
     @errors 'a monorepo or product name' module:extract:verify "${tree}" engine
 
-    printf 'path = "%s/engine/rust"\n' '../..' > "${tree}/note.txt"
-    @errors 'a path out of the tree' module:extract:verify "${tree}" engine
+    rm -f -- "${tree}/note.txt" "${tree}/Cargo.toml"
+    module:extract:verify "${tree}" engine
 
-    rm -f -- "${tree}/note.txt"
-    printf 'SECRET=1\n' > "${tree}/.env.local"
-    @errors 'an env file in the tree' module:extract:verify "${tree}" engine
+}
+test:module:extract:the-logo-of-a-row-opens-its-readme () {
 
-    rm -f -- "${tree}/.env.local" "${tree}/Cargo.toml"
-    @errors 'no manifest' module:extract:verify "${tree}" engine
+    local tree="${TMPDIR}/tool" block=""
+
+    fixture:module:extract:root
+    mkdir -p "${tree}"
+    printf '# Demo\n\nbadges\n\n# Later\n' > "${tree}/README.md"
+
+    module:extract:logo "${tree}" demox
+    @eq "$(cat "${tree}/README.md")" $'# Demo\n\nbadges\n\n# Later'
+
+    TARGETS[demox.logo]='https://example.com/logo.png'
+    block=$'<div align="center">\n  <br/>\n  <img height="150" src="https://example.com/logo.png"/>\n  <br/>\n  <br/>\n</div>'
+
+    module:extract:logo "${tree}" demox
+    @eq "$(cat "${tree}/README.md")" $'# Demo\n\n'"${block}"$'\n\nbadges\n\n# Later'
+
+    rm -f -- "${tree}/README.md"
+    module:extract:logo "${tree}" demox
+    [[ ! -e "${tree}/README.md" ]]
+
+    TARGETS[demox.logo]='http://example.com/a b.png'
+    @errors 'logo is an https address' module:extract:logo "${tree}" demox
+
+}
+test:module:extract:a-product-leaves-flat () {
+
+    local root="" tree="${TMPDIR}/flat" plan=""
+
+    fixture:module:extract:root
+    root="${TMPDIR}/source"
+    mkdir -p "${root}/product/demo/api/src" "${tree}/product/api/src" "${tree}/.github"
+    printf '# Demo\n' > "${root}/product/demo/README.md"
+    printf 'Private\n' > "${root}/product/demo/LICENSE"
+    printf 'own\n' > "${root}/product/demo/notes.txt"
+    printf '# Api\n' > "${root}/product/demo/api/README.md"
+    printf '[project]\n' > "${root}/product/demo/api/pyproject.toml"
+    git -C "${root}" add -A >/dev/null 2>&1
+
+    plan="$(module:extract:files "${root}" product product/demo | tr '\t' '>' | tr '\n' ' ')"
+    @contains "${plan}" 'product/demo/README.md>README.md '
+    @contains "${plan}" 'product/demo/LICENSE>LICENSE '
+    @contains "${plan}" 'product/demo/notes.txt>notes.txt '
+    @absent "${plan}" ' LICENSE>LICENSE '
+    @contains "${plan}" 'SUPPORT.md>SUPPORT.md '
+    @contains "${plan}" 'product/demo/api/README.md>product/api/README.md '
+    @contains "${plan}" 'product/demo/api/pyproject.toml>product/api/pyproject.toml '
+    @contains "${plan}" 'engine/demo/Cargo.toml>engine/demo/Cargo.toml '
+    @absent "${plan}" 'product/other'
+
+    plan="$(module:extract:files "${root}" fragment product/demo/api | tr '\t' '>' | tr '\n' ' ')"
+    @contains "${plan}" 'product/demo/api/README.md>README.md '
+
+    printf 'one = { path = "../../../engine/demo/src/one" }\ntwo = { path = "../web" }\n' > "${tree}/product/api/pyproject.toml"
+    printf '{"deps":"cd ../../../engine/demo && pwd"}\n' > "${tree}/product/api/package.json"
+    printf 'import x from "../../engine/local";\n' > "${tree}/product/api/src/code.ts"
+    printf 'path:\n  - product/demo/api\n  - product/demo/web/\nglob: product/*/api/**\nother: product/other/api/\n' > "${tree}/.github/flow.yml"
+
+    module:extract:shallow "${tree}" fragment product/demo
+    @contains "$(cat "${tree}/product/api/pyproject.toml")" '"../../../engine/demo/src/one"'
+
+    module:extract:shallow "${tree}" product product/demo
+    @eq "$(cat "${tree}/product/api/pyproject.toml")" $'one = { path = "../../engine/demo/src/one" }\ntwo = { path = "../web" }'
+    @eq "$(cat "${tree}/product/api/package.json")" '{"deps":"cd ../../engine/demo && pwd"}'
+    @eq "$(cat "${tree}/product/api/src/code.ts")" 'import x from "../../engine/local";'
+    @eq "$(cat "${tree}/.github/flow.yml")" $'path:\n  - product/demo/api\n  - product/web/\nglob: product/api/**\nother: product/other/api/'
+
+}
+test:module:extract:verify-refuses-the-files-of-secrets () {
+
+    local tree="${TMPDIR}/tool" name=""
+
+    fixture:module:extract:root
+    mkdir -p "${tree}/deep"
+
+    for name in .env.example .secret.example .secrets.example secret.txt secrets.toml; do
+        printf 'KEY=\n' > "${tree}/deep/${name}"
+    done
+
+    module:extract:verify "${tree}" engine
+
+    for name in .env .env.local .envrc .secret .secret.json .secrets .secrets.yml .secretsrc; do
+
+        printf 'KEY=1\n' > "${tree}/deep/${name}"
+        @errors "a secrets file in the tree: deep/${name}" module:extract:verify "${tree}" engine
+        rm -f -- "${tree}/deep/${name}"
+
+    done
+
+}
+test:module:extract:verify-reads-only-the-papers-of-a-product-part () {
+
+    local tree="${TMPDIR}/part" word="" name=""
+
+    fixture:module:extract:root
+    word=mono
+    mkdir -p "${tree}/src" "${tree}/.github"
+
+    printf 'issuer = "%s"\n' "${word}" > "${tree}/src/seed.py"
+    @errors 'a monorepo or product name in src/seed.py' module:extract:verify "${tree}" engine
+    module:extract:verify "${tree}" fragment
+
+    printf 'run: %s\n' "${word}" > "${tree}/.github/flow.txt"
+    @errors 'a monorepo or product name in .github/flow.txt' module:extract:verify "${tree}" fragment
+    rm -f -- "${tree}/.github/flow.txt"
+
+    for name in notes.md part.toml flow.yml flow.yaml; do
+
+        printf 'made in %s\n' "${word}" > "${tree}/src/${name}"
+        @errors "a monorepo or product name in src/${name}" module:extract:verify "${tree}" fragment
+        rm -f -- "${tree}/src/${name}"
+
+    done
 
 }
 test:module:extract:renames-from-the-widest-to-the-word () {
@@ -158,8 +282,8 @@ test:module:extract:renames-from-the-widest-to-the-word () {
     @eq "$(cat "${tree}/code.txt")" 'mono stays'
     @eq "$(cat "${tree}/.github/CODEOWNERS")" 'demox owner'
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx \
-        "movedx = { type = \"engine\", path = \"engine/demo\", repo = \"github.com/team/movedx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }"
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
+        "movedx = { type = \"engine\", path = \"engine/demo\", repo = \"github.com/team/movedx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     printf 'by acme, at acme/mono and acme/other, mail acme@example.com acme\n' > "${tree}/NOTES.md"
@@ -184,7 +308,6 @@ test:module:extract:commands-guard-their-usage () {
 
     @errors 'extract takes one target' bash "${TOOL_BIN}" extract one two
     @errors '--gates and --no-gates do not meet' bash "${TOOL_BIN}" extract demox --gates --no-gates
-    @errors '--clean and --no-clean do not meet' bash "${TOOL_BIN}" extract demox --clean --no-clean
     @errors 'is not one' bash "${TOOL_BIN}" --root "${TMPDIR}" extract demox
 
     fixture:module:extract:root
@@ -233,12 +356,12 @@ fixture:module:extract:root () {
     printf '[meta]\nname = "tool"\nalias = "mono"\n\n[deps]\nx = { type = "engine", path = "x", repo = "x" }\n' > "${root}/engine/bash/bash.toml"
     printf '' > "${root}/engine/bash/src/main.sh"
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx
 
-    mkdir -p "${root}/.github/workflows" "${root}/.github/ISSUE_TEMPLATE" "${TMPDIR}/bashx.git"
-    git init -q --bare -b main "${TMPDIR}/bashx.git"
+    mkdir -p "${root}/.github/workflows" "${root}/.github/ISSUE_TEMPLATE" "${TMPDIR}/corex.git"
+    git init -q --bare -b main "${TMPDIR}/corex.git"
     git -C "${root}" -c user.name=t -c user.email=t@t commit -q --allow-empty -m seed
-    git -C "${root}" push -q "${TMPDIR}/bashx.git" HEAD:refs/heads/main
+    git -C "${root}" push -q "${TMPDIR}/corex.git" HEAD:refs/heads/main
 
     printf '* @acme\n' > "${root}/.github/CODEOWNERS"
     printf 'blank_issues_enabled: false\ncontact_links:\n  - name: Questions\n    url: https://github.com/acme/mono/discussions\n' > "${root}/.github/ISSUE_TEMPLATE/config.yml"
@@ -297,7 +420,7 @@ fixture:module:extract:deps () {
     {
         printf '[deps]\n'
         printf 'demox = { type = "engine", path = "engine/demo", repo = "%s", deps = [{ name = "engine", repo = "%s" }] }\n' "${demo}" "${bash}"
-        printf 'bashx = { type = "engine", path = "engine/bash", repo = "%s" }\n' "${bash}"
+        printf 'corex = { type = "engine", path = "engine/bash", repo = "%s" }\n' "${bash}"
         printf 'otherx = { type = "fragment", path = "product/other/web", repo = "%s", deps = [{ name = "engine", repo = "%s" }] }\n' "${other}" "${bash}"
         (( $# == 0 )) || printf '%s\n' "$@"
     } > "${TMPDIR}/table.toml"
@@ -323,12 +446,12 @@ test:module:extract:builds-the-tree () {
     printf 'secret\n' > "${root}/engine/demo/.env.local"
     git -C "${root}" -c user.name=t -c user.email=t@t add -f engine/demo/.env.local
     tree="$(fixture:module:extract:build demox)"
-    @errors 'an env file in the tree' fixture:module:extract:prove "${tree}" demox
+    @errors 'a secrets file in the tree' fixture:module:extract:prove "${tree}" demox
 
 }
 test:module:extract:extract-proves-and-to-fills () {
 
-    local root="" into="${TMPDIR}/into" report=""
+    local root="" into="${TMPDIR}/into"
 
     fixture:module:extract:root
     root="${TMPDIR}/source"
@@ -338,10 +461,8 @@ test:module:extract:extract-proves-and-to-fills () {
     CLI_FLAGS=()
     @contains "$(module:extract:extract demox 2>&1)" 'demox: proved'
 
-    CLI_FLAGS=( [--no-gates]=true [--no-clean]=true )
-    report="$(module:extract:extract demox 2>&1)"
-    @contains "${report}" 'demox: extracted'
-    @contains "${report}" "${TOOL_TEMP}/sync/demox"
+    CLI_FLAGS=( [--no-gates]=true )
+    @contains "$(module:extract:extract demox 2>&1)" 'demox: extracted'
 
     CLI_FLAGS=( [--to]="${into}" )
     @contains "$(module:extract:extract demox 2>&1)" 'demox: proved, placed'
@@ -429,19 +550,19 @@ test:module:extract:refuses-a-crooked-table () {
 
     fixture:module:extract:root
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx 'lonely = { type = "engine", path = "engine/lonely", repo = "lonely" }'
-    @errors "lonely: its workflows run the bash engine; name ${TMPDIR}/bashx.git in its deps" module:extract:open
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'lonely = { type = "engine", path = "engine/lonely", repo = "lonely" }'
+    @errors "lonely: its workflows run the bash engine; name ${TMPDIR}/corex.git in its deps" module:extract:open
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["rust"] }'
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["rust"] }'
     @errors 'demo: engines names rust' module:extract:open
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["demo"] }'
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["demo"] }'
     @errors 'demo: its workflows run the bash engine' module:extract:open
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx "demo = { type = \"product\", path = \"product/demo\", repo = \"demo\", engines = [\"bash\"], deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }"
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "demo = { type = \"product\", path = \"product/demo\", repo = \"demo\", engines = [\"bash\"], deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
     @errors 'bash is in engines and' module:extract:open
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx 'x = { type = "tutor", path = "tutor", repo = "x", engines = ["demo"] }'
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'x = { type = "tutor", path = "tutor", repo = "x", engines = ["demo"] }'
     @errors 'engines belongs to a product' module:extract:open
 
 }
@@ -452,7 +573,7 @@ test:module:extract:push-mirrors-without-force () {
     fixture:module:extract:root
     root="${TMPDIR}/source"
 
-    fixture:module:extract:deps "${bare}" "${TMPDIR}/bashx.git" otherx
+    fixture:module:extract:deps "${bare}" "${TMPDIR}/corex.git" otherx
     module:extract:open
 
     CLI_VALUED=( [--branch]=true [--message]=true [--tag]=true [--to]=true )
@@ -523,14 +644,14 @@ test:module:extract:github-travels-rewritten () {
     fixture:module:extract:root
     root="${TMPDIR}/source"
     tree="$(fixture:module:extract:build demox)"
-    sha="$(git -C "${TMPDIR}/bashx.git" rev-parse main)"
+    sha="$(git -C "${TMPDIR}/corex.git" rev-parse main)"
 
     flows="$(cd "${tree}/.github/workflows" && printf '%s ' *.yml)"
     @eq "${flows}" 'demo.yml global.yml python.yml release.yml '
 
     @absent "$(cat "${tree}/.github/workflows/demo.yml")" 'paths'
-    @contains "$(cat "${tree}/.github/workflows/demo.yml")" "uses: ${TMPDIR#/}/bashx.git/src/module/gate/template@${sha} # main"
-    @contains "$(cat "${tree}/.github/workflows/demo.yml")" "run: bashx gate --part demo"
+    @contains "$(cat "${tree}/.github/workflows/demo.yml")" "uses: ${TMPDIR#/}/corex.git/src/module/gate/template@${sha} # main"
+    @contains "$(cat "${tree}/.github/workflows/demo.yml")" "run: corex gate --part demo"
     @contains "$(cat "${tree}/.github/workflows/release.yml")" 'python'
     @absent "$(cat "${tree}/.github/workflows/release.yml")" 'sync'
     @contains "$(cat "${tree}/.github/workflows/release.yml")" 'workflows/demo.yml'
@@ -546,7 +667,7 @@ test:module:extract:github-travels-rewritten () {
     @absent "$(cat "${tree}/.github/dependabot.yml")" 'product/'
     @contains "$(cat "${tree}/.github/dependabot.yml")" 'package-ecosystem: cargo'
     @contains "$(cat "${tree}/.github/ISSUE_TEMPLATE/config.yml")" 'acme/demox/discussions'
-    @contains "$(cat "${tree}/.zizmor.yml")" "- ${TMPDIR#/}/bashx.git/src/module/gate/template"
+    @contains "$(cat "${tree}/.zizmor.yml")" "- ${TMPDIR#/}/corex.git/src/module/gate/template"
 
     fixture:module:extract:prove "${tree}" demox
 
@@ -568,7 +689,7 @@ test:module:extract:github-stays-whole-for-a-product () {
     git -C "${root}" -c user.name=t -c user.email=t@t add -A
     git -C "${root}" -c user.name=t -c user.email=t@t commit -q -m product
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["bash", "demo"] }'
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["bash", "demo"] }'
     module:extract:open
 
     @eq "$(module:extract:repository demo)" github.com/acme/demo
@@ -596,7 +717,7 @@ test:module:extract:push-tracks-a-commit-only () {
     fixture:module:extract:root
     root="${TMPDIR}/source"
 
-    fixture:module:extract:deps "${bare}" "${TMPDIR}/bashx.git" otherx
+    fixture:module:extract:deps "${bare}" "${TMPDIR}/corex.git" otherx
     module:extract:open
 
     CLI_FLAGS=( [--push]=true )
@@ -632,7 +753,7 @@ test:module:extract:knows-its-own-engine () {
 }
 test:module:extract:extracts-every-target-in-order () {
 
-    local report="" all="${TMPDIR}/all" bash="${TMPDIR}/bashx.git"
+    local report="" all="${TMPDIR}/all" bash="${TMPDIR}/corex.git"
 
     fixture:module:extract:root
 
@@ -640,8 +761,8 @@ test:module:extract:extracts-every-target-in-order () {
         "lastx = { type = \"engine\", path = \"engine/demo\", repo = \"lastx\", deps = [{ name = \"engine\", repo = \"otherx\" }, { name = \"engine\", repo = \"${bash}\" }] }"
     module:extract:open
 
-    @eq "$(module:extract:order | tr '\n' ' ')" 'bashx demox otherx lastx '
-    @eq "$(module:extract:needs lastx | tr '\n' ' ')" 'otherx bashx '
+    @eq "$(module:extract:order | tr '\n' ' ')" 'corex demox otherx lastx '
+    @eq "$(module:extract:needs lastx | tr '\n' ' ')" 'otherx corex '
 
     printf 'made in mono\n' > "${TMPDIR}/source/product/other/web/note.txt"
 
@@ -655,7 +776,7 @@ test:module:extract:extracts-every-target-in-order () {
     @contains "${report}" 'failed at extract'
     @contains "${report}" 'skipped: otherx failed'
     @contains "${report}" 'extract failed: otherx (extract), lastx (waits for otherx)'
-    [[ -f "${all}/demox/Cargo.toml" && -f "${all}/bashx/bash.toml" && ! -e "${all}/otherx" && ! -e "${all}/lastx" ]] || @err 'the run did not isolate the failure'
+    [[ -f "${all}/demox/Cargo.toml" && -f "${all}/corex/bash.toml" && ! -e "${all}/otherx" && ! -e "${all}/lastx" ]] || @err 'the run did not isolate the failure'
 
     TARGETS=(
         [onex]=4 [onex.type]=engine [onex.path]=engine/one [onex.repo]=o/onex [onex.deps]=1 [onex.deps.0.name]=engine [onex.deps.0.repo]=o/twox
@@ -691,7 +812,7 @@ test:module:extract:verify-guards-a-product () {
     local tree="${TMPDIR}/product"
 
     fixture:module:extract:root
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx "other = { type = \"product\", path = \"product/other\", repo = \"other\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }"
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "other = { type = \"product\", path = \"product/other\", repo = \"other\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     mkdir -p "${TMPDIR}/source/product/gamma" "${tree}/product/other" "${tree}/.github"
@@ -702,11 +823,15 @@ test:module:extract:verify-guards-a-product () {
     printf 'built for other\n' > "${tree}/notes.md"
     module:extract:verify "${tree}" product other
 
+    printf 'tenant = "gamma"\n' > "${tree}/product/other/seed.py"
+    module:extract:verify "${tree}" product other
+
+    printf 'built for gamma\n' > "${tree}/product/other/notes.md"
+    @errors "another product's name in product/other/notes.md" module:extract:verify "${tree}" product other
+    rm -f -- "${tree}/product/other/notes.md"
+
     printf 'directory: /engine/demo\n' > "${tree}/.github/dependabot.yml"
     @errors 'an engine that stayed behind in .github/dependabot.yml' module:extract:verify "${tree}" product other
-
-    rm -rf -- "${tree}/product" "${tree}/.github"
-    @errors 'no product/other in' module:extract:verify "${tree}" product other
 
 }
 test:module:extract:a-product-carries-the-engines-it-names () {
@@ -721,19 +846,19 @@ test:module:extract:a-product-carries-the-engines-it-names () {
     printf 'contract\n' > "${root}/tutor/index.md"
     printf 'go 1.25\n' > "${root}/engine/go/go.work"
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx \
-        "skillx = { type = \"tutor\", path = \"tutor\", repo = \"skillx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }" \
-        "gox = { type = \"engine\", path = \"engine/go\", repo = \"gox\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }" \
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
+        "notesx = { type = \"tutor\", path = \"tutor\", repo = \"notesx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "sidex = { type = \"engine\", path = \"engine/go\", repo = \"sidex\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
         'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["bash", "demo"] }'
     module:extract:open
 
     tree="$(fixture:module:extract:build demo)"
 
     @contains "$(cat "${tree}/engine/bash/bash.toml")" 'alias = "demo"'
-    @contains "$(cat "${tree}/engine/bash/bash.toml")" '[deps]'
-    [[ -f "${tree}/engine/demo/Cargo.toml" && -f "${tree}/product/demo/api/pyproject.toml" && -f "${tree}/LICENSE" && -f "${tree}/CHANGELOG.md" ]]
+    @absent "$(cat "${tree}/engine/bash/bash.toml")" '[deps]'
+    [[ -f "${tree}/engine/demo/Cargo.toml" && -f "${tree}/product/api/pyproject.toml" && -f "${tree}/LICENSE" && -f "${tree}/CHANGELOG.md" ]]
     [[ ! -e "${tree}/tutor" && ! -e "${tree}/product/other" && ! -e "${tree}/engine/go" ]] || @err 'the product carries what it did not name'
-    [[ ! -e "${tree}/README.md" && ! -e "${tree}/AGENTS.md" && ! -e "${tree}/product/demo/api/uv.lock" && ! -e "${tree}/engine/demo/Cargo.lock" ]] \
+    [[ ! -e "${tree}/README.md" && ! -e "${tree}/AGENTS.md" && ! -e "${tree}/product/api/uv.lock" && ! -e "${tree}/product/demo" && ! -e "${tree}/engine/demo/Cargo.lock" ]] \
         || @err 'a root readme or a lock went with the product'
 
 }
@@ -745,20 +870,20 @@ test:module:extract:a-product-reaches-the-bash-engine-by-the-mirror () {
     root="${TMPDIR}/source"
     mkdir -p "${root}/product/demo/api"
     printf '[project]\nname = "api"\n' > "${root}/product/demo/api/pyproject.toml"
-    sha="$(git -C "${TMPDIR}/bashx.git" rev-parse main)"
+    sha="$(git -C "${TMPDIR}/corex.git" rev-parse main)"
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx \
-        "demo = { type = \"product\", path = \"product/demo\", repo = \"demo\", engines = [\"demo\"], deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }"
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
+        "demo = { type = \"product\", path = \"product/demo\", repo = \"demo\", engines = [\"demo\"], deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     tree="$(fixture:module:extract:build demo)"
 
     [[ ! -e "${tree}/engine/bash" && -f "${tree}/engine/demo/Cargo.toml" ]] || @err 'the bash engine went with a product that names its mirror'
-    @contains "$(cat "${tree}/.github/workflows/demo.yml")" "uses: ${TMPDIR#/}/bashx.git/src/module/gate/template@${sha} # main"
-    @contains "$(cat "${tree}/.github/workflows/demo.yml")" "run: bashx gate --part demo"
+    @contains "$(cat "${tree}/.github/workflows/demo.yml")" "uses: ${TMPDIR#/}/corex.git/src/module/gate/template@${sha} # main"
+    @contains "$(cat "${tree}/.github/workflows/demo.yml")" "run: corex gate --part demo"
     @contains "$(cat "${tree}/.github/workflows/demo.yml")" 'paths'
     @absent "$(cat "${tree}/.github/workflows/release.yml")" 'sync'
-    @contains "$(cat "${tree}/.zizmor.yml")" "- ${TMPDIR#/}/bashx.git/src/module/gate/template"
+    @contains "$(cat "${tree}/.zizmor.yml")" "- ${TMPDIR#/}/corex.git/src/module/gate/template"
 
     printf '# Changelog\n' > "${tree}/CHANGELOG.md"
     fixture:module:extract:prove "${tree}" demo
@@ -771,9 +896,9 @@ test:module:extract:the-bash-mirror-drops-what-is-private () {
     fixture:module:extract:root
     printf '' > "${TMPDIR}/source/engine/bash/src/main.sh"
 
-    tree="$(fixture:module:extract:build bashx)"
+    tree="$(fixture:module:extract:build corex)"
 
-    @contains "$(cat "${tree}/bash.toml")" 'alias = "bashx"'
+    @contains "$(cat "${tree}/bash.toml")" 'alias = "corex"'
     @absent "$(cat "${tree}/bash.toml")" 'deps'
     @eq "$(grep -c '^alias' "${tree}/bash.toml")" 1
     @contains "$(cat "${tree}/.github/workflows/demo.yml")" 'uses: $/src/module/gate/template'
@@ -795,11 +920,11 @@ test:module:extract:a-fragment-reaches-its-engine-by-the-mirror () {
         printf 'whole = { path = "%s/engine/demo" }\n' "${up}"
     } > "${root}/product/other/api/pyproject.toml"
 
-    fixture:module:extract:deps "${engine}" "${TMPDIR}/bashx.git" otherx \
-        "apix = { type = \"fragment\", path = \"product/other/api\", repo = \"apix\", deps = [{ name = \"engine\", repo = \"${engine}\" }, { name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }"
+    fixture:module:extract:deps "${engine}" "${TMPDIR}/corex.git" otherx \
+        "partx = { type = \"fragment\", path = \"product/other/api\", repo = \"partx\", deps = [{ name = \"engine\", repo = \"${engine}\" }, { name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
-    @errors 'has no tag nor a default branch to stand on' fixture:module:extract:build apix
+    @errors 'has no tag nor a default branch to stand on' fixture:module:extract:build partx
 
     git init -q --bare -b main "${engine}"
     git -C "${root}" push -q "${engine}" HEAD:refs/heads/main
@@ -807,7 +932,7 @@ test:module:extract:a-fragment-reaches-its-engine-by-the-mirror () {
     @eq "$(core:git:default "${engine}")" main
     @fails core:git:default "${TMPDIR}/none.git"
 
-    tree="$(fixture:module:extract:build apix)"
+    tree="$(fixture:module:extract:build partx)"
     file="$(cat "${tree}/pyproject.toml")"
 
     @contains "${file}" "engine = { git = \"${engine}\", subdirectory = \"src/engine\" }"
@@ -824,11 +949,11 @@ test:module:extract:a-fragment-reaches-its-engine-by-the-mirror () {
     @eq "$(core:git:newest "${engine}")" v0.10.0
     @fails core:git:newest "${TMPDIR}/none.git"
 
-    tree="$(fixture:module:extract:build apix)"
+    tree="$(fixture:module:extract:build partx)"
     @contains "$(cat "${tree}/pyproject.toml")" "engine = { git = \"${engine}\", subdirectory = \"src/engine\", tag = \"v0.10.0\" }"
 
-    TARGETS[apix.deps.0.tag]=0.2.0
-    tree="$(fixture:module:extract:build apix)"
+    TARGETS[partx.deps.0.tag]=0.2.0
+    tree="$(fixture:module:extract:build partx)"
     @contains "$(cat "${tree}/pyproject.toml")" "subdirectory = \"src/engine\", tag = \"0.2.0\" }"
 
 }
@@ -838,9 +963,9 @@ test:module:extract:a-row-without-a-repo-extracts-but-does-not-push () {
 
     fixture:module:extract:root
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx \
-        "plainx = { type = \"engine\", path = \"engine/demo\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }" \
-        "namedx = { name = \"chosen\", type = \"engine\", path = \"engine/demo\", repo = \"namedx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }"
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
+        "plainx = { type = \"engine\", path = \"engine/demo\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "namedx = { name = \"chosen\", type = \"engine\", path = \"engine/demo\", repo = \"namedx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     @eq "$(module:extract:name plainx)" plainx
@@ -867,10 +992,10 @@ test:module:extract:renames-across-hosts () {
 
     fixture:module:extract:root
 
-    fixture:module:extract:deps demox "${TMPDIR}/bashx.git" otherx \
-        "labx = { type = \"engine\", path = \"engine/demo\", repo = \"gitlab.com/group/sub/labx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }" \
-        "azurex = { type = \"engine\", path = \"engine/demo\", repo = \"https://dev.azure.com/org/project/_git/azurex\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }" \
-        "portx = { name = \"ported\", type = \"engine\", path = \"engine/demo\", repo = \"git.corp.example:8443/Team/portx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/bashx.git\" }] }"
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
+        "labx = { type = \"engine\", path = \"engine/demo\", repo = \"gitlab.com/group/sub/labx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "azurex = { type = \"engine\", path = \"engine/demo\", repo = \"https://dev.azure.com/org/project/_git/azurex\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "portx = { name = \"ported\", type = \"engine\", path = \"engine/demo\", repo = \"git.corp.example:8443/Team/portx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     mkdir -p "${tree}"
@@ -899,7 +1024,7 @@ test:module:extract:releases-after-the-push () {
     fixture:module:extract:root
     root="${TMPDIR}/source"
 
-    fixture:module:extract:deps "${bare}" "${TMPDIR}/bashx.git" otherx
+    fixture:module:extract:deps "${bare}" "${TMPDIR}/corex.git" otherx
     module:extract:open
 
     printf '# Changelog\n\n## v1.0.0\n\n### demo\n\n- first release\n' > "${root}/CHANGELOG.md"

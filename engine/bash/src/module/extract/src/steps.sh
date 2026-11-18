@@ -64,11 +64,8 @@ module:extract:extract () {
     (( $# <= 1 )) || { core:error:usage "extract takes one target, or none for every target of [deps]"; return; }
 
     ! core:cli:flag --gates || ! core:cli:flag --no-gates || { core:error:usage "--gates and --no-gates do not meet"; return; }
-    ! core:cli:flag --clean || ! core:cli:flag --no-clean || { core:error:usage "--clean and --no-clean do not meet"; return; }
 
     module:extract:open || return
-
-    ! core:cli:flag --no-clean || TOOL_KEEP=true
 
     into="$(core:cli:value --to)" || into=""
 
@@ -195,8 +192,6 @@ module:extract:one () {
         result+=", released"
 
     fi
-
-    ! core:cli:flag --no-clean || @print "${tree}"
 
     EXTRACT_STAGE="" EXTRACT_DONE="${result}"
 

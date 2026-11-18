@@ -1,8 +1,8 @@
 import * as world from "engine/world";
 import { type SyntheticEvent, useCallback, useEffect, useRef } from "react";
 import type { DialogProps } from "@/elements/contract.ts";
+import { useMotion } from "@/hooks/use-motion.ts";
 import { usePresence } from "@/hooks/use-presence.ts";
-import { motion } from "@/styles/tokens.ts";
 
 const look = world.variants({
     base: [
@@ -25,6 +25,7 @@ const mark = "absolute end-3 top-3 inline-flex size-9 items-center justify-cente
 export function Dialog ({ children, open, kind = "plain", size = "sm", label, labelledBy, closeLabel, onDismiss }: DialogProps ) {
 
     const node = useRef<HTMLDialogElement>(null);
+    const motion = useMotion();
     const { mounted } = usePresence(open, motion.fast);
     const dismiss = useCallback(( event: SyntheticEvent ) => {
 

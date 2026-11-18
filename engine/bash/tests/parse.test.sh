@@ -20,8 +20,8 @@ test:core:parse:reads-env () {
 }
 test:core:parse:judges-names () {
 
-    core:validate:identifier rustx
-    @fails core:validate:identifier RustX
+    core:validate:identifier alphax
+    @fails core:validate:identifier AlphaX
     core:validate:key LOG_LEVEL
     @fails core:validate:key log_level
     @eq "$(core:parse:unquote '"a b"')" 'a b'

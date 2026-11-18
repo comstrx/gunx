@@ -283,22 +283,28 @@ module:extract:keep () {
 }
 module:extract:stays () {
 
-    local path="${1}"
+    local path="${1}" part="${2:-}"
 
-    core:list:has "${path##*/}" "${EXTRACT_LOCKS[@]}" || { [[ "${path}" != */* ]] && core:list:has "${path}" "${EXTRACT_STAYS[@]}"; }
+    core:list:has "${path##*/}" "${EXTRACT_LOCKS[@]}" || { [[ "${path%%/*}" != "${part%%/*}" ]] && core:list:has "${path%%/*}" "${EXTRACT_STAYS[@]}"; }
 
 }
 module:extract:files () {
 
-    local root="${1}" kind="${2}" part="${3}" left="${4:-}" path=""
+    local root="${1}" kind="${2}" part="${3}" left="${4:-}" path="" target=""
 
     while IFS= read -r -d '' path; do
 
         module:extract:travels "${kind}" "${part}" "${path}" "${left}" || continue
 
-        if [[ "${kind}" == product ]] || ! module:extract:keep "${kind}" "${part}" "${path}"; then printf '%s\t%s\n' "${path}" "${path}"
-        else printf '%s\t%s\n' "${path}" "${path#"${part}/"}"
+        target="${path}"
+
+        if [[ "${kind}" != product ]]; then ! module:extract:keep "${kind}" "${part}" "${path}" || target="${path#"${part}/"}"
+        elif [[ "${path}" != */* ]]; then [[ ! -e "${root}/${part}/${path}" ]] || continue
+        elif [[ "${path}" == "${part}/"*/* ]]; then target="${part%/*}/${path#"${part}/"}"
+        elif [[ "${path}" == "${part}/"* ]]; then target="${path#"${part}/"}"
         fi
+
+        printf '%s\t%s\n' "${path}" "${target}"
 
     done < <(core:git:files "${root}")
 
@@ -307,7 +313,7 @@ module:extract:travels () {
 
     local kind="${1}" part="${2}" path="${3}" left="${4:-}"
 
-    ! module:extract:stays "${path}" || return 1
+    ! module:extract:stays "${path}" "${part}" || return 1
 
     module:extract:keep "${kind}" "${part}" "${path}" "${left}" && return 0
     [[ "${kind}" != product ]] || return 1

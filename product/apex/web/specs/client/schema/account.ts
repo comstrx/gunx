@@ -13,9 +13,8 @@ export const account = spec.screen("account", {
             spec.feature("account"),
             spec.feature("notices", { ports: { rows: spec.read("notifications.list", undefined, { live: true }) } }),
             stack({ direction: "row", gap: "sm", wrap: true }, [
-                spec.feature("action", { id: "courier", settings: { label: "account.openCourier", look: "solid" }, on: { success: spec.transfer("courier", { to: "/account" }) } }),
-                spec.feature("action", { id: "signed", settings: { label: "account.vendor", look: "soft" }, on: { success: spec.transfer("vendor", { carry: { session: true } }) } }),
-                spec.feature("action", { id: "plain", settings: { label: "account.plain", look: "ghost" }, on: { success: spec.transfer("vendor", { carry: { inherit: false } }) } }),
+                spec.feature("action", { id: "signed", settings: { label: "account.admin", look: "soft" }, on: { success: spec.transfer("admin", { carry: { session: true } }) } }),
+                spec.feature("action", { id: "plain", settings: { label: "account.plain", look: "ghost" }, on: { success: spec.transfer("admin", { carry: { inherit: false } }) } }),
             ]),
         ]),
     ],

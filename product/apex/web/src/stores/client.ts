@@ -9,6 +9,6 @@ export const client: () => api.Client = host.own(( app ) => {
 
     if ( app.address === undefined ) throw exception.fault("internal", "spec.address", { message: "the surface names no api address; set contracts.baseUrl" });
 
-    return createClient({ baseUrl: app.address, locale: () => instance().getState().locale, token: () => session().token() });
+    return createClient({ baseUrl: app.address, wire: app.config.contracts.wire, locale: () => instance().getState().locale, token: () => session().token() });
 
 });

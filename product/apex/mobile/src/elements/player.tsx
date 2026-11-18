@@ -2,13 +2,14 @@ import * as media from "engine/media";
 import { StyleSheet } from "react-native";
 import { Button } from "@/elements/button.tsx";
 import type { PlayerProps } from "@/elements/contract.ts";
-import { useSound } from "@/host/sound.ts";
-import { FilmView } from "@/host/views.tsx";
-import { radius } from "@/styles/tokens.ts";
+import { useTheme } from "@/hooks/use-theme.ts";
+import { useSound } from "@/render/host/sound.ts";
+import { FilmView } from "@/render/host/views.tsx";
+import { sheeted } from "@/styles/globals.ts";
 
 type Shown = { url: string; label: string };
 
-const styles = StyleSheet.create({ film: { aspectRatio: 3 / 4, width: "100%", borderRadius: radius.md, overflow: "hidden" } });
+const stylesOf = sheeted(( radius ) => StyleSheet.create({ film: { aspectRatio: 3 / 4, width: "100%", borderRadius: radius.md, overflow: "hidden" } }));
 
 function Sound ({ url, label }: Shown ) {
 
@@ -21,6 +22,7 @@ function Sound ({ url, label }: Shown ) {
 
 export function Player ({ file, label }: PlayerProps ) {
 
+    const styles = stylesOf(useTheme().radius);
     const { url } = media.link(file);
 
     if ( url === "" ) return null;

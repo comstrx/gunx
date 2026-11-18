@@ -22,12 +22,12 @@ test:core:toml:reads-inline-tables-and-arrays () {
     local file="${TMPDIR}/inline.toml"
     local -A table=()
 
-    printf '[meta]\nauthors = ["a", "b"]\nnone = []\n[tools]\ntrivy = { version = "0.1.0", binary = "trivy" }\n[deps]\napix = { path = "p", deps = [{ name = "engine", repo = "o/pyx" }] }\nesc = "a \\"b\\""\n' > "${file}"
+    printf '[meta]\nauthors = ["a", "b"]\nnone = []\n[tools]\ntrivy = { version = "0.1.0", binary = "trivy" }\n[deps]\napix = { path = "p", deps = [{ name = "engine", repo = "o/basex" }] }\nesc = "a \\"b\\""\n' > "${file}"
     core:parse:toml table "${file}"
 
     @eq "${table[meta.authors]} ${table[meta.authors.0]} ${table[meta.authors.1]} ${table[meta.none]}" '2 a b 0'
     @eq "${table[tools.trivy.version]} ${table[tools.trivy.binary]}" '0.1.0 trivy'
-    @eq "${table[deps.apix.deps.0.name]} ${table[deps.apix.deps.0.repo]}" 'engine o/pyx'
+    @eq "${table[deps.partx.deps.0.name]} ${table[deps.partx.deps.0.repo]}" 'engine o/basex'
     @eq "${table[deps.esc]}" 'a "b"'
 
     printf 'x = [\n    { name = "a" },\n    { name = "b" },\n]\ny = 1\n' > "${file}"

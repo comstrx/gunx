@@ -14,8 +14,6 @@ export const home = spec.screen("home", {
             spec.feature("hello", { settings: { tone: "plain" } }),
             stack({ direction: "row", gap: "sm", justify: "center", width: "auto", wrap: true }, [
                 spec.feature("action", { id: "more", settings: { label: "store.more", look: "solid" }, on: { success: spec.toggle("signals.more") } }),
-                spec.feature("action", { id: "courier", settings: { label: "store.courier", look: "soft" }, on: { success: spec.transfer("courier") } }),
-                spec.feature("action", { id: "vendor", settings: { label: "store.vendor", look: "soft" }, on: { success: spec.transfer("vendor") } }),
                 spec.feature("action", { id: "admin", settings: { label: "store.admin", look: "ghost" }, on: { success: spec.transfer("acme:admin", { to: "/about" }) } }),
             ]),
         ]),

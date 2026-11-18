@@ -7,19 +7,19 @@ import * as translate from "engine/translate";
 import { host } from "@/specs/app.ts";
 import type { Defaults } from "@/specs/part.ts";
 import { bind } from "@/stores/bind.ts";
-import type { Locale, Preferences } from "@/types/index.ts";
 import { box } from "./box.ts";
 
-type Actions = { setLocale: ( locale: Locale ) => void; toggleLocale: () => void };
+type Preferences = { locale: string; chosen: boolean };
+type Actions = { setLocale: ( locale: string ) => void; toggleLocale: () => void };
 
-function handed ( app: spec.App<Defaults> ): Locale | undefined {
+function handed ( app: spec.App<Defaults> ): string | undefined {
 
     const given = host.carried().locale;
 
     return typeof given === "string" && app.compiled.surface.locales.includes(given) ? given : undefined;
 
 }
-function defined ( app: spec.App<Defaults>, inherited: Locale | undefined ) {
+function defined ( app: spec.App<Defaults>, inherited: string | undefined ) {
 
     const { locales, locale } = app.compiled.surface;
 
@@ -35,7 +35,7 @@ function defined ( app: spec.App<Defaults>, inherited: Locale | undefined ) {
                 set({ locale: chosen, chosen: true });
 
             },
-            toggleLocale: () => set({ locale: (locales[(locales.indexOf(get().locale) + 1) % locales.length] ?? locale) as Locale, chosen: true }),
+            toggleLocale: () => set({ locale: locales[(locales.indexOf(get().locale) + 1) % locales.length] ?? locale, chosen: true }),
         }),
     });
 

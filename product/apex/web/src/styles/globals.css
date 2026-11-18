@@ -1,0 +1,20 @@
+@import "tailwindcss" source("..");
+@import "./tokens.css";
+@import "../../.cache/styles/fonts.css";
+@import "../../.cache/styles/theme.css";
+@import "./elements.css";
+
+@layer base {
+    html {
+        color-scheme: light dark;
+        -webkit-text-size-adjust: 100%;
+    }
+
+    html[data-pending] body {
+        visibility: hidden;
+    }
+
+    #root {
+        display: contents;
+    }
+}

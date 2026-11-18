@@ -8,9 +8,8 @@ import { Heading } from "@/elements/heading.tsx";
 import { Text } from "@/elements/text.tsx";
 import { useStale } from "@/hooks/use-stale.ts";
 import { host } from "@/specs/app.ts";
-import type { Locale } from "@/types/index.ts";
 
-export type StaleProps = { locale: Locale };
+export type StaleProps = { locale: string };
 
 export function Stale ({ locale }: StaleProps ) {
 

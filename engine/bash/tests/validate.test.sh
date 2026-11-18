@@ -1,11 +1,11 @@
 test:core:validate:names-and-keys () {
 
-    core:validate:identifier rustx
+    core:validate:identifier alphax
     core:validate:identifier a_b-c
-    @fails core:validate:identifier RustX
+    @fails core:validate:identifier AlphaX
     core:validate:key LOG_LEVEL
     @fails core:validate:key log_level
-    core:validate:name rustx
+    core:validate:name alphax
     @fails core:validate:name rust_x
 
 }

@@ -1,38 +1,41 @@
 module:extract:changelog () {
 
-    local root="${1}" tree="${2}" part="${3}" shown="${4:-${3}}" line="" keep=0 block=0
+    local root="${1}" tree="${2}" line="" text="# Changelog" block=0 name="" spec="" shown=""
+
+    shift 2
 
     [[ -f "${root}/CHANGELOG.md" ]] || return 0
 
-    {
-        printf '# Changelog\n'
+    while IFS= read -r line || [[ -n "${line}" ]]; do
 
-        while IFS= read -r line || [[ -n "${line}" ]]; do
+        case "${line}" in
+            '## '*) block=0; text+=$'\n\n'"${line}" ;;
+            '### '*)
+                block=0
+                name="${line#'### '}"
 
-            if [[ "${line}" == '## '* ]]; then keep=0; block=0; printf '\n%s\n' "${line}"; continue; fi
+                for spec in "$@"; do
 
-            if [[ "${line}" == '### '* ]]; then
+                    case "${spec}" in
+                        *'-*') [[ "${name}" == "${spec%'*'}"?* ]] || continue; shown="${name#"${spec%'*'}"}" ;;
+                        *=*)   [[ "${name}" == "${spec%%=*}" ]] || continue; shown="${spec#*=}" ;;
+                        *)     [[ "${name}" == "${spec}" ]] || continue; shown="${name}" ;;
+                    esac
 
-                block=$([[ "${line}" == "### ${part}" ]] && printf 1 || printf 0)
-                (( block == 0 )) || { printf '\n### %s\n' "${shown}"; keep=1; }
+                    block=1
+                    text+=$'\n\n'"### ${shown}"$'\n'
 
-                continue
+                    break
 
-            fi
+                done
+            ;;
+            '# '*|'') ;;
+            *) (( block == 0 )) || text+=$'\n'"${line}" ;;
+        esac
 
-            if [[ "${line}" == '# '* ]]; then continue; fi
+    done < "${root}/CHANGELOG.md"
 
-            (( block == 0 )) || [[ -z "${line}" && keep -eq 0 ]] || {
-
-                printf '%s\n' "${line}"
-
-                keep=0
-                [[ -n "${line}" ]] && keep=1
-
-            }
-
-        done < "${root}/CHANGELOG.md"
-    } | core:fs:file:write "${tree}/CHANGELOG.md" 644
+    printf '%s\n' "${text}" | core:fs:file:write "${tree}/CHANGELOG.md" 644
 
 }
 module:extract:anycase () {
@@ -133,31 +136,88 @@ module:extract:rename () {
     core:proc:within "${tree}" @tool prettier --log-level warn --write "${docs[@]}" || { @err "Prettier failed on the renamed files"; return; }
 
 }
-module:extract:strip () {
+module:extract:shallow () {
 
-    local tree="${1}" kind="${2}" part="${3}" file=""
+    local tree="${1}" kind="${2}" part="${3}" home="" name="" file=""
 
-    [[ "${kind}" == engine && "${part}" == "$(module:extract:self)" ]] || return 0
+    [[ "${kind}" == product ]] || return 0
 
-    file="$(config:manifest:file "${tree}")" || return
+    home="${part%/*}"
+    name="${part##*/}"
+    name="${name//./[.]}"
 
-    core:parse:toml:drop "${file}" deps || { @err "Strip failed: ${file##*/}"; return; }
+    while IFS= read -r file; do
+
+        [[ "${file}" == *.@(json|jsonc|toml|yml|yaml|mod|work) ]] || continue
+
+        core:fs:file:edit "${file}" -E "s#[.][.]/(([.][.]/)*(${EXTRACT_HOMES})/)#\\1#g" || { @err "Cannot shorten the paths of ${file#"${tree}/"}"; return; }
+
+    done < <(grep -rIlE --exclude-dir=.git "[.][.]/([.][.]/)*(${EXTRACT_HOMES})/" -- "${tree}/${home}" 2>/dev/null || true)
+
+    while IFS= read -r file; do
+
+        [[ "${file}" == "${tree}"/.github/* || "${file}" == *.@(md|yml|yaml|toml) ]] || continue
+
+        core:fs:file:edit "${file}" -E "s#${home}/(${name}|[*])/#${home}/#g" || { @err "Cannot shorten the paths of ${file#"${tree}/"}"; return; }
+
+    done < <(grep -rIlE --exclude-dir=.git "${home}/(${name}|[*])/" -- "${tree}" 2>/dev/null || true)
 
 }
-module:extract:block () {
+module:extract:logo () {
 
-    local kind="${1}" part="${2}"
+    local tree="${1}" name="${2}" file="${1}/README.md" logo="" line="" text="" placed=0
+
+    logo="$(config:targets:get "${name}" logo)" || return
+
+    [[ -n "${logo}" ]] || return 0
+    [[ "${logo}" == https://* && "${logo}" != *[[:space:]\"\<\>]* ]] || { @err "[deps] ${name}: logo is an https address, not ${logo}"; return; }
+
+    [[ -f "${file}" ]] || return 0
+
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+
+        text+="${line}"$'\n'
+
+        (( placed == 0 )) && [[ "${line}" == '# '* ]] || continue
+
+        text+=$'\n<div align="center">\n  <br/>\n  <img height="'"${EXTRACT_LOGO}"'" src="'"${logo}"$'"/>\n  <br/>\n  <br/>\n</div>\n'
+        placed=1
+
+    done < "${file}"
+
+    printf '%s' "${text}" | core:fs:file:write "${file}" 644
+
+}
+module:extract:strip () {
+
+    local tree="${1}" file="" name=""
+
+    while IFS= read -r -d '' file; do
+
+        name="${file##*/}"
+
+        core:list:has "${name,,}" "${MANIFEST_NAMES[@]}" || continue
+
+        core:parse:toml:drop "${file}" deps || { @err "Strip failed: ${file#"${tree}/"}"; return; }
+
+    done < <(core:fs:tree:files "${tree}" .toml)
+
+}
+module:extract:blocks () {
+
+    local name="${1}" kind="${2}" part="${3}" short=""
 
     case "${kind}" in
         engine|tutor) @print "${part##*/}" ;;
-        fragment)     part="${part#"${EXTRACT_PRODUCTS}/"}"; @print "${part/\//-}" ;;
-        *)            @print "" ;;
+        fragment)     short="${part#"${EXTRACT_PRODUCTS}/"}"; @print "${short/\//-}=${part##*/}" ;;
+        product)      config:targets:engines "${name}"; @print "${part##*/}" "${part##*/}-*" ;;
     esac
 
 }
 module:extract:prepare () {
 
     local name="${1}" tree="${2}" root="${TOOL_ROOT}" kind="" part="" left="" count=0
+    local -a blocks=()
 
     module:extract:install || return
 
@@ -170,15 +230,17 @@ module:extract:prepare () {
     core:fs:dir:new "${tree}" 755 || return
     count="$(module:extract:files "${root}" "${kind}" "${part}" "${left}" | core:fs:tree:copy "${root}" "${tree}")" || return
 
-    [[ "${kind}" == product ]] \
-        || module:extract:changelog "${root}" "${tree}" "$(module:extract:block "${kind}" "${part}")" "${part##*/}" \
-        || return
+    mapfile -t blocks < <(module:extract:blocks "${name}" "${kind}" "${part}")
 
+    module:extract:changelog "${root}" "${tree}" "${blocks[@]}" || return
+
+    module:extract:shallow "${tree}" "${kind}" "${part}" || return
     module:extract:flows:apply "${tree}" "${kind}" "${part}" "${name}" || return
     module:extract:deps "${tree}" "${name}" "${kind}" || return
     module:extract:rename "${tree}" "${name}" || return
     module:extract:flows:seal "${tree}" "${part}" "${name}" || return
-    module:extract:strip "${tree}" "${kind}" "${part}" || return
+    module:extract:logo "${tree}" "${name}" || return
+    module:extract:strip "${tree}" || return
 
     @info "prepared ${name}: ${count} files from ${part} into ${tree}"
 

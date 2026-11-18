@@ -6,8 +6,8 @@ import { Link } from "@/elements/link.tsx";
 import { navigate, usePath } from "@/hooks/use-path.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
 import { useMenu } from "@/hooks/use-session.ts";
+import { useTheme } from "@/hooks/use-theme.ts";
 import { host } from "@/specs/app.ts";
-import { useTheme } from "@/styles/theme.ts";
 
 export function Nav ({ path }: { path: string } ) {
 

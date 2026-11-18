@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@def # v2
         with:
-          bun-version-file: engine/bun/package.json
+          bun-version-file: engine/demo/package.json
       - run: infra sync --moment tag
 FLOW
 
@@ -72,7 +72,7 @@ test:core:yaml:rewrites-and-measures () {
 
     file="$(fixture:core:yaml:flow)"
 
-    core:yaml:sub "${file}" -E 's#engine/bun/package.json#package.json#'
+    core:yaml:sub "${file}" -E 's#engine/demo/package.json#package.json#'
     @contains "$(cat "${file}")" 'bun-version-file: package.json'
     @eq "$(core:yaml:indent '      - run: x')" 6
     @eq "$(core:yaml:indent 'name: x')" 0

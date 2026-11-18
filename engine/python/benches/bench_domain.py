@@ -18,7 +18,7 @@ def recording () -> None: Record("shop.example-store.io", "cname", "edge.engine.
 
 def challenging () -> None: domains.challenge("shop.example-store.io")
 
-def apexing () -> None: domains.apex("a.b.shop.example-store.io")
+def rooting () -> None: domains.root("a.b.shop.example-store.io")
 
 def subdomaining () -> None: domains.subdomains(hosts, "example-store.io")
 
@@ -30,7 +30,7 @@ bench.measure("domain.normalize", normalizing)
 bench.measure("domain.normalize.idna", idna)
 bench.measure("domain.record", recording)
 bench.measure("domain.challenge", challenging)
-bench.measure("domain.apex", apexing)
+bench.measure("domain.root", rooting)
 bench.measure("domain.subdomains.50", subdomaining, rounds=5000)
 loop.run_until_complete(bench.measure_async("domain.memory.point", pointing, rounds=2000))
 loop.run_until_complete(bench.measure_async("domain.memory.records", listing, rounds=2000))

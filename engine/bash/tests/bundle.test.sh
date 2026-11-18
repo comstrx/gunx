@@ -209,11 +209,17 @@ test:module:bundle:boot:roots-at-the-repository () {
 }
 test:module:bundle:boot:merges-the-project-manifest () {
 
-    local root="" file="${TMPDIR}/other.toml" tool=""
+    local root="" file="${TMPDIR}/other.toml" tool=o/selfx key=""
 
     root="$(fixture:module:gate:repo)"
 
-    tool="${MANIFEST[deps.bashx.repo]:-o/selfx}"
+    for key in "${!MANIFEST[@]}"; do
+
+        [[ "${key}" == deps.*.type && "${MANIFEST[${key}]}" == engine && "${MANIFEST[${key%.type}.deps]:-0}" == 0 ]] || continue
+
+        tool="${MANIFEST[${key%.type}.repo]:-${tool}}"
+
+    done
 
     {
         printf '[deps]\n'

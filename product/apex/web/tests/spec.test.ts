@@ -3,9 +3,9 @@ import * as exception from "engine/exception";
 import * as seo from "engine/seo";
 import * as spec from "engine/spec";
 import { specs } from "../specs/index.ts";
+import { platform } from "../src/api/index.ts";
 import { host } from "../src/specs/app.ts";
 import { part } from "../src/specs/part.ts";
-import { platform } from "../src/types/platform.ts";
 
 const { answer, ask, compiled, confirmations, labels, live, logger, logs, menu, report, screenAt, title } = host.app;
 const { current } = specs;
@@ -28,7 +28,7 @@ describe("spec", () => {
         expect(compiled.issues).toEqual([]);
         expect(compiled.surface.name).toBe(`${platform}-${role}`);
         expect(compiled.surface.role).toBe(role);
-        expect([host.entry, host.names, host.app.name, host.app.id]).toEqual([current, [current, "acme.client", "acme.courier", "acme.vendor"], current, current]);
+        expect([host.entry, host.names, host.app.name, host.app.id]).toEqual([current, [current, "acme.client"], current, current]);
         expect(compiled.features).toEqual(["action", "hello", "locate", "note", "probe", "vault"]);
         expect(compiled.kinds).toEqual(["feature", "stack"]);
         expect(compiled.topics.emitted).toEqual(["hello.greeted", "locate.moved"]);
@@ -101,7 +101,7 @@ describe("spec", () => {
 
         expect(publicOf()).toEqual({ indexable: false, url: undefined });
         expect(pathsOf()).toEqual(["/", "/about", "/storage", "/device"]);
-        expect(metadataOf(compiled.byName.hello as spec.CompiledScreen, "en")).toEqual({ title: `${compiled.byName.hello?.title.en} · ${name.en}`, description: tagline.en ?? "", robots: "noindex, nofollow", canonical: undefined, alternates: [], openGraph: {} });
+        expect(metadataOf(compiled.byName.hello as spec.CompiledScreen, "en")).toEqual({ title: `${compiled.byName.hello?.title.en} · ${name.en}`, description: tagline.en ?? "", robots: "noindex, nofollow", canonical: undefined, alternates: [], openGraph: {}, twitter: {}, keywords: [], tags: [{ name: "description", content: tagline.en ?? "" }, { name: "robots", content: "noindex, nofollow" }] });
         expect(metadataOf(compiled.byName.hello as spec.CompiledScreen, "ar").title).toBe(`${compiled.byName.hello?.title.ar} · ${name.ar}`);
 
         const site: seo.Site = { name: name.en ?? "", url: "https://www.acme.example/", locale: "en", locales: ["en"], default: "en", hide: true, description: tagline.en ?? "" };
@@ -131,32 +131,25 @@ describe("spec", () => {
 
         const went: string[] = [];
         const unbind = host.bind({ navigate: ( path ) => { went.push(path); }, carry: () => ({ locale: "en" }) });
-        const courier = await host.ready("acme.courier");
         const client = await host.ready("acme.client");
         const offers = client.compiled.byName.offers as spec.CompiledScreen;
 
-        expect([host.index.map(( listed ) => [listed.name, listed.indexable]), client.compiled.surface.on.enter?.length, offers.settings, client.meta(offers, "en").description, client.meta(offers, "en").robots.startsWith("index"), courier.meta(courier.compiled.byName.board as spec.CompiledScreen, "en").robots]).toEqual([[[current, false], ["acme.client", true], ["acme.courier", false], ["acme.vendor", false]], 1, { width: "reading" }, offers.description.en ?? "", true, "noindex, nofollow"]);
+        expect([host.index.map(( listed ) => [listed.name, listed.indexable]), client.compiled.surface.on.enter?.length, offers.settings, client.meta(offers, "en").description, client.meta(offers, "en").robots.startsWith("index"), host.app.meta(host.app.compiled.byName.about as spec.CompiledScreen, "en").robots]).toEqual([[[current, false], ["acme.client", true]], 1, { width: "reading" }, offers.description.en ?? "", true, "noindex, nofollow"]);
 
         const stops: (() => void)[] = [unbind];
 
         try {
 
-            await host.transfer("acme.courier");
+            const hello = await host.app.live.mount("hello");
+            stops.push(host.app.live.handle("leave.press", () => undefined));
 
-            const board = await courier.live.mount("board");
-            stops.push(courier.live.handle("ping.press", () => undefined), courier.live.handle("client.press", () => undefined));
-
-            await courier.live.act("ping", "press");
-
-            expect([host.active.getState(), courier.live.get("signals.sent"), courier.live.visible("sent")]).toEqual(["acme.courier", true, true]);
-
-            await courier.live.act("client", "press");
-            await board.unmount();
+            await host.app.live.act("leave", "press");
+            await hello.unmount();
 
             const home = await client.live.mount("home");
             stops.push(client.live.handle("more.press", () => undefined));
 
-            expect([host.active.getState(), host.carried(), client.live.get("signals.from"), client.live.visible("back"), client.live.visible("details"), went]).toEqual(["acme.client", { locale: "en", from: "courier" }, "courier", true, false, ["/", "/"]]);
+            expect([host.active.getState(), host.carried(), client.live.get("signals.from"), client.live.visible("back"), client.live.visible("details"), went]).toEqual(["acme.client", { locale: "en", from: "admin" }, "admin", true, false, ["/"]]);
 
             await client.live.act("more", "press");
 
@@ -164,7 +157,7 @@ describe("spec", () => {
 
             await client.live.act("more", "press");
 
-            expect([client.live.visible("details"), courier.live.get("signals.sent")]).toEqual([false, true]);
+            expect(client.live.visible("details")).toBe(false);
 
             await home.unmount();
 

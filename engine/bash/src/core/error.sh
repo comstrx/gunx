@@ -32,14 +32,11 @@ core:error:cleanup () {
 
     core:fs:release
 
-    if [[ "${TOOL_KEEP:-false}" == true ]]; then
+    [[ -n "${TOOL_TEMP:-}" && -d "${TOOL_TEMP}" ]] || return 0
 
-        [[ -z "${TOOL_TEMP:-}" || ! -d "${TOOL_TEMP}" ]] || : > "${TOOL_TEMP}/keep"
+    rm -rf -- "${TOOL_TEMP}" 2>/dev/null || core:log:warn "Cannot remove ${TOOL_TEMP}"
 
-        return 0
-
-    fi
-    [[ -z "${TOOL_TEMP:-}" || ! -d "${TOOL_TEMP}" ]] || rm -rf -- "${TOOL_TEMP}"
+    return 0
 
 }
 core:error:traps () {

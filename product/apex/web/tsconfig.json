@@ -33,6 +33,6 @@
     "allowJs": true,
     "esModuleInterop": true
   },
-  "include": ["next-env.d.ts", "src", "specs", "tool.config.ts", "tests", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
-  "exclude": ["node_modules", ".next", "out"]
+  "include": ["next-env.d.ts", "src", "specs", "tool.config.ts", "tests", "electrobun.config.ts", "hutch.config.ts", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
+  "exclude": ["node_modules", ".next", "out", "dist", "build", "artifacts", ".hutch", ".cottontail-tmp"]
 }

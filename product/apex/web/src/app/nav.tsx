@@ -2,12 +2,13 @@
 
 import { Block } from "@/elements/block.tsx";
 import { Button } from "@/elements/button.tsx";
+import { Image } from "@/elements/image.tsx";
 import { Link } from "@/elements/link.tsx";
-import { navigate, usePath } from "@/hooks/use-path.ts";
+import { hrefOf, navigate, usePath } from "@/hooks/use-path.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
 import { useMenu } from "@/hooks/use-session.ts";
+import { useTheme } from "@/hooks/use-theme.ts";
 import { host } from "@/specs/app.ts";
-import { useTheme } from "@/styles/theme.ts";
 
 export function Nav ({ path }: { path: string } ) {
 
@@ -16,11 +17,13 @@ export function Nav ({ path }: { path: string } ) {
     const at = usePath(path);
     const text = host.app.labels(locale, "nav");
     const items = useMenu(locale, at);
+    const logo = host.app.content("logo", locale);
 
     return (
         <Block as="nav" direction="row" gap="sm" align="center" justify="between" padding="sm" wrap label={text.menu}>
             <Block direction="row" gap="xs" align="center" width="auto" wrap>
-                {items.map(( item ) => <Link key={item.name} href={item.path} look="button" current={item.active} onNavigate={navigate}>{item.title}</Link>)}
+                {logo ? <Link href={hrefOf(host.app.home, locale)} onNavigate={navigate}><Image src={logo} alt={host.app.content("name", locale)} ratio="mark" /></Link> : null}
+                {items.map(( item ) => <Link key={item.name} href={hrefOf(item.path, locale)} look="button" current={item.active} onNavigate={navigate}>{item.title}</Link>)}
             </Block>
             <Block direction="row" gap="xs" align="center" width="auto">
                 <Button look="ghost" size="sm" onPress={look.cycle} label={text.theme}>{text[look.preference] ?? look.preference}</Button>

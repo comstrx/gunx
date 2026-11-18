@@ -8,9 +8,8 @@ import { Heading } from "@/elements/heading.tsx";
 import { Text } from "@/elements/text.tsx";
 import { useAsked } from "@/hooks/use-session.ts";
 import { host } from "@/specs/app.ts";
-import type { Locale } from "@/types/index.ts";
 
-export type ConfirmProps = { locale: Locale };
+export type ConfirmProps = { locale: string };
 
 function accept (): void {
 

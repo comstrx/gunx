@@ -284,8 +284,6 @@ core:sys:prune () {
 
         directory="${directory%/}"
 
-        [[ ! -e "${directory}/keep" ]] || continue
-
         pid="${directory##*/}"
         pid="${pid%.*}"
         pid="${pid##*-}"

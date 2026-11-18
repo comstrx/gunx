@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: $/engine/bash/src/module/gate/template
 
-      - run: gunx extract --push --tag "${GITHUB_REF_NAME}" --timeout 1800
+      - run: gunx extract --push --tag "${GITHUB_REF_NAME}" --release --timeout 1800
 
         env:
           GIT_TOKEN: ${{ secrets.GIT_TOKEN }}

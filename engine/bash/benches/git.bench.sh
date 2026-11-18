@@ -1,11 +1,11 @@
 bench:core:git:address () {
 
-    @measure 'core:git:address ssh address' 30 200 core:git:address "git@github.com:$(config:meta:owner)/rustx.git"
+    @measure 'core:git:address ssh address' 30 200 core:git:address "git@github.com:$(config:meta:owner)/alphax.git"
 
 }
 bench:core:git:resolve () {
 
-    @measure 'core:git:resolve bare name' 30 50 core:git:resolve rustx "${TOOL_ENGINE}"
+    @measure 'core:git:resolve bare name' 30 50 core:git:resolve alphax "${TOOL_ENGINE}"
 
 }
 bench:core:git:host () {

@@ -1,14 +1,15 @@
 import { StyleSheet, Text, TextInput, View } from "react-native";
 import type { InputProps } from "@/elements/contract.ts";
-import { useTheme } from "@/styles/theme.ts";
-import { radius } from "@/styles/tokens.ts";
+import { useTheme } from "@/hooks/use-theme.ts";
+import { sheeted } from "@/styles/globals.ts";
 
-const base = StyleSheet.create({ field: { alignSelf: "stretch", gap: 4 }, label: { fontSize: 14, lineHeight: 20, fontWeight: "500" }, input: { height: 44, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 12, fontSize: 16 } });
+const baseOf = sheeted(( radius ) => StyleSheet.create({ field: { alignSelf: "stretch", gap: 4 }, label: { fontSize: 14, lineHeight: 20, fontWeight: "500" }, input: { height: 44, borderRadius: radius.md, borderWidth: 1, paddingHorizontal: 12, fontSize: 16 } }));
 const kinds = { text: { keyboard: "default", fill: "off" }, email: { keyboard: "email-address", fill: "email" }, code: { keyboard: "number-pad", fill: "one-time-code" } } as const;
 
 export function Input ({ value, onChange, label, kind = "text", placeholder, invalid = false, disabled = false }: InputProps ) {
 
-    const { palette } = useTheme();
+    const { palette, radius } = useTheme();
+    const base = baseOf(radius);
 
     return (
         <View style={base.field} testID={`field-${kind}`}>

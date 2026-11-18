@@ -10,12 +10,13 @@ export default tool.define({
         compile: tool.specs(".cache/spec"),
         analyze: [
             tool.layers({
-                layers: ["host", "types", "api", "specs", "stores", "hooks", "styles", "elements", "components", "features", "app"],
+                layers: ["render/host", "render/bridge", "api", "specs", "styles", "stores", "hooks", "elements", "components", "features", "app"],
                 framework: { "react-native": ["hooks", "styles", "elements"] },
+                bare: ["render/host"],
+                only: { "render/bridge": ["app"] },
                 outside: [".cache"],
                 entries: ["app/index.tsx", "specs/part.ts"],
             }),
-            tool.nameless(),
         ],
         check: ["compile", tool.run("tsc -p ."), "analyze"],
         lint: tool.run("biome ci ."),

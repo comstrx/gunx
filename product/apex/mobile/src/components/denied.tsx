@@ -8,9 +8,8 @@ import { Text } from "@/elements/text.tsx";
 import { navigate } from "@/hooks/use-path.ts";
 import { useMenu } from "@/hooks/use-session.ts";
 import { host } from "@/specs/app.ts";
-import type { Locale } from "@/types/index.ts";
 
-export type DeniedProps = { locale: Locale; at: string; page: string };
+export type DeniedProps = { locale: string; at: string; page: string };
 
 export function Denied ({ locale, at, page }: DeniedProps ) {
 

@@ -90,15 +90,3 @@ test:core:sys:reads-the-run-context () {
     @eq "${context[link]}" ''
 
 }
-test:core:sys:keeps-a-session-that-was-asked-to-stay () {
-
-    local lab="${TMPDIR}/lab"
-
-    mkdir -p "${lab}/run/20261115-101010-2147483646.kept" "${lab}/run/20261115-101010-2147483646.gone"
-    : > "${lab}/run/20261115-101010-2147483646.kept/keep"
-
-    core:sys:prune "${lab}/run"
-
-    [[ -d "${lab}/run/20261115-101010-2147483646.kept" && ! -e "${lab}/run/20261115-101010-2147483646.gone" ]]
-
-}

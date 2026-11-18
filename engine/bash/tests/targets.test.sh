@@ -2,7 +2,7 @@ fixture:config:targets:table () {
 
     TARGETS=(
         [demox]=3 [demox.type]=engine [demox.path]=engine/demo [demox.repo]=github.com/x/demox
-        [skillx]=4 [skillx.type]=tutor [skillx.path]=tutor [skillx.repo]=github.com/x/skillx [skillx.tag]=1.2.3
+        [notesx]=4 [notesx.type]=tutor [notesx.path]=tutor [notesx.repo]=github.com/x/notesx [notesx.tag]=1.2.3
     )
 
 }
@@ -17,19 +17,31 @@ test:config:targets:loads-the-table-of-the-manifest () {
     @errors 'must name a path inside the root' config:targets:load
 
 }
+test:config:targets:loads-a-row-written-as-its-own-section () {
+
+    MANIFEST=(
+        [deps.twox.type]=engine [deps.twox.path]=engine/two
+        [deps.threex.type]=fragment [deps.threex.path]=product/demo/api [deps.threex.deps]=1
+        [deps.threex.deps.0]=2 [deps.threex.deps.0.name]=engine [deps.threex.deps.0.type]=odd
+    )
+
+    config:targets:load
+
+    @eq "$(config:targets:list | tr '\n' ' ')" 'threex twox '
+    @eq "$(config:targets:get threex path)" product/demo/api
+    @eq "$(config:targets:deps threex | cut -f1)" engine
+
+}
 test:config:targets:reads-the-table () {
 
     fixture:config:targets:table
 
-    @eq "$(config:targets:list | tr '\n' ' ')" 'demox skillx '
+    @eq "$(config:targets:list | tr '\n' ' ')" 'demox notesx '
     @eq "$(config:targets:get demox path)" engine/demo
-    @eq "$(config:targets:get skillx type)" tutor
+    @eq "$(config:targets:get notesx type)" tutor
     @eq "$(config:targets:get demox tag)" ''
     @eq "$(TOOL_ROOT="${TMPDIR}/none" config:targets:get demox branch)" "${GIT_BRANCH}"
-    @eq "$(config:targets:get skillx tag)" 1.2.3
-    @eq "$(config:targets:get demox title)" DemoX
-    @eq "$(config:targets:title mobilex)" MobileX
-    @eq "$(config:targets:title tutor)" Tutor
+    @eq "$(config:targets:get notesx tag)" 1.2.3
     @errors 'Unknown target: nope' config:targets:get nope path
     @errors 'has no shade' config:targets:get demox shade
 
@@ -44,10 +56,10 @@ test:config:targets:lists-the-engines-of-a-product () {
 }
 test:config:targets:lists-dependencies () {
 
-    TARGETS=( [apix]=4 [apix.type]=fragment [apix.path]=product/demo/api [apix.repo]=o/apix [apix.deps]=2
-              [apix.deps.0.name]=engine [apix.deps.0.repo]=o/pyx [apix.deps.1.name]=x [apix.deps.1.repo]=o/x [apix.deps.1.tag]=1.0.0 )
+    TARGETS=( [partx]=4 [partx.type]=fragment [partx.path]=product/demo/api [partx.repo]=o/partx [partx.deps]=2
+              [partx.deps.0.name]=engine [partx.deps.0.repo]=o/basex [partx.deps.1.name]=x [partx.deps.1.repo]=o/x [partx.deps.1.tag]=1.0.0 )
 
-    @eq "$(config:targets:deps apix | tr '\t' ' ' | tr '\n' ';')" 'engine o/pyx ;x o/x 1.0.0;'
+    @eq "$(config:targets:deps partx | tr '\t' ' ' | tr '\n' ';')" 'engine o/basex ;x o/x 1.0.0;'
     @eq "$(config:targets:deps nothing)" ''
 
 }

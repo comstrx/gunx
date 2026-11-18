@@ -337,12 +337,12 @@ def test_totp_follows_the_rfc_and_its_bounds () -> None:
 
         assert checked.value.reason == "crypto.totp"
 
-    assert crypto.totp_uri(secret, "ali@x.com", "GunX") == f"otpauth://totp/GunX%3Aali%40x.com?secret={secret}&issuer=GunX&digits=6&period=30&algorithm=SHA1"
+    assert crypto.totp_uri(secret, "ali@x.com", "Acme") == f"otpauth://totp/Acme%3Aali%40x.com?secret={secret}&issuer=Acme&digits=6&period=30&algorithm=SHA1"
     assert crypto.totp_uri(f" {secret.lower()}====", "a&b=c:d/é", "My Co?", 8, 60) == f"otpauth://totp/My%20Co%3F%3Aa%26b%3Dc%3Ad%2F%C3%A9?secret={secret}&issuer=My%20Co%3F&digits=8&period=60&algorithm=SHA1"
 
     for account, issuer, digits, step, reason in (
-        ("", "GunX", 6, 30, "crypto.totp"), ("ali", "", 6, 30, "crypto.totp"), ("ali", "Gun:X", 6, 30, "crypto.totp"), ("ali", "GunX", 9, 30, "crypto.totp"),
-        ("ali", "GunX", 6, 0, "crypto.totp"), ("\ud800", "GunX", 6, 30, "crypto.encoding"), ("ali", "\ud800", 6, 30, "crypto.encoding"),
+        ("", "Acme", 6, 30, "crypto.totp"), ("ali", "", 6, 30, "crypto.totp"), ("ali", "Ac:me", 6, 30, "crypto.totp"), ("ali", "Acme", 9, 30, "crypto.totp"),
+        ("ali", "Acme", 6, 0, "crypto.totp"), ("\ud800", "Acme", 6, 30, "crypto.encoding"), ("ali", "\ud800", 6, 30, "crypto.encoding"),
     ):
 
         with pytest.raises(Fault) as labelled: crypto.totp_uri(secret, account, issuer, digits, step)

@@ -1,7 +1,8 @@
 import type * as media from "engine/media";
 import type * as spec from "engine/spec";
 import type { ReactNode } from "react";
-import type { Space } from "@/styles/tokens.ts";
+
+export type Space = "none" | "xs" | "sm" | "md" | "lg" | "xl";
 
 export type BlockProps = {
     children?: ReactNode;
@@ -51,7 +52,7 @@ export type DialogProps = { children?: ReactNode; open: boolean; kind?: "plain" 
 
 export type SkeletonProps = { size?: "text" | "title" | "display" | undefined; width?: "third" | "half" | "most" | "full" | undefined };
 export type InputProps = { value: string; onChange: ( value: string ) => void; label: string; kind?: "text" | "email" | "code" | undefined; placeholder?: string | undefined; invalid?: boolean | undefined; disabled?: boolean | undefined };
-export type ImageProps = { src: string; alt: string; ratio?: "wide" | "square" | "avatar" | undefined };
+export type ImageProps = { src: string; alt: string; ratio?: "wide" | "square" | "avatar" | "mark" | undefined };
 export type PlayerProps = { file: media.Picked; label: string; captions?: string | undefined };
 export type PreviewProps = { stream: unknown; label: string };
 export type RevealProps = { children?: ReactNode; shown?: boolean | undefined; fresh?: boolean | undefined; fill?: boolean | undefined };

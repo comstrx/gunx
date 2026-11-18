@@ -20,10 +20,22 @@ test:core:error:cleans-the-session () {
 
     directory="$(mktemp -d "${TMPDIR}/session.XXXXXXXX")"
 
-    TOOL_TEMP="${directory}" TOOL_KEEP=true core:error:cleanup
-    [[ -d "${directory}" ]]
-
     TOOL_TEMP="${directory}" core:error:cleanup
     [[ ! -d "${directory}" ]]
+
+}
+test:core:error:warns-when-the-session-stays () {
+
+    local directory="" report="" stubs="${TMPDIR}/stubs"
+
+    directory="$(mktemp -d "${TMPDIR}/session.XXXXXXXX")"
+
+    mkdir -p "${stubs}"
+    printf '#!/bin/sh\nexit 1\n' > "${stubs}/rm"
+    chmod 755 "${stubs}/rm"
+
+    report="$(PATH="${stubs}:${PATH}" TOOL_TEMP="${directory}" core:error:cleanup 2>&1)"
+
+    @contains "${report}" "Cannot remove ${directory}"
 
 }
