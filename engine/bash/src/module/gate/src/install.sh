@@ -27,6 +27,6 @@ module:gate:install:root () {
         [[ "${tool}" == prettier ]] || ! module:gate:root:has "${tool}" || tools+=( "${tool}" )
     done
 
-    (( ${#tools[@]} == 0 )) || @fetch "${tools[@]}"
+    (( ${#tools[@]} == 0 )) || @ensure "${tools[@]}"
 
 }

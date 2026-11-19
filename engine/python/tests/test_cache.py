@@ -99,6 +99,42 @@ async def test_stores_take_drop_swap_and_count_in_one_step ( store: Memory | Red
     await store.clear()
     await store.close()
 
+async def test_a_guarded_value_is_redeemed_once_within_its_attempts ( store: Memory | Redis ) -> None:
+
+    assert await store.redeem("code", "right", "tries", 3) == (False, 0) and await store.get("tries") is None
+
+    await store.set_many({ "code": "right", "tries": 0 }, ttl=5)
+
+    assert await store.redeem("code", "wrong", "tries", 3, ttl=60) == (False, 1) and await store.get("code") == "right"
+    assert 0 < (await store.ttl("tries") or 0) <= 5
+
+    assert await store.redeem("code", "right", "tries", 3) == (True, 2)
+    assert await store.get("code") is None and await store.get("tries") is None
+    assert await store.redeem("code", "right", "tries", 3) == (False, 0)
+
+    await store.set("code", "right", ttl=5)
+
+    assert await store.redeem("code", "wrong", "tries", 2, ttl=60) == (False, 1) and (await store.ttl("tries") or 0) > 50
+    assert await store.redeem("code", "wrong", "tries", 2) == (False, 2) and await store.get("code") == "right"
+    assert await store.redeem("code", "right", "tries", 2) == (False, 3)
+    assert await store.get("code") is None and await store.get("tries") is None
+
+    await store.set_many({ "code": "right", "tries": 0 }, ttl=5)
+
+    right = await asyncio.gather(*(store.redeem("code", "right", "tries", 5) for _ in range(50)))
+
+    assert right.count((True, 1)) == 1 and right.count((False, 0)) == 49
+
+    await store.set_many({ "code": "right", "tries": 0 }, ttl=5)
+
+    wrong = await asyncio.gather(*(store.redeem("code", "wrong", "tries", 5) for _ in range(50)))
+
+    assert sorted(wrong) == [(False, 0)] * 44 + [(False, count) for count in range(1, 7)]
+    assert await store.get("code") is None and await store.get("tries") is None
+
+    await store.clear()
+    await store.close()
+
 async def test_a_late_owner_never_frees_or_renews_its_successor ( store: Memory | Redis ) -> None:
 
     first, second = Cache(store), Cache(store)
@@ -424,7 +460,13 @@ async def test_the_boundary_refuses_counts_limits_and_waits_it_cannot_honor ( st
         await failed(local.increment("k", step), "cache.step")
         await failed(local.decrement("k", step), "cache.step")
 
-    for limit in (0, -1, cast("Any", 1.0), FLAG): await failed(local.keys("", limit), "cache.limit")
+    for limit in (0, -1, cast("Any", 1.0), FLAG):
+
+        await failed(local.keys("", limit), "cache.limit")
+        await failed(local.redeem("k", "v", "tries", limit), "cache.limit")
+
+    await failed(local.redeem("k", None, "tries", 3), "cache.value")
+
     for prefix in (cast("Any", 1), cast("Any", None)):
 
         await failed(local.keys(prefix), "cache.prefix")
@@ -482,8 +524,9 @@ async def test_a_counter_or_bucket_refuses_a_key_of_another_type ( store: Memory
     await failed(local.increment("word"), "cache.type")
     await failed(local.increment("pair"), "cache.type")
     await failed(local.bucket("word", 1, 2), "cache.type")
+    await failed(local.redeem("pair", { "a": 1 }, "word", 3), "cache.type")
 
-    assert await local.get("word") == "text" and await local.increment("count", 2) == 5
+    assert await local.get("word") == "text" and await local.get("pair") == { "a": 1 } and await local.increment("count", 2) == 5
     assert (await local.bucket("fresh", 1, 2)).allowed and (await local.bucket("fresh", 1, 2)).allowed and not (await local.bucket("fresh", 1, 2)).allowed
 
     await store.clear()

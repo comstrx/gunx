@@ -126,7 +126,8 @@ test:module:bundle:boot:serves-the-tool-commands () {
     @eq "$(module:bundle:usage:handler self)" module:bundle:self
     @eq "$(module:bundle:usage:handler check)" module:gate:kind
     @eq "$(module:bundle:usage:handler fuzz)" module:gate:kind
-    @eq "$(module:bundle:usage:handler fetch)" module:bundle:fetch
+    @eq "$(module:bundle:usage:handler fetch)" module:gate:kind
+    @eq "$(module:bundle:usage:handler lock)" module:gate:kind
 
 }
 test:module:bundle:boot:serves-changes () {
@@ -140,7 +141,7 @@ test:module:bundle:boot:serves-the-gate () {
     @eq "$(module:bundle:usage:handler gate)" module:gate:run
     @eq "$(module:bundle:usage:handler lint)" module:gate:kind
     @errors 'lint does not take --type' bash "${TOOL_BIN}" lint --type x
-    @errors 'self build|check|lint|test|bench|fuzz|audit' bash "${TOOL_BIN}" self nope
+    @errors 'self build|fetch|check|lint|test|bench|fuzz|audit' bash "${TOOL_BIN}" self nope
     @contains "$(module:bundle:usage:flags gate)" '--type|T|'
     @contains "$(module:bundle:usage:flags gate)" '--path|P|'
     @contains "$(module:bundle:usage:flags test)" '--only-changed||'
@@ -169,7 +170,7 @@ test:module:bundle:boot:routes-every-registered-command () {
 }
 test:module:bundle:boot:commands-are-the-recorded-surface () {
 
-    local recorded="hello checksum fetch self help version config meta system notify gate changes toolchains build run install update remove deps check lint test safety audit semver quality security bench fuzz targets extract"
+    local recorded="hello checksum self help version config meta system notify gate changes toolchains build run install update remove lock fetch check lint test safety audit semver quality security bench fuzz targets extract"
 
     @eq "$(module:bundle:usage:names | tr '\n' ' ' | sed 's/ $//')" "${recorded}"
 
@@ -190,7 +191,7 @@ test:module:bundle:boot:refuses-the-unknown () {
 }
 test:module:bundle:boot:serves-fetch () {
 
-    @eq "$(module:bundle:usage:handler fetch)" module:bundle:fetch
+    @eq "$(module:bundle:usage:handler fetch)" module:gate:kind
     @eq "$(module:bundle:usage:handler build)" module:gate:build
 
 }

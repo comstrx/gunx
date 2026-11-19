@@ -4,6 +4,8 @@ module:extract:open () {
         || { @err "Extraction reads a git repository from its root, and ${TOOL_ROOT} is not one"; return; }
 
     config:targets:load || return
+    module:extract:flags "${1:-}" || return
+    config:targets:settle || return
 
     module:extract:table && module:extract:wired
 
@@ -16,6 +18,8 @@ module:extract:table () {
     EXTRACT_HOMES="" EXTRACT_PRODUCTS="" EXTRACT_TUTOR=""
 
     while IFS= read -r name; do
+
+        module:extract:whole "${name}" || return
 
         kind="$(config:targets:get "${name}" type)" || return
         path="$(config:targets:get "${name}" path)" || return
@@ -45,7 +49,7 @@ module:extract:table () {
     done < <(config:targets:list)
 
     (( ${#homes[@]} > 0 )) \
-        || { @err "No distribution table: no [deps] in the tool nor in a ${MANIFEST_NAMES[0]} or ${MANIFEST_NAMES[1]} of ${TOOL_ROOT}"; return; }
+        || { @err "No distribution table: no [deps] in the tool nor in a ${MANIFEST_NAMES[0]} or ${MANIFEST_NAMES[1]} of ${TOOL_ROOT}, and no target described by flags"; return; }
 
     for home in "${EXTRACT_STAYS[@]}"; do
         [[ ! -d "${TOOL_ROOT}/${home}" ]] || homes["${home}"]=1
@@ -53,6 +57,29 @@ module:extract:table () {
 
     EXTRACT_HOMES="$(printf '%s\n' "${!homes[@]}" | LC_ALL=C sort | paste -sd '|' -)"
     EXTRACT_HOMES="${EXTRACT_HOMES//./[.]}"
+
+}
+module:extract:whole () {
+
+    local name="${1}" key="" value=""
+
+    value="$(config:targets:get "${name}" type 2>/dev/null)" || value=""
+    [[ -n "${value}" ]] || { value="${EXTRACT_KIND}"; config:targets:set "${name}" type "${value}" || return; }
+
+    if [[ "${value}" == "${EXTRACT_KIND}" ]]; then
+
+        value="$(config:targets:get "${name}" path 2>/dev/null)" || value=""
+        [[ -n "${value}" ]] || config:targets:set "${name}" path "${EXTRACT_HOME}/${name}" || return
+
+    fi
+
+    for key in "${EXTRACT_NEEDS[@]}"; do
+
+        value="$(config:targets:get "${name}" "${key}" 2>/dev/null)" || value=""
+
+        [[ -n "${value}" ]] || { @err "[deps] ${name}: no ${key}; write it in the row or pass --${key}"; return; }
+
+    done
 
 }
 module:extract:wired () {
@@ -216,7 +243,9 @@ module:extract:repository () {
 
     local name="${1}" spec=""
 
-    spec="$(config:targets:get "${name}" repo)" || return
+    spec="$(config:targets:get "${name}" repo 2>/dev/null)" || spec=""
+
+    [[ -n "${spec}" ]] || { @err "[deps] ${name}: no repo nor owner; a mirror needs one, in the row or by --repo or --owner"; return; }
 
     core:git:resolve "${spec}" "${TOOL_ROOT}"
 
@@ -289,7 +318,7 @@ module:extract:stays () {
 
     local path="${1}" part="${2:-}"
 
-    core:list:has "${path##*/}" "${EXTRACT_LOCKS[@]}" || { [[ "${path%%/*}" != "${part%%/*}" ]] && core:list:has "${path%%/*}" "${EXTRACT_STAYS[@]}"; }
+    [[ "${path%%/*}" != "${part%%/*}" ]] && core:list:has "${path%%/*}" "${EXTRACT_STAYS[@]}"
 
 }
 module:extract:files () {

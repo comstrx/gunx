@@ -96,63 +96,71 @@ taplo_darwin_x86_64 = "898122cde3a0b1cd1cbc2d52d3624f23338218c91b5ddb71518236a4c
 taplo_darwin_aarch64 = "713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d"
 
 [deps.bashx]
+name = "bashx"
 type = "engine"
+owner = "comstrx"
+repo = "bashx"
 path = "engine/bash"
-repo = "comstrx/bashx"
+refs = []
+engines = []
 logo = ""
 
 [deps.rustx]
 type = "engine"
 path = "engine/rust"
-repo = "comstrx/rustx"
+repo = "gitlab.com/comstrx/rustx"
+refs = [{ src = "engine/bash", repo = "comstrx/bashx" }]
 logo = ""
-deps = [{ name = "engine", repo = "comstrx/bashx" }]
 
 [deps.gox]
 type = "engine"
 path = "engine/go"
-repo = "comstrx/gox"
+repo = "https://enterprise.net/comstrx/gox"
+refs = [{ src = "engine/bash", repo = "comstrx/bashx" }]
 logo = ""
-deps = [{ name = "engine", repo = "comstrx/bashx" }]
 
 [deps.pyx]
+name = "pythonx"
 type = "engine"
 path = "engine/python"
-repo = "comstrx/pyx"
+owner = "comstrx"
+refs = [{ src = "engine/bash", repo = "comstrx/bashx" }]
 logo = ""
-deps = [{ name = "engine", repo = "comstrx/bashx" }]
 
 [deps.tsx]
 type = "engine"
 path = "engine/typescript"
 repo = "comstrx/tsx"
+refs = [{ src = "engine/bash", repo = "comstrx/bashx" }]
 logo = ""
-deps = [{ name = "engine", repo = "comstrx/bashx" }]
 
 [deps.apix]
 type = "fragment"
 path = "product/apex/api"
-repo = "comstrx/apix"
+owner = "comstrx"
+repo = "apix"
+refs = [{ src = "engine/bash", repo = "bashx" }, { src = "engine/python", repo = "pyx" }]
 logo = ""
-deps = [{ name = "engine", repo = "comstrx/pyx" }, { name = "engine", repo = "comstrx/bashx" }]
 
 [deps.webx]
 type = "fragment"
 path = "product/apex/web"
-repo = "comstrx/webx"
+repo = "https://github.com/comstrx/webx"
+refs = [{ src = "engine/bash", repo = "bashx" }, { src = "engine/python", repo = "tsx" }]
 logo = ""
-deps = [{ name = "engine", repo = "comstrx/tsx" }, { name = "engine", repo = "comstrx/bashx" }]
 
 [deps.mobx]
 type = "fragment"
 path = "product/apex/mobile"
-repo = "comstrx/mobx"
+repo = "github.com/comstrx/mobx"
+refs = [{ src = "engine/bash", repo = "comstrx/bashx" }, { src = "engine/python", repo = "comstrx/tsx" }]
 logo = ""
-deps = [{ name = "engine", repo = "comstrx/tsx" }, { name = "engine", repo = "comstrx/bashx" }]
 
 [deps.apex]
 type = "product"
 path = "product/apex"
+owner = "comstrx"
 repo = "comstrx/apex"
+refs = []
+engines = ["engine/bash", "python", "engine/typescript"]
 logo = ""
-engines = ["bash", "python", "typescript"]

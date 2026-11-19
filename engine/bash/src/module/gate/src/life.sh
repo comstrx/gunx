@@ -55,7 +55,7 @@ module:gate:life () {
 
         IFS=$'\t' read -r chain dir <<< "${row}"
 
-        module:gate:fits "${chain}" "${action}" || { @err "${chain} has no ${action}"; return; }
+        module:gate:fits "${chain}" "${action}" || { @err "${chain} does not support ${action}"; return; }
 
         @info "${action} ${chain} $(module:gate:shown "${dir}")$( (( dev == 0 )) || printf ' (dev)' )"
 

@@ -71,7 +71,11 @@ module:gate:types () {
 
     case "${wanted}" in
         default) types=( "${GATE_DEFAULT[@]}" ) ;;
-        all)     types=( "${GATE_TYPES[@]}" ) ;;
+        all)
+            for type in "${GATE_TYPES[@]}"; do
+                core:list:has "${type}" "${GATE_WRITERS[@]}" || types+=( "${type}" )
+            done
+        ;;
         *)       read -r -a types <<< "${wanted//,/ }" ;;
     esac
 
@@ -92,20 +96,45 @@ module:gate:fits () {
     declare -F "module:gate:${1}:${2}" >/dev/null || { @debug "no ${2} for ${1}"; return 1; }
 
 }
+module:gate:owes () {
+
+    local chain="${1}" type="${2}"
+
+    if core:list:has "${type}" "${GATE_GOVERNANCE[@]}"; then [[ "${chain}" == root ]]
+    else [[ "${chain}" != root ]]
+    fi
+
+}
 module:gate:one () {
 
     local chain="${1}" dir="${2}" wanted="${3}" seconds="${4}" pass="${5}" shown="" type="" state="" ran="" status=0 started=0 index=0
-    local -a types=() broken=()
+    local -a types=() writers=() broken=()
 
     [[ -d "${dir}" ]] || { @err "Not a directory: ${dir}"; return; }
 
     shown="$(module:gate:shown "${dir}")"
 
     for type in ${wanted}; do
-        [[ "${type}" == deps ]] || ! module:gate:fits "${chain}" "${type}" || types+=( "${type}" )
+
+        [[ "${type}" != "${GATE_LEAD}" ]] || continue
+
+        if ! module:gate:fits "${chain}" "${type}"; then
+
+            ! module:gate:owes "${chain}" "${type}" || { @err "${chain} does not support the ${type} gate"; return; }
+
+            continue
+
+        fi
+
+        if core:list:has "${type}" "${GATE_WRITERS[@]}"; then writers+=( "${type}" )
+        else types+=( "${type}" )
+        fi
+
     done
 
-    if [[ "${wanted}" == deps || ${#types[@]} -gt 0 ]] && module:gate:fits "${chain}" deps; then types=( deps "${types[@]}" ); fi
+    if [[ " ${wanted} " == *" ${GATE_LEAD} "* || ${#types[@]} -gt 0 ]] && module:gate:fits "${chain}" "${GATE_LEAD}"; then types=( "${GATE_LEAD}" "${types[@]}" ); fi
+
+    types=( "${writers[@]}" "${types[@]}" )
 
     (( ${#types[@]} > 0 )) || { @debug "nothing of ${wanted} for ${chain} ${shown}"; return 0; }
 

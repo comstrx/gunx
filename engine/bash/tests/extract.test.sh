@@ -33,9 +33,9 @@ test:module:extract:knows-what-stays-behind () {
     fixture:module:extract:table
     TOOL_ROOT="${TMPDIR}"
 
-    module:extract:stays uv.lock
-    module:extract:stays engine/demo/Cargo.lock
-    module:extract:stays product/demo/web/bun.lock
+    @fails module:extract:stays uv.lock
+    @fails module:extract:stays engine/demo/Cargo.lock
+    @fails module:extract:stays product/demo/web/bun.lock
     module:extract:stays README.md
     module:extract:stays AGENTS.md
     @fails module:extract:stays engine/demo/README.md
@@ -51,11 +51,11 @@ test:module:extract:knows-what-stays-behind () {
     module:extract:travels engine engine/demo engine/demo/README.md
     @fails module:extract:travels engine engine/demo README.md
     @fails module:extract:travels engine engine/demo CHANGELOG.md
-    @fails module:extract:travels engine engine/demo engine/demo/Cargo.lock
+    module:extract:travels engine engine/demo engine/demo/Cargo.lock
     @fails module:extract:travels engine engine/demo engine/rust/Cargo.toml
     module:extract:travels product product/demo CHANGELOG.md
     @fails module:extract:travels product product/demo README.md
-    @fails module:extract:travels product product/demo product/demo/api/uv.lock
+    module:extract:travels product product/demo product/demo/api/uv.lock
     @fails module:extract:travels product product/demo tutor/index.md
     @fails module:extract:travels engine engine/demo tutor/index.md
     module:extract:travels tutor tutor tutor/index.md
@@ -441,7 +441,7 @@ test:module:extract:builds-the-tree () {
     root="${TMPDIR}/source"
     tree="$(fixture:module:extract:build demox)"
 
-    @eq "$(cd "${tree}" && find . -type f -not -path './.github/*' | sort | tr '\n' ' ')" './.gitignore ./.prettierrc.yml ./.zizmor.yml ./CHANGELOG.md ./Cargo.toml ./LICENSE ./SUPPORT.md ./src/main.rs '
+    @eq "$(cd "${tree}" && find . -type f -not -path './.github/*' | sort | tr '\n' ' ')" './.gitignore ./.prettierrc.yml ./.zizmor.yml ./CHANGELOG.md ./Cargo.lock ./Cargo.toml ./LICENSE ./SUPPORT.md ./src/main.rs '
     @eq "$(cat "${tree}/SUPPORT.md")" "$(printf '# Support\n\nAsk at %s/demox.' "$(config:meta:owner)")"
     @eq "$(cat "${tree}/CHANGELOG.md")" $'# Changelog\n\n## Unreleased\n\n### demo\n\n- opened'
     @eq "$(module:extract:repository demox)" github.com/acme/demox
@@ -471,7 +471,7 @@ test:module:extract:extract-proves-and-to-fills () {
 
     CLI_FLAGS=( [--to]="${into}" )
     @contains "$(module:extract:extract demox 2>&1)" 'demox: proved, placed'
-    [[ -d "${into}/.git" && ! -e "${into}/stale" && -f "${into}/Cargo.toml" && ! -e "${into}/Cargo.lock" ]]
+    [[ -d "${into}/.git" && ! -e "${into}/stale" && -f "${into}/Cargo.toml" && -f "${into}/Cargo.lock" ]]
 
     printf 'mine\n' > "${into}/kept.txt"
     printf 'secret\n' > "${root}/engine/demo/.env.local"
@@ -498,12 +498,32 @@ test:module:extract:gates-the-tree-and-ships-what-it-keeps () {
     module:extract:gate "${tree}" demox >/dev/null 2>&1 || true
 
     [[ -f "${tree}/made" && -f "${tree}/demo.lock" ]] || @err 'the gates did not run in the tree'
-    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'deps check lint test safety audit semver '
+    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'fetch check lint test safety audit semver '
 
     core:git:sync "${tree}" "${into}"
 
     [[ -f "${into}/demo.lock" && -f "${into}/src/main.sh" && ! -e "${into}/made" ]] || @err 'the delivery is not what the tree ships'
     [[ -d "${into}/.git" && -f "${into}/node_modules/kept.js" && ! -e "${into}/old" ]] || @err 'the delivery did not spare what the tree ignores'
+
+}
+test:module:extract:locks-every-chain-of-the-tree-before-the-gates () {
+
+    local tree="${TMPDIR}/tree"
+
+    mkdir -p "${tree}/part"
+
+    module:gate:within () { printf 'demo\t%s\n' "${1}/part"; }
+    module:gate:demo:lock () { printf locked > locked; }
+    module:gate:demo:fetch () { printf installed > installed; }
+
+    module:extract:lock "${tree}" demox >/dev/null 2>&1
+
+    [[ -f "${tree}/part/locked" && ! -e "${tree}/part/installed" ]] || @err 'the lock step did not run alone in the chain folder'
+    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3,4 | tr '\t\n' '  ')" 'lock passed '
+
+    module:gate:demo:lock () { return 1; }
+
+    @errors 'the lock files of demox could not be brought in line with its manifests' module:extract:lock "${tree}" demox
 
 }
 test:module:extract:force-delivers-past-a-failed-gate () {
@@ -526,6 +546,18 @@ test:module:extract:force-delivers-past-a-failed-gate () {
     CLI_FLAGS=( [--to]="${into}/second" [--no-gates]=true )
     @contains "$(module:extract:extract demox 2>&1)" 'demox: extracted, placed'
 
+    module:extract:lock () { @err "the lock files of ${2} could not be brought in line with its manifests"; }
+
+    CLI_FLAGS=( [--to]="${into}/third" [--no-gates]=true )
+    @errors 'extract of demox failed at lock' module:extract:extract demox
+    [[ ! -e "${into}/third" ]] || @err 'a failed lock still delivered'
+
+    CLI_FLAGS=( [--to]="${into}/third" [--no-gates]=true [--force]=true )
+    @contains "$(module:extract:extract demox 2>&1)" 'demox: lock failed, placed'
+
+    CLI_FLAGS=( [--to]="${into}/third" [--force]=true )
+    @contains "$(module:extract:extract demox 2>&1)" 'demox: lock failed, gates failed, placed'
+
 }
 test:module:extract:refuses-a-crooked-table () {
 
@@ -538,8 +570,15 @@ test:module:extract:refuses-a-crooked-table () {
 
     TARGETS=( [a]=2 [a.type]=engine [a.path]=engine/a )
     module:extract:table
-    @errors 'Target a has no repo' module:extract:repository a
+    @errors '[deps] a: no repo nor owner' module:extract:repository a
     @eq "$(module:extract:name a)" a
+
+    TARGETS=( [shop]=1 [shop.logo]='' )
+    module:extract:table
+    @eq "$(config:targets:get shop type) $(config:targets:get shop path)" 'product product/shop'
+
+    TARGETS=( [a]=2 [a.type]=engine [a.repo]=o/a )
+    @errors '[deps] a: no path; write it in the row or pass --path' module:extract:table
 
     TARGETS=( [a]=3 [a.type]=fragment [a.path]=web [a.repo]=o/a )
     @errors 'a fragment sits at' module:extract:table
@@ -598,7 +637,7 @@ test:module:extract:push-mirrors-without-force () {
     @eq "$(git -C "${probe}" tag)" v0.1.0
     @eq "$(cat "${probe}/src/main.rs")" 'fn main() { }'
     @fails test -e "${probe}/.env"
-    @fails test -e "${probe}/Cargo.lock"
+    @eq "$(cat "${probe}/Cargo.lock")" 'version = 4'
     @eq "$(cat "${probe}/.gitignore")" $'target/\n.env'
 
     @errors 'already carries the tag v0.1.0' module:extract:extract demox
@@ -874,8 +913,8 @@ test:module:extract:a-product-carries-the-engines-it-names () {
     @contains "$(cat "${tree}/.github/labeler.yml")" "'engine/demo/**'"
     @absent "$(cat "${tree}/.github/labeler.yml")" 'tutor'
     @absent "$(cat "${tree}/.github/labeler.yml")" 'engine/go'
-    [[ ! -e "${tree}/README.md" && ! -e "${tree}/AGENTS.md" && ! -e "${tree}/product/api/uv.lock" && ! -e "${tree}/product/demo" && ! -e "${tree}/engine/demo/Cargo.lock" ]] \
-        || @err 'a root readme or a lock went with the product'
+    [[ ! -e "${tree}/README.md" && ! -e "${tree}/AGENTS.md" && ! -e "${tree}/product/demo" ]] || @err 'a root readme went with the product'
+    [[ -f "${tree}/product/api/uv.lock" && -f "${tree}/engine/demo/Cargo.lock" ]] || @err 'a lock stayed behind'
 
 }
 test:module:extract:a-product-reaches-the-bash-engine-by-the-mirror () {
@@ -973,20 +1012,21 @@ test:module:extract:a-fragment-reaches-its-engine-by-the-mirror () {
     @contains "$(cat "${tree}/pyproject.toml")" "subdirectory = \"src/engine\", tag = \"0.2.0\" }"
 
 }
-test:module:extract:a-row-without-a-repo-extracts-but-does-not-push () {
+test:module:extract:an-owner-stands-in-for-the-repository () {
 
     local into="${TMPDIR}/placed"
 
     fixture:module:extract:root
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
-        "plainx = { type = \"engine\", path = \"engine/demo\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
-        "namedx = { name = \"chosen\", type = \"engine\", path = \"engine/demo\", repo = \"namedx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+        "plainx = { type = \"engine\", path = \"engine/demo\", owner = \"acme\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "namedx = { name = \"chosen\", type = \"engine\", path = \"engine/demo\", owner = \"acme\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     @eq "$(module:extract:name plainx)" plainx
     @eq "$(module:extract:name namedx)" chosen
-    @errors 'Target plainx has no repo' module:extract:repository plainx
+    @eq "$(module:extract:repository plainx)" github.com/acme/plainx
+    @eq "$(module:extract:repository namedx)" github.com/acme/chosen
     @contains "$(NO_COLOR=1 module:extract:targets 2>/dev/null)" 'chosen'
 
     CLI_VALUED=( [--to]=true [--tag]=true )
@@ -998,8 +1038,90 @@ test:module:extract:a-row-without-a-repo-extracts-but-does-not-push () {
     module:extract:extract namedx >/dev/null 2>&1
     @eq "$(cat "${into}.named/SUPPORT.md")" "$(printf '# Support\n\nAsk at %s/chosen.' "$(config:meta:owner)")"
 
+}
+test:module:extract:a-row-without-a-repo-extracts-but-does-not-push () {
+
+    local into="${TMPDIR}/placed"
+
+    fixture:module:extract:root
+
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
+        "barex = { type = \"engine\", path = \"engine/demo\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+    module:extract:open
+
+    @eq "$(module:extract:name barex)" barex
+    @errors '[deps] barex: no repo nor owner' module:extract:repository barex
+
+    CLI_VALUED=( [--to]=true [--tag]=true )
+    CLI_FLAGS=( [--no-gates]=true [--to]="${into}" )
+    @contains "$(module:extract:extract barex 2>&1)" 'barex: extracted, placed'
+    @eq "$(cat "${into}/SUPPORT.md")" "$(printf '# Support\n\nAsk at %s/barex.' "$(config:meta:owner)")"
+
     CLI_FLAGS=( [--no-gates]=true [--push]=true )
-    @errors 'Target plainx has no repo' module:extract:extract plainx
+    @errors '[deps] barex: no repo nor owner' module:extract:extract barex
+
+}
+test:module:extract:flags-write-over-a-row-or-open-one () {
+
+    fixture:module:extract:root
+
+    CLI_VALUED=( [--type]=true [--path]=true [--repo]=true [--owner]=true [--name]=true [--logo]=true [--engines]=true [--deps]=true [--tag]=true [--branch]=true )
+
+    CLI_FLAGS=( [--repo]=acme/elsewhere [--name]=chosen )
+    module:extract:open demox
+    @eq "$(module:extract:repository demox)" github.com/acme/elsewhere
+    @eq "$(module:extract:name demox)" chosen
+    @eq "$(config:targets:get demox path)" engine/demo
+
+    CLI_FLAGS=( [--type]=engine [--path]=engine/demo [--owner]=acme [--deps]="engine:${TMPDIR}/corex.git" )
+    module:extract:open freshx
+    @eq "$(module:extract:repository freshx)" github.com/acme/freshx
+    @eq "$(config:targets:deps freshx | cut -f1,2 | tr '\t' '=')" "engine=${TMPDIR}/corex.git"
+
+    CLI_FLAGS=( [--type]=engine [--owner]=acme )
+    @errors '[deps] freshx: no path; write it in the row or pass --path' module:extract:open freshx
+
+    CLI_FLAGS=( [--type]=engine [--path]=engine/demo [--deps]="engine:${TMPDIR}/corex.git" )
+    module:extract:open freshx
+    @errors '[deps] freshx: no repo nor owner' module:extract:repository freshx
+
+    CLI_FLAGS=( [--type]=engine [--path]=../out [--owner]=acme )
+    @errors 'must name a path inside the root' module:extract:open freshx
+
+    CLI_FLAGS=( [--type]=engine )
+    @errors '--type describes one target' module:extract:open
+
+    CLI_FLAGS=( [--tag]=v9 )
+    module:extract:open
+    @eq "$(config:targets:get demox tag) $(config:targets:get corex tag)" 'v9 v9'
+
+    CLI_FLAGS=( [--engines]=bash,demo )
+    module:extract:open shopx
+    @eq "$(config:targets:get shopx type) $(config:targets:get shopx path)" 'product product/shopx'
+
+    CLI_FLAGS=()
+    @errors 'nosuch: its workflows run the bash engine' module:extract:open nosuch
+
+}
+test:module:extract:reads-a-dependency-in-every-form () {
+
+    fixture:module:extract:root
+
+    module:extract:flags:deps onex 'engine:acme/corex, github.com/acme/sidex ,engine:https://github.com/acme/basex,git@github.com:acme/lastx.git,https://github.com/acme/webx,engine:/srv/pathx.git/'
+
+    @eq "$(config:targets:deps onex | cut -f1,2 | tr '\t\n' '= ')" \
+        'engine=acme/corex sidex=github.com/acme/sidex engine=https://github.com/acme/basex lastx=git@github.com:acme/lastx.git webx=https://github.com/acme/webx engine=/srv/pathx.git/ '
+
+    config:targets:settle
+
+    @eq "$(config:targets:deps onex | cut -f1,2 | tr '\t\n' '= ')" \
+        'engine=https://github.com/acme/corex sidex=https://github.com/acme/sidex engine=https://github.com/acme/basex lastx=https://github.com/acme/lastx webx=https://github.com/acme/webx engine=/srv/pathx.git '
+
+    module:extract:flags:engines onex ' one, two ,,three '
+    @eq "$(config:targets:engines onex | tr '\n' ' ')" 'one two three '
+
+    module:extract:flags:deps onex ''
+    @eq "$(config:targets:deps onex)" ''
 
 }
 test:module:extract:renames-across-hosts () {
@@ -1093,5 +1215,110 @@ test:module:extract:the-rename-spares-what-the-workflows-call () {
     @absent "$(cat "${tree}/.github/workflows/demo.yml")" '__0__'
     @absent "$(cat "${tree}/.github/workflows/demo.yml")" '__1__'
     @absent "$(cat "${tree}/.zizmor.yml")" '__1__'
+
+}
+test:module:extract:own-flags-need-their-target () {
+
+    local key=""
+
+    fixture:module:extract:root
+
+    for key in "${EXTRACT_OWN[@]}"; do
+
+        CLI_VALUED=( ["--${key}"]=true )
+        CLI_FLAGS=( ["--${key}"]=x )
+
+        @errors "--${key} describes one target" module:extract:open
+        @status 2 module:extract:open
+
+    done
+
+}
+test:module:extract:every-flag-wins-over-its-row () {
+
+    local key=""
+    local -A wanted=( [name]=chosen [type]=engine [path]=engine/demo [repo]=acme/elsewhere [owner]=acme [logo]=https://example.com/logo.png [branch]=release [tag]=v7 )
+
+    fixture:module:extract:root
+
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
+        "rowx = { name = \"old\", type = \"engine\", path = \"engine/demo\", repo = \"acme/old\", owner = \"old\", logo = \"https://example.com/old.png\", branch = \"old\", tag = \"v1\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+
+    for key in "${!wanted[@]}"; do
+
+        CLI_VALUED=( ["--${key}"]=true )
+        CLI_FLAGS=( ["--${key}"]="${wanted[${key}]}" )
+
+        module:extract:open rowx
+
+        if [[ "${key}" == repo ]]; then @eq "$(module:extract:repository rowx)" github.com/acme/elsewhere
+        else @eq "$(config:targets:get rowx "${key}")" "${wanted[${key}]}"
+        fi
+
+    done
+
+    CLI_VALUED=()
+    CLI_FLAGS=()
+    module:extract:open rowx
+
+    @eq "$(config:targets:get rowx tag) $(config:targets:get rowx branch) $(module:extract:name rowx)" 'v1 old old'
+
+}
+test:module:extract:refuses-flags-that-would-bend-the-table () {
+
+    fixture:module:extract:root
+
+    CLI_VALUED=( [--type]=true [--path]=true [--engines]=true [--deps]=true [--logo]=true [--name]=true )
+
+    CLI_FLAGS=( [--deps]='engine:acme/base x' )
+    @errors 'each one word' module:extract:open demox
+
+    CLI_FLAGS=( [--engines]=bash )
+    @errors 'demox: engines belongs to a product' module:extract:open demox
+
+    CLI_FLAGS=( [--type]=plugin )
+    @errors 'type is one of engine fragment tutor product, not plugin' module:extract:open demox
+
+    CLI_FLAGS=( [--path]=/etc )
+    @errors 'must name a path inside the root' module:extract:open demox
+
+    CLI_FLAGS=( [--path]='engine/de mo' )
+    @errors 'must name a path inside the root' module:extract:open demox
+
+    CLI_FLAGS=( [--name]='two words' )
+    module:extract:open demox
+    @errors 'not a name to extract under' module:extract:name demox
+
+    CLI_FLAGS=( [--logo]=$'https://example.com/a\nb' )
+    @errors 'holds a control character' module:extract:open demox
+
+    CLI_FLAGS=()
+    @errors 'not a target name' module:extract:open '../demox'
+    @errors 'not a target name' module:extract:open 'de.mox'
+
+}
+test:module:extract:the-lock-step-stands-between-the-tree-and-its-delivery () {
+
+    local into="${TMPDIR}/into"
+
+    fixture:module:extract:root
+
+    module:extract:lock () { printf 'locked\n' >> "${1}/Cargo.lock"; }
+    module:extract:gate () { @contains "$(cat "${1}/Cargo.lock")" locked; }
+
+    CLI_VALUED=( [--to]=true )
+
+    CLI_FLAGS=( [--to]="${into}" [--no-gates]=true )
+    @contains "$(module:extract:extract demox 2>&1)" 'demox: extracted, placed'
+    @eq "$(cat "${into}/Cargo.lock")" $'version = 4\nlocked'
+
+    CLI_FLAGS=( [--to]="${into}/second" )
+    @contains "$(module:extract:extract demox 2>&1)" 'demox: proved, placed'
+
+    module:extract:lock () { printf 'half\n' >> "${1}/Cargo.lock"; return 1; }
+
+    CLI_FLAGS=( [--to]="${into}/third" [--no-gates]=true )
+    @errors 'extract of demox failed at lock' module:extract:extract demox
+    [[ ! -e "${into}/third" ]] || @err 'a tree with a broken lock was delivered'
 
 }

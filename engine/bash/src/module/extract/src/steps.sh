@@ -14,7 +14,7 @@ module:extract:tag () {
 
     local name="${1}" tag=""
 
-    tag="$(core:cli:value --tag)" || tag="$(config:targets:get "${name}" tag)" || return
+    tag="$(config:targets:get "${name}" tag)" || return
 
     [[ -z "${tag}" ]] || core:git:named "${tag}" || { @err "${name}: not a tag name: ${tag}"; return; }
 
@@ -56,7 +56,7 @@ module:extract:extract () {
 
     ! core:cli:flag --gates || ! core:cli:flag --no-gates || { core:error:usage "--gates and --no-gates do not meet"; return; }
 
-    module:extract:open || return
+    module:extract:open "${name}" || return
 
     into="$(core:cli:value --to)" || into=""
 
@@ -80,7 +80,7 @@ module:extract:one () {
 
     if [[ "${push}" == true ]]; then
 
-        branch="$(core:cli:value --branch)" || branch="$(config:targets:get "${name}" branch)" || return
+        branch="$(config:targets:get "${name}" branch)" || return
         repository="$(module:extract:repository "${name}")" || return
         remote="$(core:git:url "${repository}")" || return
         identity="$(core:git:identity "${root}")" || return
@@ -116,21 +116,40 @@ module:extract:one () {
     fi
 
     module:extract:prepare "${name}" "${tree}" || return
-    module:extract:verify "${tree}" "${kind}" "${name}" || return
 
+    EXTRACT_STAGE=lock
     result=extracted
+
+    if ! module:extract:lock "${tree}" "${name}"; then
+
+        core:cli:flag --force || return 1
+
+        @warn "${name}: the lock files stay as they came; going on as --force asks"
+        result="lock failed"
+
+    fi
+
+    EXTRACT_STAGE=extract
+
+    module:extract:verify "${tree}" "${kind}" "${name}" || return
 
     if ! core:cli:flag --no-gates; then
 
         EXTRACT_STAGE=gates
-        result=proved
 
-        if ! module:extract:gate "${tree}" "${name}"; then
+        if module:extract:gate "${tree}" "${name}"; then
+
+            [[ "${result}" != extracted ]] || result=proved
+
+        else
 
             core:cli:flag --force || return 1
 
             @warn "${name}: the gates failed; going on as --force asks"
-            result="gates failed"
+
+            if [[ "${result}" == extracted ]]; then result="gates failed"
+            else result+=", gates failed"
+            fi
 
         fi
 

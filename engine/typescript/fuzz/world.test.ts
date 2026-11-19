@@ -57,7 +57,7 @@ describe("fuzz world", () => {
         }), { numRuns: runs });
 
     });
-    it("key search answers with keys whose codes start with or equal the typed digits, honours limits and never throws on text", () => {
+    it("key search answers with keys whose codes start with or equal the typed digits, honors limits and never throws on text", () => {
 
         fc.assert(fc.property(digits, fc.integer({ min: -2, max: 30 }), ( typed, limit ) => {
 

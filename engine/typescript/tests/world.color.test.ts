@@ -119,7 +119,7 @@ describe("world.color", () => {
         expect(world.toOklch(world.alpha(brand, 0.4)).a).toBe(0.4);
 
     });
-    it("brings a colour outside the gamut back inside without moving its lightness or hue", () => {
+    it("brings a color outside the gamut back inside without moving its lightness or hue", () => {
 
         for ( const [l, c, h] of [[0.7, 0.4, 150], [0.5, 0.37, 264], [0.9, 0.3, 30], [0.2, 0.3, 330]] as const ) {
 
@@ -178,7 +178,7 @@ describe("world.color", () => {
         expect(violet.h).toBeLessThan(350);
 
     });
-    it("tones a colour through lightness, chroma and hue", () => {
+    it("tones a color through lightness, chroma and hue", () => {
 
         expect(world.toOklch(world.lighten(brand, 0.2)).l).toBeGreaterThan(world.toOklch(brand).l);
         expect(world.toOklch(world.darken(brand, 0.2)).l).toBeLessThan(world.toOklch(brand).l);
@@ -193,7 +193,7 @@ describe("world.color", () => {
         expect(world.lighten(world.alpha(brand, 0.4), 0.1).a).toBe(0.4);
 
     });
-    it("draws eleven shades that never cross, around the colour it was given", () => {
+    it("draws eleven shades that never cross, around the color it was given", () => {
 
         const made = world.shades(brand);
 

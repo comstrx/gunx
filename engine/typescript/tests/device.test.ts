@@ -1038,7 +1038,7 @@ describe("device", () => {
         expect([await silent.capture({ video: true }), await silent.battery(), silent.can("capture"), silent.can("battery")]).toEqual([undefined, undefined, false, false]);
 
     });
-    it("web keys skip composition and mark typing by the focused field; hotkeys honour typing, repeat and order", () => {
+    it("web keys skip composition and mark typing by the focused field; hotkeys honor typing, repeat and order", () => {
 
         const r = rig();
         const unit = web(r.host);

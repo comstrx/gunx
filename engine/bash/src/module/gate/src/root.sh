@@ -52,7 +52,7 @@ module:gate:root:each () {
     (( ran )) || @info "no configuration for ${*}"
 
 }
-module:gate:root:deps () {
+module:gate:root:fetch () {
 
     module:gate:install:root
 

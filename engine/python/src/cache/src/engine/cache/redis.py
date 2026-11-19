@@ -4,7 +4,7 @@ from typing import Any
 from engine.crypto import crypto
 from engine.error import Code, Fault
 from engine.json import json
-from .arch import BUCKET, COUNT, DROP, GLOB, life, name, RAW, SCAN_BATCH, SWAP, whole
+from .arch import BUCKET, COUNT, DROP, GLOB, life, name, RAW, REDEEM, SCAN_BATCH, SWAP, whole
 from .wire import Wire
 import heapq, itertools
 
@@ -104,6 +104,19 @@ class Redis:
         return bool(await self.run(
             SWAP, self._prefix + key, self._encode_(old), self._encode_(new), "" if px is None else px,
         ))
+
+    async def redeem (
+        self, key: str, value: Any, tries: str, limit: int, ttl: float | None = None,
+    ) -> tuple[bool, int]:
+
+        name(key)
+        name(tries)
+
+        px           = self._px_(ttl)
+        names        = (self._prefix + key, self._prefix + tries)
+        taken, count = await self.run(REDEEM, names, self._encode_(value), limit, "" if px is None else px)
+
+        return bool(taken), int(count)
 
     async def increment ( self, key: str, step: int = 1, ttl: float | None = None ) -> int:
 
@@ -224,20 +237,21 @@ class Redis:
 
             if cursor in (b"0", "0", 0): return
 
-    async def run ( self, script: str, key: str, *parts: str | bytes | float ) -> Any:
+    async def run ( self, script: str, keys: str | tuple[str, ...], *parts: str | bytes | float ) -> Any:
 
+        names  = (keys,) if isinstance(keys, str) else keys
         digest = self._digests.get(script)
 
         if digest is None:
 
             digest = self._digests[script] = crypto.hash(script, "sha1")
 
-        try: return await self._wire.send("EVALSHA", digest, 1, key, *parts)
+        try: return await self._wire.send("EVALSHA", digest, len(names), *names, *parts)
         except Fault as fault:
 
             if fault.reason != "cache.script": raise
 
-        return await self._wire.send("EVAL", script, 1, key, *parts)
+        return await self._wire.send("EVAL", script, len(names), *names, *parts)
 
     def _decode_ ( self, raw: Any ) -> Any:
 

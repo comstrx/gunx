@@ -8,7 +8,21 @@ module:gate:go:modules () {
     mapfile -t _modules <<< "${list}"
 
 }
-module:gate:go:deps () {
+module:gate:go:lock () {
+
+    local module=""
+    local -a modules=()
+
+    core:sys:need go || return
+
+    module:gate:go:modules modules || return
+
+    for module in "${modules[@]}"; do
+        core:proc:within "${module}" core:proc:io go mod tidy "${GATE_ARGS[@]}" || return
+    done
+
+}
+module:gate:go:fetch () {
 
     local module=""
     local -a modules=()

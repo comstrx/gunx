@@ -12,7 +12,7 @@
 - [ ] Lint, tests and build pass locally
 - [ ] Tests / benchmarks updated where behavior changed
 - [ ] No secrets, credentials or private data
-- [ ] Commit messages follow `<area>(<feature>): <sentence>` (areas: `rust python go bun bash tutor`, `<project>-<fragment>`, `global`)
+- [ ] Commit messages follow `<area>(<feature>): <sentence>`
 
 ## Rollback
 

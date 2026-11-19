@@ -263,7 +263,7 @@ describe("tool specs", () => {
 
     });
 
-    it("theme writes a role's own look as variables over the part's tokens, a custom colour as a theme name, and nothing for a role that overrides nothing", async () => {
+    it("theme writes a role's own look as variables over the part's tokens, a custom color as a theme name, and nothing for a role that overrides nothing", async () => {
 
         const temp = stage.tmp();
 

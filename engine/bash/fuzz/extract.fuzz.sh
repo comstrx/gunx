@@ -10,7 +10,7 @@ fuzz:module:extract:keep () {
 
     module:extract:keep "${kind}" product/demo "${path}" 'engine/rust|engine/go' || true
 
-    ! module:extract:stays "${path}" || [[ "${path}" == *.lock ]] || core:list:has "${path%%/*}" "${EXTRACT_STAYS[@]}" || return 3
+    ! module:extract:stays "${path}" || core:list:has "${path%%/*}" "${EXTRACT_STAYS[@]}" || return 3
 
 }
 fuzz:module:extract:notes () {
@@ -122,5 +122,71 @@ fuzz:module:extract:shallow () {
     [[ "$(head -n 1 "${tree}/product/api/part.toml")" == 'path = "../../engine/demo"' ]] || return 3
     [[ "$(head -n 2 "${tree}/.github/flow.yml")" == 'at: product/api'$'\n''any: product/web' ]] || return 3
     [[ "$(cat "${tree}/product/api/code.ts")" == "${before}" ]] || return 3
+
+}
+fuzz:module:extract:flags () {
+
+    local text="" line="" label="" repo="" tag="" count=0
+    local -a engines=()
+
+    text="$(tr -d '\0\n' < "${1}" | head -c 200)"
+
+    TARGETS=()
+
+    if module:extract:flags:deps onex "${text}" 2>/dev/null; then
+
+        while IFS=$'\t' read -r label repo tag; do
+
+            [[ -n "${label}" && -n "${repo}" && "${label}${repo}" != *[[:space:],]* ]] || return 3
+            [[ "${label}" != - && "${repo}" != - ]] || [[ "${text}" == *-* ]] || return 3
+
+            count=$(( count + 1 ))
+
+        done < <(config:targets:deps onex)
+
+        [[ "${count}" == "${TARGETS[onex.deps]}" ]] || return 3
+
+    else
+
+        [[ ${#TARGETS[@]} -eq 0 ]] || return 3
+
+    fi
+
+    TARGETS=()
+
+    module:extract:flags:engines onex "${text}" 2>/dev/null || { [[ ${#TARGETS[@]} -eq 0 ]] || return 3; return 0; }
+
+    mapfile -t engines < <(config:targets:engines onex)
+
+    [[ "${#engines[@]}" == "${TARGETS[onex.engines]}" || "${TARGETS[onex.engines]}" == 0 ]] || return 3
+
+    for label in "${engines[@]}"; do
+        [[ -n "${label}" && "${label}" != *[[:space:],]* ]] || return 3
+    done
+
+}
+fuzz:module:extract:whole () {
+
+    local name="" text=""
+
+    text="$(tr -d '\0\n' < "${1}" | head -c 80)"
+    name="${text%% *}"
+
+    TARGETS=()
+
+    config:targets:set "${name}" logo '' 2>/dev/null || return 0
+
+    module:extract:whole "${name}" 2>/dev/null || return 3
+
+    [[ "$(config:targets:get "${name}" type)" == "${EXTRACT_KIND}" ]] || return 3
+    [[ "$(config:targets:get "${name}" path)" == "${EXTRACT_HOME}/${name}" ]] || return 3
+
+    core:fs:path:relative "$(config:targets:get "${name}" path)" || return 3
+
+    TARGETS=()
+
+    config:targets:set "${name}" type engine || return 3
+
+    ! module:extract:whole "${name}" 2>/dev/null || return 3
 
 }

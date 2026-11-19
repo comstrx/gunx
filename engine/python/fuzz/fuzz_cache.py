@@ -20,7 +20,9 @@ REASONS  = frozenset({ "cache.key", "cache.ttl", "cache.value", "cache.step", "c
 KEYS     = st.one_of(st.sampled_from(["a", "b", "ab", "a:b", "", "k" * KEY, "k" * (KEY + 1), "é", " "]), st.text(max_size=6), st.integers(), st.none())
 VALUES   = st.one_of(st.integers(-(1 << 62), 1 << 62), st.text(max_size=8), st.dictionaries(st.text(max_size=3), st.integers(), max_size=2), st.lists(st.integers(), max_size=2), st.booleans(), st.none(), st.binary(max_size=6))
 TTLS     = st.one_of(st.none(), st.just(1000.0), st.just(0), st.just(-1), st.just(math.inf), st.just(math.nan), st.just(LONGEST + 1), st.just(FLAG), st.just("5"), st.floats(min_value=1, max_value=1e6))
-VERBS    = st.sampled_from(["set", "get", "add", "delete", "take", "drop", "swap", "increment", "many", "forget", "has", "keys", "ttl"])
+VERBS    = st.sampled_from(["set", "get", "add", "delete", "take", "drop", "swap", "redeem", "increment", "many", "forget", "has", "keys", "ttl"])
+COUNTER  = "tries"
+LIMIT    = 3
 STEPS    = st.lists(st.tuples(VERBS, KEYS, VALUES, TTLS), max_size=24)
 RESP     = st.lists(st.one_of(st.binary(max_size=12), st.integers(-(1 << 62), 1 << 62), st.none(), st.lists(st.binary(max_size=4), max_size=3), st.sampled_from(["ERR boom", "WRONGTYPE x"])), max_size=8)
 
@@ -67,7 +69,7 @@ def modeled ( steps: list[Step] ) -> None:
 def played ( cache: Cache, model: dict[str, Any], verb: str, key: Any, value: Any, ttl: Any ) -> None:
 
     made  = run(tried(step(cache, verb, key, value, ttl)))
-    legal = sound_key(key) and sound_ttl(ttl) and (value is not None or verb not in ("set", "add", "swap"))
+    legal = sound_key(key) and sound_ttl(ttl) and (value is not None or verb not in ("set", "add", "swap", "redeem"))
     legal = legal and (type(value) is int or verb != "increment")
 
     if verb in READS or verb in ("take", "forget", "drop", "delete"): assert not isinstance(made, Fault), (verb, made)
@@ -79,13 +81,14 @@ def played ( cache: Cache, model: dict[str, Any], verb: str, key: Any, value: An
 
     if isinstance(made, Fault):
 
-        assert verb == "increment"
+        assert verb in ("increment", "redeem")
         assert made.reason == "cache.type"
-        assert type(model.get(key)) is not int
+        assert type(model.get(COUNTER if verb == "redeem" else key)) is not int
 
         return
 
     if verb in READS: read(model, verb, key, made)
+    elif verb == "redeem": redeemed(model, key, value, made)
     else: written(model, verb, key, value, made)
 
 def read ( model: dict[str, Any], verb: str, key: Any, made: Any ) -> None:
@@ -120,6 +123,21 @@ def written ( model: dict[str, Any], verb: str, key: Any, value: Any, made: Any 
 
         model[key] = made
 
+def redeemed ( model: dict[str, Any], key: Any, value: Any, made: Any ) -> None:
+
+    found = model.get(key)
+    count = 0 if found is None else model.get(COUNTER, 0) + 1
+    taken = found is not None and count <= LIMIT and found == value
+
+    assert made == (taken, count)
+
+    if taken or count > LIMIT:
+
+        model.pop(key, None)
+        model.pop(COUNTER, None)
+
+    elif count: model[COUNTER] = count
+
 async def step ( cache: Cache, verb: str, key: Any, value: Any, ttl: Any ) -> Any:
 
     store = cache.store()
@@ -127,6 +145,7 @@ async def step ( cache: Cache, verb: str, key: Any, value: Any, ttl: Any ) -> An
         "set": (cache.set, (key, value, ttl)), "get": (cache.get, (key,)), "add": (cache.add, (key, value, ttl)),
         "delete": (store.delete, (key,)), "take": (cache.take, (key,)), "drop": (cache.drop, (key, value)),
         "swap": (cache.swap, (key, value, value, ttl)), "increment": (cache.increment, (key, value, ttl)),
+        "redeem": (cache.redeem, (key, value, COUNTER, LIMIT, ttl)),
         "many": (cache.many, ([key],)), "forget": (cache.forget, (key,)), "has": (cache.has, (key,)),
         "keys": (cache.keys, ("", 10)), "ttl": (cache.ttl, (key,)),
     }

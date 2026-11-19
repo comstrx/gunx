@@ -10,7 +10,8 @@ from decimal import Decimal
 from typing import Any, ClassVar
 import asyncio, asyncpg, os, pytest, sys
 
-URL = os.environ.get("ENGINE_DATABASE_URL", "postgresql://engine:engine@127.0.0.1:5432/engine_test")
+URL   = os.environ.get("ENGINE_DATABASE_URL", "postgresql://engine:engine@127.0.0.1:5432/engine_test")
+ADMIN = os.environ.get("ENGINE_PROVISION_URL", "")
 
 PEOPLE = Table.define(
     "test_people",
@@ -1640,16 +1641,17 @@ async def test_pool_close_refuses_a_connection_already_handed_to_a_waiter () -> 
     assert caught.value.reason == "database.closed"
     assert lane.size() == works.live() == 0
 
+@pytest.mark.skipif(not ADMIN, reason="Requires a disposable PostgreSQL administration target")
 async def test_reset_restores_both_database_identities () -> None:
 
-    driver = PostgresDriver(URL, min_size=1, max_size=1, ssl="disable")
+    driver = PostgresDriver(ADMIN, min_size=1, max_size=1, ssl="disable")
     role = "test_reset_" + str(rand.uuid()).replace("-", "")
-    control = await asyncpg.connect(URL)
-
-    await control.execute(f'CREATE ROLE "{role}" NOLOGIN')
-    await driver.connect()
+    control = await asyncpg.connect(ADMIN)
 
     try:
+
+        await control.execute(f'CREATE ROLE "{role}" NOLOGIN')
+        await driver.connect()
 
         for command in ("SET ROLE", "SET SESSION AUTHORIZATION"):
 
@@ -1673,7 +1675,7 @@ async def test_reset_restores_both_database_identities () -> None:
 
         await driver.close()
 
-        try: await control.execute(f'DROP ROLE "{role}"')
+        try: await control.execute(f'DROP ROLE IF EXISTS "{role}"')
         finally: await control.close()
 
 async def test_postgres_json_codecs_cover_values_arrays_copy_and_reuse () -> None:

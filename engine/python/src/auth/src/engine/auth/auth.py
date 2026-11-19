@@ -198,21 +198,14 @@ class Auth:
         if not named(subject, SUBJECT): raise self._unset_("subject")
         if not named(code, CODE): raise self._wrong_("invalid")
 
-        name, tries = digest("otp", subject), digest("otp:tries", subject)
-        found       = await self._cache.get(name)
+        name, tries  = digest("otp", subject), digest("otp:tries", subject)
+        taken, count = await self._cache.redeem(name, self._hashed_(subject, code), tries, OTP_ATTEMPTS, OTP_TTL)
 
-        if not isinstance(found, str): raise self._wrong_("expired")
+        if count == 0: raise self._wrong_("expired")
+        if count > OTP_ATTEMPTS: raise Fault(Code.TOO_MANY_REQUESTS, reason="otp.attempts")
+        if not taken: raise self._wrong_("invalid")
 
-        if await self._cache.increment(tries, 1, OTP_TTL) > OTP_ATTEMPTS:
-
-            await self._cache.forget(name, tries)
-
-            raise Fault(Code.TOO_MANY_REQUESTS, reason="otp.attempts")
-
-        if not rand.constant_equal(self._hashed_(subject, code), found): raise self._wrong_("invalid")
-        if not await self._cache.drop(name, found): raise self._wrong_("expired")
-
-        await self._cache.forget(tries, digest("otp:cooldown", subject))
+        await self._cache.forget(digest("otp:cooldown", subject))
 
         return True
 

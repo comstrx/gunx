@@ -4,8 +4,7 @@ module:bundle:usage:global --no-config '' 'Merge no bash.toml or infra.toml of t
 module:bundle:usage:global -e KEY=VALUE 'Override one setting for this run; repeatable' || return
 module:bundle:usage:add hello module:bundle:hello 'hello' 'Say hello world through every layer of the engine' || return
 module:bundle:usage:add checksum module:bundle:build:checksum 'checksum' 'Print the SHA-256 of the release bundle' || return
-module:bundle:usage:add fetch module:bundle:fetch 'fetch [NAME...]' 'Download the checksum-pinned tools (all by default) into the build tools' || return
-module:bundle:usage:add self module:bundle:self 'self VERB [ARGS]' 'The engine itself: build check lint test bench fuzz audit install update remove' || return
+module:bundle:usage:add self module:bundle:self 'self VERB [ARGS]' 'The engine: build fetch check lint test bench fuzz audit install update remove' || return
 module:bundle:usage:flag self '--dev' 'build install update: the development bundle with the tests embedded' || return
 module:bundle:usage:flag self '--release' 'build install update: the release bundle; this is the default' || return
 module:bundle:usage:flag self '--alias NAME' 'build install update: the name: this, else [meta] alias, else the name' || return

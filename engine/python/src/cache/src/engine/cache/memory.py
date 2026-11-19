@@ -87,6 +87,25 @@ class Memory:
 
         return True
 
+    async def redeem (
+        self, key: str, value: Any, tries: str, limit: int, ttl: float | None = None,
+    ) -> tuple[bool, int]:
+
+        name(key)
+        name(tries)
+        life(ttl)
+
+        found = self._items.get(key)
+
+        if found is None: return False, 0
+
+        count = await self.increment(tries, 1, ttl)
+        taken = count <= limit and found == value
+
+        if taken or count > limit: await self.delete_many((key, tries))
+
+        return taken, count
+
     async def increment ( self, key: str, step: int = 1, ttl: float | None = None ) -> int:
 
         name(key)

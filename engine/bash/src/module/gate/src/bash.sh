@@ -1,6 +1,11 @@
-module:gate:bash:deps () {
+module:gate:bash:lock () {
 
-    bash src/main.sh fetch shellcheck "${GATE_ARGS[@]}"
+    @info "bash keeps no lock file; nothing to bring in line"
+
+}
+module:gate:bash:fetch () {
+
+    bash src/main.sh self fetch "${GATE_ARGS[@]}"
 
 }
 module:gate:bash:check () {

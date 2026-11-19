@@ -350,7 +350,7 @@ describe("net", () => {
         expect(net.facts({ "user-agent": undefined, "accept-language": "pt-BR" }).language).toBe("pt-BR");
 
     });
-    it("event streams reconnect with the last id and the server's retry, honour 204, refuse non-streams, idle out and cap events", async () => {
+    it("event streams reconnect with the last id and the server's retry, honor 204, refuse non-streams, idle out and cap events", async () => {
 
         const streamed = ( ...chunks: string[] ): ReadableStream<Uint8Array> => new ReadableStream({ start ( controller ) {
 

@@ -13,27 +13,34 @@ module:gate:rust:host () {
     @print "${host}"
 
 }
-module:gate:rust:deps () {
+module:gate:rust:lock () {
 
-    module:gate:install:rust && core:proc:io cargo fetch "${GATE_ARGS[@]}"
+    core:sys:need cargo || return
+
+    core:proc:io cargo update --workspace "${GATE_ARGS[@]}"
+
+}
+module:gate:rust:fetch () {
+
+    module:gate:install:rust && core:proc:io cargo fetch "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:check () {
 
-    cargo check --workspace --all-targets --all-features "${GATE_ARGS[@]}" \
-        && cargo hack check --workspace --feature-powerset "${GATE_ARGS[@]}"
+    cargo check --workspace --all-targets --all-features "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}" \
+        && cargo hack check --workspace --feature-powerset "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:lint () {
 
-    cargo clippy --workspace --all-targets --all-features "${GATE_ARGS[@]}" -- -D warnings \
-        && RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --all-features "${GATE_ARGS[@]}"
+    cargo clippy --workspace --all-targets --all-features "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}" -- -D warnings \
+        && RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --all-features "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:test () {
 
-    cargo nextest run --workspace --all-features "${GATE_ARGS[@]}" \
-        && cargo test --doc --workspace --all-features "${GATE_ARGS[@]}"
+    cargo nextest run --workspace --all-features "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}" \
+        && cargo test --doc --workspace --all-features "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:safety () {
@@ -76,7 +83,7 @@ module:gate:rust:sanitize () {
 }
 module:gate:rust:audit () {
 
-    cargo deny --all-features check && cargo vet "${GATE_ARGS[@]}"
+    cargo deny --all-features check && cargo vet "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:semver () {
@@ -106,8 +113,8 @@ module:gate:rust:build () {
 
     shift
 
-    if (( dev == 1 )); then cargo build "$@"
-    else cargo build --release "$@"
+    if (( dev == 1 )); then cargo build "${GATE_LOCK_CARGO[@]}" "$@"
+    else cargo build --release "${GATE_LOCK_CARGO[@]}" "$@"
     fi
 
 }
@@ -117,14 +124,14 @@ module:gate:rust:run () {
 
     shift
 
-    if (( dev == 1 )); then cargo run "$@"
-    else cargo run --release "$@"
+    if (( dev == 1 )); then cargo run "${GATE_LOCK_CARGO[@]}" "$@"
+    else cargo run --release "${GATE_LOCK_CARGO[@]}" "$@"
     fi
 
 }
 module:gate:rust:bench () {
 
-    cargo bench --workspace "${GATE_ARGS[@]}"
+    cargo bench --workspace "${GATE_LOCK_CARGO[@]}" "${GATE_ARGS[@]}"
 
 }
 module:gate:rust:fuzz () {

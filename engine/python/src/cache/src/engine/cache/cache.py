@@ -114,6 +114,12 @@ class Cache:
 
         return await self._store.swap(key, old, self._valued_(new), ttl)
 
+    async def redeem (
+        self, key: str, value: Any, tries: str, limit: int, ttl: float | None = None,
+    ) -> tuple[bool, int]:
+
+        return await self._store.redeem(key, self._valued_(value), tries, whole(limit, "limit"), ttl)
+
     async def increment ( self, key: str, step: int = 1, ttl: float | None = None ) -> int:
 
         return await self._store.increment(key, step, ttl)

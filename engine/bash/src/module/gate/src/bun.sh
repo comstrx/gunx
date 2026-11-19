@@ -25,9 +25,18 @@ module:gate:bun:suite () {
     bun "$@" test "./${folder}"
 
 }
-module:gate:bun:deps () {
+module:gate:bun:lock () {
 
-    core:proc:io module:gate:bun:prefer deps bun install || return
+    core:sys:need bun || return
+
+    core:proc:io module:gate:bun:prefer lock bun install --lockfile-only
+
+}
+module:gate:bun:fetch () {
+
+    core:sys:need bun || return
+
+    core:proc:io module:gate:bun:prefer deps bun install "${GATE_LOCK_BUN[@]}" || return
 
     module:gate:bun:script link || return 0
 
@@ -87,7 +96,7 @@ module:gate:bun:semver () {
 
     old="$(module:gate:semver:tree "${baseline}")" || return
 
-    core:proc:within "${old}" core:proc:io bun install --silent || return
+    core:proc:within "${old}" core:proc:io bun install "${GATE_LOCK_BUN[@]}" --silent || return
 
     now="$(module:gate:bun:surface)" || return
     was="$(core:proc:within "${old}" module:gate:bun:surface)" || return

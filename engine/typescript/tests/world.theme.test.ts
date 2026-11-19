@@ -156,7 +156,7 @@ describe("world.theme", () => {
         expect(made.preference()).toBe("dark");
 
     });
-    it("senses the colour scheme through the device when no appearance is given", () => {
+    it("senses the color scheme through the device when no appearance is given", () => {
 
         const handlers = new Set<() => void>();
         let dark = true;

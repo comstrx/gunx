@@ -25,6 +25,7 @@
     "typescript": "7.0.2"
   },
   "scripts": {
+    "lock": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/typescript && pwd)/.bun\" bun install --lockfile-only",
     "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/typescript && pwd)/.bun\" bun install --frozen-lockfile",
     "tool": "bun node_modules/engine/bin/tool.ts",
     "compile": "bun run tool compile",

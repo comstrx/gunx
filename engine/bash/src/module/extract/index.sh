@@ -1,5 +1,6 @@
 @use module::extract::src::arch
 @use module::extract::src::deps
+@use module::extract::src::flags
 @use module::extract::src::flows
 @use module::extract::src::gate
 @use module::extract::src::install

@@ -64,3 +64,20 @@ bench:module:extract:shallow () {
     @measure 'module:extract:shallow 40 files' 5 3 module:extract:shallow "${tree}" product product/demo
 
 }
+bench:module:extract:flags () {
+
+    TARGETS=( [benchx]=3 [benchx.type]=engine [benchx.path]=engine/bench [benchx.repo]=o/benchx )
+
+    CLI_VALUED=( [--name]=true [--repo]=true [--owner]=true [--logo]=true [--deps]=true [--tag]=true [--branch]=true )
+    CLI_FLAGS=( [--name]=chosen [--repo]=o/other [--owner]=o [--logo]=https://example.com/l.png [--deps]=engine:o/basex,o/sidex [--tag]=v1 [--branch]=main )
+
+    @measure 'module:extract:flags 7 flags' 20 50 module:extract:flags benchx
+
+}
+bench:module:extract:whole () {
+
+    TARGETS=( [benchx]=1 )
+
+    @measure 'module:extract:whole defaults' 20 200 module:extract:whole benchx
+
+}

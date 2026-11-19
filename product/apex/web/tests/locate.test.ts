@@ -4,7 +4,7 @@ import { mapOf, stretched, type Track } from "../src/stores/locate.ts";
 
 describe("locate", () => {
 
-    it("a track grows by each new position, measures what was travelled, and a map is drawn only with a key and a position", () => {
+    it("a track grows by each new position, measures what was traveled, and a map is drawn only with a key and a position", () => {
 
         const at = ( lat: number, lng: number ) => ({ lat, lng, accuracy: 5, at: 0 });
         const empty: Track = { points: [], meters: 0 };

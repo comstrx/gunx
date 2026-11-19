@@ -14,7 +14,7 @@ module:bundle:install:tool () {
     core:install:archive "${name}" "${url//\{version\}/"${version}"}" "${digest}" "${home}" "${member//\{version\}/"${version}"}"
 
 }
-module:bundle:fetch () {
+module:bundle:install:tools () {
 
     local name="" failed=0
     local -a names=( "$@" )
@@ -29,5 +29,12 @@ module:bundle:fetch () {
     (( failed == 0 )) || { core:error:fail "A tool could not be fetched"; return; }
 
     core:log:succ "every tool is at its pin under $(module:bundle:tool:home)"
+
+}
+module:bundle:install:own () {
+
+    (( $# > 0 )) || set -- "${LAW_TOOLS[@]}"
+
+    module:bundle:install:tools "$@"
 
 }

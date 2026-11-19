@@ -63,6 +63,7 @@ module:bundle:self () {
 
     case "${verb}" in
         build) module:bundle:build:pick "$@" ;;
+        fetch) module:bundle:install:own "$@" ;;
         check) module:bundle:check "$@" ;;
         lint)  module:bundle:lint "$@" ;;
         test)  module:bundle:test:run "$@" ;;
@@ -72,7 +73,7 @@ module:bundle:self () {
         install) module:bundle:install "$@" ;;
         update)  module:bundle:update "$@" ;;
         remove)  module:bundle:remove "$@" ;;
-        *)       core:error:usage "self build|check|lint|test|bench|fuzz|audit|install|update|remove"; return ;;
+        *)       core:error:usage "self build|fetch|check|lint|test|bench|fuzz|audit|install|update|remove"; return ;;
     esac
 
 }

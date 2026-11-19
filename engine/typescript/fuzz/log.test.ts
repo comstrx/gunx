@@ -125,7 +125,7 @@ describe("fuzz log", () => {
         );
 
     });
-    it("redaction answers any value with facts that serialise", () => {
+    it("redaction answers any value with facts that serialize", () => {
 
         fc.assert(
             fc.property(anything, fc.string({ maxLength: 8 }), ( value, key ) => {

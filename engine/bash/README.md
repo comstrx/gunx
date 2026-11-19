@@ -57,6 +57,7 @@ Bash 5.2 or newer runs the engine. Started under an older Bash, the bootstrap fi
 | ------------------------------- | ----------------------------------------------------------------------------- |
 | `gate`                          | Runs the gates of every path: Rust, Go, Python, Bun, Bash, and the repository |
 | `check` `lint` `test` `audit` … | One gate alone, with its arguments passed straight to the tool                |
+| `lock`                          | Brings the lock file of a path in line with its manifest, upgrading nothing   |
 | `build` `run`                   | Builds or runs a path for release, or for development with `--dev`            |
 | `install` `update` `remove`     | The life of a tool as a command on your path                                  |
 | `extract`                       | Extracts a part of a monorepo into its own repository: prove, then deliver    |
@@ -65,9 +66,9 @@ Bash 5.2 or newer runs the engine. Started under an older Bash, the bootstrap fi
 | `config` `meta` `system`        | The resolved settings, the identity, and the machine, secrets redacted        |
 | `self`                          | The engine on itself: build, check, lint, test, bench, fuzz, audit, install   |
 
-**The gates** · `deps` · `check` · `lint` · `test` · `safety` · `audit` · `semver` · `quality` · `security` · `bench` · `fuzz`
+**The gates** · `fetch` · `check` · `lint` · `test` · `safety` · `audit` · `semver` · `quality` · `security` · `bench` · `fuzz`
 
-The first nine are the default. A path is recognized by its manifest, so one repository may hold every language and still be gated by one command, in full or only where something changed.
+The first nine are the default, and every one of them holds its tool to the lock file; `lock` is the only command that writes it. A path is recognized by its manifest, so one repository may hold every language and still be gated by one command, in full or only where something changed.
 
 **One vocabulary. Endless possibilities.**
 

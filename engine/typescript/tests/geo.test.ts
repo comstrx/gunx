@@ -116,7 +116,7 @@ describe("geo", () => {
         expect(geo.near(cairo, [riyadh, geo.destination(cairo, 500, 90), geo.destination(cairo, 100, 0)], 1000).map(( found ) => Math.round(found.distance))).toEqual([100, 500]);
 
     });
-    it("the earth radius is the IUGG mean radius in metres", () => {
+    it("the earth radius is the IUGG mean radius in meters", () => {
 
         expect(geo.earthRadius).toBe(6_371_008.8);
 
@@ -186,7 +186,7 @@ describe("geo", () => {
         expect([geo.link(cairo, "google", "Tahrir Square"), geo.link(cairo, "apple", "a b&c"), geo.directions(riyadh), geo.directions(riyadh, "apple", cairo), geo.directions(riyadh, "waze"), geo.directions(riyadh, "google", cairo)]).toEqual(["https://www.google.com/maps/search/?api=1&query=30.0444,31.2357", "https://maps.apple.com/?ll=30.0444,31.2357&q=a%20b%26c", "https://www.google.com/maps/dir/?api=1&destination=24.7136,46.6753", "https://maps.apple.com/?daddr=24.7136,46.6753&saddr=30.0444,31.2357&dirflg=d", "https://waze.com/ul?ll=24.7136,46.6753&navigate=yes", "https://www.google.com/maps/dir/?api=1&destination=24.7136,46.6753&origin=30.0444,31.2357"]);
 
     });
-    it("the antimeridian and the poles: boxes wrap, centres and fits follow, interpolation routes over the pole, aggregates skip junk", () => {
+    it("the antimeridian and the poles: boxes wrap, centers and fits follow, interpolation routes over the pole, aggregates skip junk", () => {
 
         const wrapped = geo.bounds([{ lat: 0, lng: 170 }, { lat: 1, lng: -170 }, { lat: 2, lng: 179 }]);
 
@@ -214,7 +214,7 @@ describe("geo", () => {
         expect(geo.round(geo.destination({ lat: 89.99, lng: 0 }, 5000, 0), 2).lat).toBeLessThanOrEqual(90);
 
     });
-    it("codes: cells contain their point, neighbours ring a cell, polylines refuse what they cannot read, tiles round trip", () => {
+    it("codes: cells contain their point, neighbors ring a cell, polylines refuse what they cannot read, tiles round trip", () => {
 
         const cell = geo.cell("stq4yv") as geo.Bounds;
 

@@ -1196,7 +1196,7 @@ async def test_single_eager_results_do_not_turn_into_an_accidental_cache () -> N
     finally: loop.set_task_factory(before)
 
 
-async def test_zero_ttl_memo_keeps_per_key_serialisation () -> None:
+async def test_zero_ttl_memo_keeps_per_key_serialization () -> None:
 
     memo = func.memo(ttl=0)
     entered = asyncio.Event()

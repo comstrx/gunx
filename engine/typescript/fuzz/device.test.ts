@@ -444,7 +444,7 @@ describe("fuzz device", () => {
         );
 
     });
-    it("hotkeys fire the first bound combo that matches, honouring typing and repeat", () => {
+    it("hotkeys fire the first bound combo that matches, honoring typing and repeat", () => {
 
         const listable = spelled.filter(( one ) => one.listable).map(( one ) => one.text);
         const texts = fc.array(fc.oneof(listable, fc.tuple(listable, listable).map(( pair ) => pair.join(" , ")), listable.map(( one ) => `mod+${one}`)), { minLength: 1, maxLength: 5 });

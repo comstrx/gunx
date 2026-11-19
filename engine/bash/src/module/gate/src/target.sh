@@ -49,7 +49,7 @@ module:gate:plan () {
     shift 2
 
     ! module:gate:governed "$@" || governs=1
-    ! core:list:has deps "$@" || prepares=1
+    ! core:list:has "${GATE_LEAD}" "$@" || prepares=1
 
     list="$(module:gate:paths "${wanted}")" || return
 

@@ -68,7 +68,7 @@ describe("spec.edges", () => {
         expect(spec.compile(spec.plan({ name: "s", role: "r", screens: [spec.screen("Bad Name", { path: "/x", title: "x" }), spec.screen("ok", { path: "/ok", title: "ok", features: [spec.feature("Bad Feature")], blocks: [spec.block("Bad Kind")] })] })).issues.map(( issue ) => `${issue.path} | ${issue.rule}`)).toEqual(["screens.Bad Name | shape", "screens.ok.features[0] | shape", "screens.ok.blocks[0] | shape"]);
 
     });
-    it("the runtime refuses a namespace that is not a record, finds a handler by a feature's id or name, stops a retired chain, queues only offline, declines an unanswered confirmation, honours trigger conditions, drops a superseded mount, runs failure hooks and keeps a session screen closed without a user", async () => {
+    it("the runtime refuses a namespace that is not a record, finds a handler by a feature's id or name, stops a retired chain, queues only offline, declines an unanswered confirmation, honors trigger conditions, drops a superseded mount, runs failure hooks and keeps a session screen closed without a user", async () => {
 
         const bus = event.bus();
         const calls: string[] = [];

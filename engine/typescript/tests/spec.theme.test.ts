@@ -5,7 +5,7 @@ const part = spec.part({ platform: "web" });
 
 describe("spec theme", () => {
 
-    it("a role's themes resolve to the overrides alone: brand tones from one colour, custom colours in both schemes, and only what was written", () => {
+    it("a role's themes resolve to the overrides alone: brand tones from one color, custom colors in both schemes, and only what was written", () => {
 
         const themed = spec.theme({ brand: "#ff4500", color: { light: { surface: "#fffaf5", ink: "" }, dark: { surface: "#120a05" }, custom: { offer: "#00a86b" } }, shadow: { light: { raised: "0 1px 2px #0002" }, dark: { raised: "" } }, radius: { md: 14, lg: "" }, motion: { fast: 100, base: "", ease: "ease-out" }, font: { sans: ["Figtree", "", "Readex Pro"] } });
 
@@ -13,10 +13,10 @@ describe("spec theme", () => {
         expect([themed.color.light.surface, themed.color.dark.surface, themed.color.dark.offer, themed.color.light.brand === themed.color.dark.brand, /^#[0-9a-f]{6}$/.test(themed.color.light.brand ?? "")]).toEqual(["#fffaf5", "#120a05", "#00a86b", false, true]);
         expect([themed.shadow, themed.radius, themed.motion, themed.font]).toEqual([{ light: { raised: "0 1px 2px #0002" }, dark: {} }, { md: 14 }, { fast: 100, ease: "ease-out" }, { sans: ["Figtree", "Readex Pro"] }]);
         expect(spec.theme(undefined)).toEqual({ color: { light: {}, dark: {} }, shadow: { light: {}, dark: {} }, radius: {}, motion: {}, font: {} });
-        expect(spec.theme({ brand: "not a colour", color: 5, font: { sans: 7 } })).toEqual(spec.theme({}));
+        expect(spec.theme({ brand: "not a color", color: 5, font: { sans: 7 } })).toEqual(spec.theme({}));
 
     });
-    it("the overrides are named as the variables a sheet carries, with their units, and a custom colour is told apart", () => {
+    it("the overrides are named as the variables a sheet carries, with their units, and a custom color is told apart", () => {
 
         const look = spec.painted(spec.theme({ color: { light: { surfaceRaised: "#fff" }, dark: { surfaceRaised: "#111" }, custom: { offer: "#00a86b" } }, shadow: { light: { raised: "none" }, dark: {} }, radius: { md: 14, lg: "1.5rem" }, motion: { fast: 100, ease: "ease-out" }, font: { sans: ["Readex Pro", "Figtree"] } }));
 
@@ -24,7 +24,7 @@ describe("spec theme", () => {
         expect([look.dark, look.named, spec.tones.includes("surfaceRaised"), spec.tones.length]).toEqual([{ "color-offer": "#00a86b", "color-surface-raised": "#111" }, { "color-offer": "#00a86b" }, true, 20]);
 
     });
-    it("the engine names every token a role may override, a custom colour is free, and a stranger is told with its nearest name", () => {
+    it("the engine names every token a role may override, a custom color is free, and a stranger is told with its nearest name", () => {
 
         const settled = spec.settle(part, spec.surface({ schema: [], config: { themes: { brand: "#ff4500", color: { light: { surfase: "#fff" }, custom: { anything: "#000" } }, radius: { xl: 30 }, font: { sans: ["Figtree"] } } } }));
 

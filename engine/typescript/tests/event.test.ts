@@ -256,7 +256,7 @@ describe("event", () => {
         expect(seen).toEqual(["h1", "h1", "hit:1", "h2", "hit:2", "hit:3", "done:x"]);
 
     });
-    it("an emitter delivers past a throw, honours a stop mid-delivery and names a loop", async () => {
+    it("an emitter delivers past a throw, honors a stop mid-delivery and names a loop", async () => {
 
         const first = new Error("first");
         const plain = event.emitter<{ hit: number }>();
@@ -718,7 +718,7 @@ describe("event", () => {
         expect(kept.get()()).toBe(1);
 
     });
-    it("a signal tells past a throw, replays on demand, honours a stop mid-turn and names a loop", async () => {
+    it("a signal tells past a throw, replays on demand, honors a stop mid-turn and names a loop", async () => {
 
         const first = new Error("first");
         const late = new Error("late");

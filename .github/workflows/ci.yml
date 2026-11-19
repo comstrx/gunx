@@ -65,5 +65,6 @@ jobs:
         with:
           path: ${{ matrix.path }}
 
-      - run: gunx gate --path "${CI_PATH}" --type "${CI_TYPE}" \
-              --timeout "${CI_TIMEOUT}" ${CI_CHANGED:+--only-changed} ${CI_PASS:+--pass}
+      - run: |
+          gunx gate --path "${CI_PATH}" --type "${CI_TYPE}" \
+            --timeout "${CI_TIMEOUT}" ${CI_CHANGED:+--only-changed} ${CI_PASS:+--pass}

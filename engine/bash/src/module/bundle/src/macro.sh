@@ -93,8 +93,8 @@
     module:bundle:tool:run "$@"
 
 }
-@fetch () {
+@ensure () {
 
-    module:bundle:fetch "$@"
+    module:bundle:install:tools "$@"
 
 }

@@ -1,6 +1,15 @@
-module:gate:python:deps () {
+module:gate:python:lock () {
 
-    core:proc:io uv sync "${GATE_ARGS[@]}"
+    core:sys:need uv || return
+
+    core:proc:io uv lock "${GATE_ARGS[@]}"
+
+}
+module:gate:python:fetch () {
+
+    core:sys:need uv || return
+
+    core:proc:io uv sync "${GATE_LOCK_UV[@]}" "${GATE_ARGS[@]}"
 
 }
 module:gate:python:check () {
@@ -27,7 +36,7 @@ module:gate:python:safety () {
 }
 module:gate:python:audit () {
 
-    uv export --no-emit-project --no-emit-workspace --no-hashes --format requirements-txt \
+    uv export "${GATE_LOCK_UV[@]}" --no-emit-project --no-emit-workspace --no-hashes --format requirements-txt \
         | grep -vE '^-e |file://' \
         | uv run pip-audit -r /dev/stdin --strict --progress-spinner off
 
@@ -40,7 +49,7 @@ module:gate:python:semver () {
     [[ -f src/engine/pyproject.toml ]] || { @info "semver: no engine layout; skipped"; return 0; }
 
     baseline="$(module:gate:semver:baseline)" || return 0
-    ! module:gate:semver:bumped "${baseline}" "$(uv version --short 2>/dev/null)" || return 0
+    ! module:gate:semver:bumped "${baseline}" "$(uv version --short "${GATE_LOCK_UV[@]}" 2>/dev/null)" || return 0
 
     here="${PWD}"
     top="$(core:git:root .)" || return
@@ -52,7 +61,7 @@ module:gate:python:semver () {
 
     done
 
-    ( cd -- "${top}" && uv run --project "${here}" griffe check engine "${search[@]}" -a "${baseline}" )
+    ( cd -- "${top}" && uv run "${GATE_LOCK_UV[@]}" --project "${here}" griffe check engine "${search[@]}" -a "${baseline}" )
 
 }
 module:gate:python:build () {
@@ -73,7 +82,7 @@ module:gate:python:run () {
     shift
 
     if (( dev == 1 )); then uv run "$@"
-    else uv run --no-dev "$@"
+    else uv run "${GATE_LOCK_UV[@]}" --no-dev "$@"
     fi
 
 }

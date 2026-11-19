@@ -19,9 +19,11 @@ fixture:module:gate:repo () {
 }
 test:module:gate:lists-the-types () {
 
-    @eq "$(module:gate:types default | tr '\n' ' ')" 'deps check lint test safety audit semver quality security '
-    @eq "$(module:gate:types all | tr '\n' ' ')" 'deps check lint test safety audit semver quality security bench fuzz '
-    @eq "$(module:gate:types deps,fuzz | tr '\n' ' ')" 'deps fuzz '
+    @eq "$(module:gate:types default | tr '\n' ' ')" 'fetch check lint test safety audit semver quality security '
+    @eq "$(module:gate:types all | tr '\n' ' ')" 'fetch check lint test safety audit semver quality security bench fuzz '
+    @eq "$(module:gate:types fetch,fuzz | tr '\n' ' ')" 'fetch fuzz '
+    @errors 'Unknown type: deps' module:gate:types deps
+    @eq "$(module:gate:types lock | tr '\n' ' ')" 'lock '
     @errors 'Unknown type: nope' module:gate:types nope
     @errors 'Unknown type: nope' module:gate:types check,nope
 
@@ -118,7 +120,7 @@ TOOL
     @contains "$(module:gate:one bash "${root}" 'check test' 7 true 2>&1)" 'failed at test; passing as asked'
     @errors 'ran out of its 1s timeout' module:gate:one bash "${root}" 'bench' 1 false
     @eq "$(module:gate:one bash "${root}" 'quality' 7 false 2>&1)" ''
-    @contains "$(module:gate:one bash "${root}" 'check' 7 false 2>&1)" 'passed: deps check'
+    @contains "$(module:gate:one bash "${root}" 'check' 7 false 2>&1)" 'passed: fetch check'
     @errors 'Not a directory' module:gate:one bash "${root}/nope" 'check' 7 false
 
 }
@@ -253,8 +255,69 @@ TOOL
     @absent "$(module:gate:one bash "${root}" 'check' 7 false 2>&1)" 'shellcheck --fast'
     @absent "$(module:gate:one bash "${root}" 'lint' 7 false 2>&1)" '--fast'
 
-    @absent "$(declare -f module:gate:rust:deps module:gate:rust:check module:gate:python:deps module:gate:bun:deps)" 'locked'
-    @absent "$(declare -f module:gate:bun:deps module:gate:python:audit module:gate:python:run)" 'frozen'
+}
+test:module:gate:a-writer-runs-first-and-alone () {
+
+    local root="${TMPDIR}/part"
+
+    mkdir -p "${root}"
+
+    module:gate:demo:lock () { :; }
+    module:gate:demo:fetch () { :; }
+    module:gate:demo:check () { :; }
+
+    GATE_RESULTS=()
+    module:gate:one demo "${root}" 'lock' 7 false >/dev/null 2>&1
+    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'lock '
+
+    GATE_RESULTS=()
+    module:gate:one demo "${root}" 'check lock' 7 false >/dev/null 2>&1
+    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'lock fetch check '
+
+    GATE_RESULTS=()
+    module:gate:one demo "${root}" 'lock fetch' 7 false >/dev/null 2>&1
+    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'lock fetch '
+
+    @errors 'demo does not support the test gate' module:gate:one demo "${root}" 'check test' 7 false
+    @eq "$(module:gate:one demo "${root}" 'quality' 7 false 2>&1)" ''
+    @eq "$(module:gate:one root "${root}" 'lock' 7 false 2>&1)" ''
+
+}
+test:module:gate:every-language-speaks-every-gate () {
+
+    local chain="" type=""
+
+    for chain in bash rust go python bun; do
+
+        for type in "${GATE_TYPES[@]}" build run; do
+
+            module:gate:owes "${chain}" "${type}" || [[ "${type}" == build || "${type}" == run ]] || continue
+            module:gate:fits "${chain}" "${type}" || @err "${chain} does not speak ${type}"
+
+        done
+
+    done
+
+}
+test:module:gate:holds-every-tool-to-its-lock () {
+
+    uv () { printf 'uv %s\n' "$*"; }
+    cargo () { printf 'cargo %s\n' "$*"; }
+    module:gate:install:rust () { :; }
+
+    GATE_ARGS=()
+
+    @eq "$(module:gate:python:fetch 2>&1)" 'uv sync --locked'
+    @eq "$(module:gate:rust:fetch 2>&1)" 'cargo fetch --locked'
+    @contains "$(module:gate:rust:check 2>&1)" 'cargo check --workspace --all-targets --all-features --locked'
+    @eq "$(module:gate:python:lock 2>&1)" 'uv lock'
+    @eq "$(module:gate:rust:lock 2>&1)" 'cargo update --workspace'
+
+    GATE_LOCK_UV=()
+    GATE_LOCK_CARGO=()
+
+    @eq "$(module:gate:python:fetch 2>&1)" 'uv sync'
+    @eq "$(module:gate:rust:fetch 2>&1)" 'cargo fetch'
 
 }
 test:module:gate:watches-what-it-builds-on () {
@@ -304,7 +367,57 @@ TOOL
     @eq "$(module:gate:life install --path "${root}" --alias name --yes 2>/dev/null)" 'ran self install --alias name --yes'
     @eq "$(module:gate:life update --path "${root}" --dev 2>/dev/null)" 'ran self update'
     @eq "$(module:gate:life remove --path "${root}" 2>/dev/null)" 'ran self remove'
-    @errors 'rust has no install' module:gate:life install --path "${TMPDIR}/other"
+    @errors 'rust does not support install' module:gate:life install --path "${TMPDIR}/other"
     @eq "$(module:bundle:usage:handler update)" module:gate:update
+
+}
+test:module:gate:names-the-tool-a-chain-lacks () {
+
+    core:sys:has () { return 1; }
+
+    GATE_ARGS=()
+
+    @errors 'Missing tool: uv' module:gate:python:lock
+    @errors 'Missing tool: uv' module:gate:python:fetch
+    @errors 'Missing tool: cargo' module:gate:rust:lock
+    @errors 'Missing tool: bun' module:gate:bun:lock
+    @errors 'Missing tool: bun' module:gate:bun:fetch
+    @errors 'Missing tool: go' module:gate:go:lock
+
+}
+test:module:gate:a-refused-gate-runs-nothing () {
+
+    local root="${TMPDIR}/part"
+
+    mkdir -p "${root}"
+
+    module:gate:demo:fetch () { printf ran > fetched; }
+    module:gate:demo:check () { printf ran > checked; }
+
+    GATE_RESULTS=()
+
+    @errors 'demo does not support the lint gate' module:gate:one demo "${root}" 'check lint' 7 false
+
+    [[ ! -e "${root}/fetched" && ! -e "${root}/checked" && ${#GATE_RESULTS[@]} -eq 0 ]] || @err 'a refused chain still ran a gate'
+
+    @fails module:gate:owes root lock
+    @fails module:gate:owes rust quality
+    module:gate:owes root security
+    module:gate:owes bash lock
+
+}
+test:module:gate:all-leaves-the-writers-to-their-own-command () {
+
+    local type=""
+
+    for type in "${GATE_WRITERS[@]}"; do
+
+        @absent " $(module:gate:types all | tr '\n' ' ')" " ${type} "
+        @absent " $(module:gate:types default | tr '\n' ' ')" " ${type} "
+        @eq "$(module:gate:types "${type}")" "${type}"
+
+    done
+
+    @eq "$(module:gate:types default | head -n 1)" "${GATE_LEAD}"
 
 }

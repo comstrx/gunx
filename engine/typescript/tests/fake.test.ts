@@ -218,7 +218,7 @@ describe("fake", () => {
         expect(custom.from(validate.object({ email: validate.email() })).email).toBe("forced@example.com");
 
     });
-    it("from shapes every schema kind, honours overrides by path and star, and refuses a broken override", () => {
+    it("from shapes every schema kind, honors overrides by path and star, and refuses a broken override", () => {
 
         const faker = fake.create("kinds", { now: Date.UTC(2026, 0, 1) });
         const wide = validate.object({

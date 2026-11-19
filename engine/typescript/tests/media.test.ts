@@ -48,7 +48,7 @@ function web ( given: media.Host ): Unit {
 
 describe("media", () => {
 
-    it("a sizing plan crops to the ratio from the centre, fits inside the asked box, never grows an image, and rests when nothing would change", () => {
+    it("a sizing plan crops to the ratio from the center, fits inside the asked box, never grows an image, and rests when nothing would change", () => {
 
         const photo = { width: 4000, height: 3000, type: "image/jpeg", name: "IMG 01.JPEG" };
         const plan = ( source: media.Pictured, sizing?: media.Sizing ): unknown[] => { const made = media.planned(source, sizing); return [made.crop, made.width, made.height, made.format, made.name, made.idle]; };

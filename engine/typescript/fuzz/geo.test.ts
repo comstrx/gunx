@@ -72,7 +72,7 @@ describe("fuzz geo", () => {
         }), { numRuns: runs });
 
     });
-    it("bounds hold every point and nothing tighter, centres fall inside, around holds a disc, contains and overlaps agree with a scan", () => {
+    it("bounds hold every point and nothing tighter, centers fall inside, around holds a disc, contains and overlaps agree with a scan", () => {
 
         fc.assert(fc.property(fc.array(anywhere, { minLength: 1, maxLength: 12 }), real(0, 2_000_000), ( points, pad ) => {
 
@@ -119,7 +119,7 @@ describe("fuzz geo", () => {
         }), { numRuns: runs });
 
     });
-    it("geohash cells hold their point and ring their neighbours, polylines and tiles round trip at every precision and zoom", () => {
+    it("geohash cells hold their point and ring their neighbors, polylines and tiles round trip at every precision and zoom", () => {
 
         fc.assert(fc.property(anywhere, fc.integer({ min: 1, max: 12 }), ( at, precision ) => {
 

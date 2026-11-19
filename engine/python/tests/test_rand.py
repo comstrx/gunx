@@ -3,6 +3,7 @@ from collections.abc import Callable
 from itertools import pairwise
 from functools import partial
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, cast
 
 from engine.error import Code, Fault
@@ -555,7 +556,9 @@ def fork_probe () -> None:
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="fork is unavailable")
-def test_fork_keeps_both_processes_usable () -> None:
+def test_fork_keeps_both_processes_usable ( monkeypatch: pytest.MonkeyPatch ) -> None:
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
 
     worker = multiprocessing.get_context("spawn").Process(target=fork_probe)
     worker.start()

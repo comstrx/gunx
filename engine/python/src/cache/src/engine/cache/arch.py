@@ -41,6 +41,15 @@ local value = redis.call('INCRBY', KEYS[1], ARGV[1])
 if redis.call('PTTL', KEYS[1]) == -1 then redis.call('PEXPIRE', KEYS[1], ARGV[2]) end
 return value
 """
+REDEEM = """
+local found = redis.call('GET', KEYS[1])
+if not found then return { 0, 0 } end
+local count = redis.call('INCRBY', KEYS[2], 1)
+if ARGV[3] ~= '' and redis.call('PTTL', KEYS[2]) == -1 then redis.call('PEXPIRE', KEYS[2], ARGV[3]) end
+local taken = count <= tonumber(ARGV[2]) and found == ARGV[1]
+if taken or count > tonumber(ARGV[2]) then redis.call('DEL', KEYS[1], KEYS[2]) end
+return { taken and 1 or 0, count }
+"""
 BUCKET = """
 local rate, burst, cost = tonumber(ARGV[1]), tonumber(ARGV[2]), tonumber(ARGV[3])
 local clock = redis.call('TIME')

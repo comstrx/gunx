@@ -311,7 +311,8 @@ def test_claims_are_required_and_typed () -> None:
 
     for name, body in passing.items(): assert token.verify(forge(body)).subject == body["sub"], name
 
-    read = token.verify(forge(claims(role="admin", nested={ "a": [1, 2.5, None, True] }, aud="", nbf=now - 60)))
+    kept = claims(iat=now, exp=now + 60, role="admin", nested={ "a": [1, 2.5, None, True] }, aud="", nbf=now - 60)
+    read = token.verify(forge(kept))
 
     assert read.facts == { "role": "admin", "nested": { "a": [1, 2.5, None, True] }, "aud": "", "nbf": now - 60 }
     assert read.issued == now and read.expires == now + 60 and read.id == "j1" and RESERVED.isdisjoint(read.facts)

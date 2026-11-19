@@ -29,3 +29,93 @@ fuzz:config:targets:load () {
     config:targets:get "$(tr -d '\0\n' < "${1}" | head -c 40)" path >/dev/null
 
 }
+fuzz:config:targets:write () {
+
+    local text="" name="" rest=""
+
+    text="$(tr -d '\0' < "${1}" | head -c 200)"
+    name="${text%%$'\n'*}"
+    name="${name:0:40}"
+    rest="${text#*$'\n'}"
+
+    TARGETS=()
+
+    if config:targets:set "${name}" logo "${rest}" 2>/dev/null; then
+
+        [[ "${name}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ && "${rest}" != *[[:cntrl:]]* ]] || return 3
+        [[ ${#TARGETS[@]} -eq 2 && "${TARGETS[${name}.logo]}" == "${rest}" ]] || return 3
+
+    else
+
+        [[ ${#TARGETS[@]} -eq 0 ]] || return 3
+
+    fi
+
+    TARGETS=()
+
+    if config:targets:set okx path "${name}" 2>/dev/null; then core:fs:path:relative "${name}" || return 3
+    else [[ ${#TARGETS[@]} -eq 0 ]] || return 3
+    fi
+
+}
+fuzz:config:targets:lists () {
+
+    local text="" line="" tabs="" count=0
+    local -a words=()
+
+    text="$(tr -d '\0' < "${1}" | head -c 200)"
+
+    mapfile -t words <<< "${text}"
+
+    TARGETS=()
+
+    if config:targets:fill okx engines "${words[@]}" 2>/dev/null; then
+
+        [[ "${TARGETS[okx.engines]}" == "${#words[@]}" ]] || return 3
+        [[ "$(config:targets:engines okx)" == "$(printf '%s\n' "${words[@]}")" || ${#words[@]} -eq 0 ]] || return 3
+
+    else
+
+        [[ ${#TARGETS[@]} -eq 0 ]] || return 3
+
+    fi
+
+    TARGETS=()
+
+    config:targets:link okx "${words[@]}" 2>/dev/null || { [[ ${#TARGETS[@]} -eq 0 ]] || return 3; return 0; }
+
+    while IFS= read -r line; do
+
+        tabs="${line//[!$'\t']/}"
+        [[ ${#tabs} -eq 2 ]] || return 3
+
+        count=$(( count + 1 ))
+
+    done < <(config:targets:deps okx)
+
+    [[ "${count}" == "$(( ${#words[@]} / 2 ))" ]] || return 3
+
+}
+fuzz:config:targets:settle () {
+
+    local spec="" first=""
+
+    spec="$(tr -d '\0\n' < "${1}" | head -c 120)"
+
+    [[ -n "${spec}" ]] || return 0
+
+    TARGETS=( [onex]=1 [onex.repo]="${spec}" [twox]=1 [twox.owner]="${spec}" [onex.deps]=1 [onex.deps.0.repo]="${spec}" )
+
+    config:targets:settle || return 3
+
+    first="${TARGETS[onex.repo]}"
+
+    [[ "${first}" == "${spec}" || "${first}" == /* || "${first}" == https://* ]] || return 3
+    [[ "${TARGETS[onex.deps.0.repo]}" == "${first}" ]] || return 3
+    [[ "${first}" != https://* || "${first}" != *[[:space:]]* ]] || return 3
+
+    config:targets:settle || return 3
+
+    [[ "${TARGETS[onex.repo]}" == "${first}" && "${TARGETS[onex.deps.0.repo]}" == "${first}" ]] || return 3
+
+}

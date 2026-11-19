@@ -55,6 +55,8 @@ async def gate ( cache: Cache ) -> None: await cache.add("k", 1, 60)
 
 async def swap ( cache: Cache ) -> None: await cache.swap("state", "a", "a", 60)
 
+async def redeem ( cache: Cache ) -> None: await cache.redeem("code", "a", "tries", 5, 60)
+
 async def remember ( cache: Cache ) -> None: await cache.remember("k", 60, loaded)
 
 async def remember_many ( cache: Cache ) -> None: await cache.remember_many(list(wide), 60, loads)
@@ -73,7 +75,7 @@ async def tagged ( cache: Cache ) -> None: await cache.tags("users").get("u1")
 
 LINES: tuple[tuple[str, Any, int], ...] = (
     ("forget_set32", forget, 4), ("get", get, 1), ("get.miss", miss, 1), ("set", put, 1), ("many32", many, 4), ("set_many32", put_many, 4),
-    ("increment", count, 1), ("add.taken", gate, 1), ("swap", swap, 1), ("remember.hit", remember, 1),
+    ("increment", count, 1), ("add.taken", gate, 1), ("swap", swap, 1), ("redeem.miss", redeem, 1), ("remember.hit", remember, 1),
     ("remember_many32.hit", remember_many, 4), ("hit", hit, 1), ("bucket", bucket, 1), ("lock.unlock", lock, 2),
     ("tags.get", tagged, 2),
 )

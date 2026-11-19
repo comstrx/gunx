@@ -660,7 +660,7 @@ def test_unexpected_coroutine_reporter_results_are_closed_and_diagnosed () -> No
     assert not leaked and ran == ["sync"]
     assert events[-1]["event"] == "exception.reporter" and events[-1]["kind"] == "coroutine"
 
-async def test_returned_tasks_are_diagnosed_without_cancelling_anothers_work () -> None:
+async def test_returned_tasks_are_diagnosed_without_cancelling_others_work () -> None:
 
     tool = Exceptions()
     ready = asyncio.Event()
