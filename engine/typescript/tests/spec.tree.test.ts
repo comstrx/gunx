@@ -10,7 +10,7 @@ const blank = Object.fromEntries(spec.tones.map(( name ) => [name, ""]));
 const part = spec.part({ platform: "web", blocks, features, defaults, messages, topics: ["shop.opened"] });
 const home = spec.screen("home", { path: "/", title: { en: "Home", ar: "الرئيسية" }, features: [spec.feature("hello", { on: { load: [spec.confirm("nav.yes", [])] } })], blocks: [spec.block("stack", { gap: "sm" }, [spec.block("feature", { name: "hello" })])] });
 const admin = spec.surface({ config: { settings: { locales: ["en", "ar"], grants: ["orders.*"] }, themes: { brand: "#ff4500" }, contents: { url: "https://shop.example.test" }, contracts: { baseUrl: "https://api.example.test/v1/" } }, schema: [home], messages: { en: { hello: { title: "Hello from the shop" } } } });
-const client = spec.surface({ id: "shop-client", schema: { screens: [spec.screen("home", { path: "/", title: "Home" })], signals: ["cart"] }, brand: { icons: { logo: "./logo.svg" } } });
+const client = spec.surface({ id: "shop-client", schema: { screens: [spec.screen("home", { path: "/", title: "Home" })], signals: ["cart"] }, assets: { home: "/shop/client", icons: { logo: "icons/logo.svg" } } });
 
 function reasonOf ( run: () => unknown ): string {
 
@@ -61,19 +61,25 @@ describe("spec tree", () => {
         expect([spec.titleOf(made, "ar"), compiled.byName["orders.list_all"]?.features.map(( one ) => one.id), spec.screen("plain").path, spec.feature("plain").on]).toEqual(["Orders.list_all", ["list", "hello"], "/plain", {}]);
 
     });
-    it("a surface is one frozen object of config, schema, messages and brand, and refuses anything else", () => {
+    it("a surface is one frozen object of config, schema, messages and assets, and refuses anything else", () => {
 
-        expect([spec.isSurface(admin), spec.isSurface({ ...admin }), Object.isFrozen(admin), admin.id, client.id, client.signals, client.brand, admin.brand.fonts]).toEqual([true, false, true, undefined, "shop-client", ["cart"], { icons: { logo: "./logo.svg" } }, undefined]);
+        expect([spec.isSurface(admin), spec.isSurface({ ...admin }), Object.isFrozen(admin), admin.id, client.id, client.signals, client.assets, admin.assets]).toEqual([true, false, true, undefined, "shop-client", ["cart"], { home: "/shop/client", icons: { logo: "icons/logo.svg" } }, {}]);
         expect([
             () => spec.surface({ schema: [home], extra: 1 } as never),
             () => spec.surface({ schema: 7 } as never),
             () => spec.surface({ schema: [home], id: "Bad Id" }),
             () => spec.surface({ schema: [home], config: [] as never }),
             () => spec.surface({ schema: [home], messages: { en: "hi" } as never }),
-            () => spec.surface({ schema: [home], brand: { images: 7 } }),
-            () => spec.surface({ schema: [home], brand: { icons: { logo: "" } } }),
             () => spec.surface(7 as never),
-        ].map(reasonOf)).toEqual(Array.from({ length: 8 }, () => "spec.surface"));
+        ].map(reasonOf)).toEqual(Array.from({ length: 6 }, () => "spec.surface"));
+        expect([
+            () => spec.surface({ schema: [home], assets: { images: 7 } }),
+            () => spec.surface({ schema: [home], assets: { home: "/x", images: { logo: "" } } }),
+            () => spec.surface({ schema: [home], assets: { images: { logo: "images/logo.svg" } } }),
+            () => spec.surface({ schema: [home], assets: { home: "/x", images: { logo: "../logo.svg" } } }),
+            () => spec.surface({ schema: [home], assets: { home: "", images: {} } }),
+            () => spec.surface({ schema: [home], assets: [] as never }),
+        ].map(reasonOf)).toEqual(Array.from({ length: 6 }, () => "spec.assets"));
 
     });
     it("define gathers surfaces through nested groups into addresses, names the current one and refuses anything else", () => {
@@ -107,6 +113,9 @@ describe("spec tree", () => {
             spec.locate(deep, "lab.admin").name,
             spec.locate(deep, "tools.client", "shop.v1.admin").name,
         ]).toEqual(["shop.v1.client", "shop.v2.client", "shop.v2.client", "shop.v2.client", "shop.v1.courier", "lab.tools.client", "lab.admin", "lab.tools.client"]);
+        const nested = spec.define({ y: { y: { b: spec.surface({ schema: [home] }) }, b: spec.surface({ schema: [home] }) } });
+
+        expect([spec.locate(nested, "y:b", "y.b").name, spec.locate(nested, "y.b", "y.y.b").name, spec.locate(nested, "b", "y.y.b").name]).toEqual(["y.b", "y.b", "y.y.b"]);
         expect([spec.locate(deep, "admin").issue?.rule, spec.locate(deep, "client", "shop.v1.ghost").name, spec.locate(deep, "admin", "shop.v2.client").name, spec.locate(deep, "admin").issue?.message]).toEqual(["surface.ambiguous", "shop.v1.client", "shop.v1.admin", "admin: names shop.v1.admin and lab.admin"]);
         expect(spec.locate(deep, "couriers", "shop.v1.admin").issue).toEqual({ path: "shop.v1.admin", rule: "surface.unknown", message: "couriers: no surface carries this name", fix: "name a surface the spec defines", near: "shop.v1.courier" });
         expect([spec.locate(deep, "", "lab.admin").issue?.rule, spec.locate(deep, "Shop..x").issue?.rule, spec.locate(deep, 7 as never).issue?.rule]).toEqual(["surface.name", "surface.name", "surface.name"]);
@@ -147,10 +156,13 @@ describe("spec tree", () => {
         const artifact = JSON.parse(JSON.stringify(built.artifact("shop.admin")));
 
         expect([built.names, built.current, made.id, built.surface("shop.client").id, made.address, built.surface("shop.client").address, made.compiled.issues, made.compiled.surface.name, made.compiled.surface.role, built.surface("shop.admin") === made]).toEqual([["shop.admin", "shop.client"], "shop.admin", "shop.admin", "shop-client", "https://api.example.test/v1", undefined, [], "web-admin", "admin", true]);
-        expect([built.reach("shop.admin"), built.locate("client", "shop.admin").name, artifact.version, artifact.entry, Object.keys(artifact.surfaces), Object.keys(artifact.surfaces["shop.admin"])]).toEqual([["shop.admin"], "shop.client", spec.version, "shop.admin", ["shop.admin"], ["id", "address", "home", "config", "messages", "brand", "links", "compiled"]]);
+        expect([built.reach("shop.admin"), built.locate("client", "shop.admin").name, artifact.version, artifact.entry, Object.keys(artifact.surfaces), Object.keys(artifact.surfaces["shop.admin"])]).toEqual([["shop.admin"], "shop.client", spec.version, "shop.admin", ["shop.admin"], ["id", "address", "home", "config", "messages", "assets", "places", "links", "compiled"]]);
         expect([artifact.index, built.artifact("shop.admin", false).index.length, built.listed("shop.client").indexable, built.carried("shop.client").id]).toEqual([[{ name: "shop.admin", id: "shop.admin", indexable: true, settings: { locales: made.config.settings.locales, locale: "en", scheme: made.config.settings.scheme, world: [] } }], 1, false, "shop-client"]);
-        expect(spec.build(spec.define({ admin }), part, { url: "https://live.example.test" }).surface("admin").address).toBe("https://live.example.test");
-        expect([reasonOf(() => spec.build(spec.define({ admin }), part, { release: true, url: "http://localhost:8100" }).surface("admin")), reasonOf(() => built.surface("ghost")), reasonOf(() => spec.build({} as never, part)), reasonOf(() => spec.build(spec.define({ admin }), {} as never))]).toEqual(["api.cleartext", "spec.surface", "spec.build", "spec.build"]);
+        const staged = spec.define({ admin: spec.surface({ config: { contracts: { baseUrl: spec.pick({ dev: "http://localhost:8100", release: "https://live.example.test" }) } }, schema: [home] }) });
+        const local = spec.define({ admin: spec.surface({ config: { contracts: { baseUrl: "http://localhost:8100" } }, schema: [home] }) });
+
+        expect([spec.build(staged, part).surface("admin").address, spec.build(staged, part, { release: true }).surface("admin").address]).toEqual(["http://localhost:8100", "https://live.example.test"]);
+        expect([reasonOf(() => spec.build(local, part, { release: true }).surface("admin")), reasonOf(() => built.surface("ghost")), reasonOf(() => spec.build({} as never, part)), reasonOf(() => spec.build(spec.define({ admin }), {} as never))]).toEqual(["api.cleartext", "spec.surface", "spec.build", "spec.build"]);
 
         const picky = spec.build(spec.define({ admin: spec.surface({ config: { features: ["orders", "ghost"] }, schema: [home] }) }), part).surface("admin");
 
@@ -165,7 +177,7 @@ describe("spec tree", () => {
         const { app } = host;
         const screen = app.compiled.byName.home as spec.CompiledScreen;
 
-        expect([host.entry, host.names, host.active.getState(), host.of("shop.admin") === app, app.name, app.id, app.address, app.config.themes.brand, app.config.settings.budget.js, app.links, app.brand.icons]).toEqual(["shop.admin", ["shop.admin"], "shop.admin", true, "shop.admin", "shop.admin", "https://api.example.test/v1", "#ff4500", 0, {}, undefined]);
+        expect([host.entry, host.names, host.active.getState(), host.of("shop.admin") === app, app.name, app.id, app.address, app.config.themes.brand, app.config.settings.budget.js, app.links, app.asset("icons.logo")]).toEqual(["shop.admin", ["shop.admin"], "shop.admin", true, "shop.admin", "shop.admin", "https://api.example.test/v1", "#ff4500", 0, {}, ""]);
         expect([app.text("en", "hello.title"), app.text("ar", "hello.title"), app.text("fr", "nav.menu"), app.text("en", "nav.ghost"), app.labels("ar", "nav"), app.labels("en", "ghost")]).toEqual(["Hello from the shop", "Hello from the shop", "Menu", "nav.ghost", { menu: "القائمة", yes: "Yes" }, {}]);
         expect(app.labels("ar", "nav")).toBe(app.labels("ar", "nav"));
         expect([app.title(screen, "ar"), app.heading(screen, "en"), app.content("name", "ar"), app.content("url", "en"), app.content("ghost", "en"), app.indexing(), app.paths(), app.site("en")?.url, app.meta(screen, "en").canonical, app.screenAt("/")?.screen.name, app.menu("en", "/").map(( item ) => item.name), app.settings("home", "hello")]).toEqual(["الرئيسية", "Home · Shop", "Shop", "https://shop.example.test", "", { indexable: true, url: "https://shop.example.test" }, ["/"], "https://shop.example.test", "https://shop.example.test", "home", ["home"], {}]);

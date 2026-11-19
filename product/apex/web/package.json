@@ -11,8 +11,8 @@
   "dependencies": {
     "engine": "link:engine",
     "next": "16.4.5",
-    "react": "link:react",
-    "react-dom": "link:react-dom"
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
@@ -26,17 +26,14 @@
   },
   "scripts": {
     "lock": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/typescript && pwd)/.bun\" bun install --lockfile-only",
-    "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/typescript && pwd)/.bun\" bun install --frozen-lockfile",
-    "tool": "bun node_modules/engine/src/engine/bin/tool.ts",
-    "compile": "bun run tool compile",
-    "check": "bun run tool check",
-    "lint": "bun run tool lint",
-    "test": "bun run tool test",
-    "build": "bun run tool build",
-    "release": "bun run tool release",
-    "dev": "bun run tool dev",
-    "app": "bun run tool app",
-    "audit": "bun run tool audit",
-    "gate": "bun run deps && bun run tool gate"
+    "deps": "(cd ../../../engine/typescript && bun install --frozen-lockfile && bun run link) && BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/typescript && pwd)/.bun\" bun install --frozen-lockfile",
+    "check": "bun tool.config.ts check",
+    "lint": "bun tool.config.ts lint",
+    "test": "bun tool.config.ts test",
+    "build": "bun tool.config.ts build",
+    "release": "bun tool.config.ts release",
+    "dev": "bun tool.config.ts dev",
+    "audit": "bun tool.config.ts audit",
+    "gate": "bun run deps && bun tool.config.ts gate"
   }
 }

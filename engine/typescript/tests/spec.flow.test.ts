@@ -391,15 +391,15 @@ describe("spec flow", () => {
         expect([wrong("logn"), wrong("account")]).toEqual([[["config.settings.login", "config.login", "login"]], [["config.settings.login", "config.login", ""]]]);
 
     });
-    it("what the environment deploys sits on top of the ladder, is checked like any config, and reaches the app", () => {
+    it("a role's own config is the last rung of the ladder, is checked like any config, and reaches the app", () => {
 
         const keyed = spec.part({ platform: "web", blocks, defaults: { contracts: { maps: { key: "" } } } });
         const shop = spec.define({ shop: spec.surface({ config: { contracts: { maps: { key: "from-the-spec" }, media: ["https://maps.example.test/tiles"] } }, schema: [spec.screen("home", { path: "/" })] }) });
-        const built = spec.build(shop, keyed, { config: { contracts: { maps: { key: "from-the-environment" } } } });
-        const wrong = spec.build(shop, keyed, { config: { contracts: { mapz: { key: "x" } }, settings: { scheme: 7 } } }).surface("shop");
+        const built = spec.build(shop, keyed);
+        const wrong = spec.build(spec.define({ shop: spec.surface({ config: { contracts: { mapz: { key: "x" } }, settings: { scheme: 7 } }, schema: [spec.screen("home", { path: "/" })] }) }), keyed).surface("shop");
         const { app } = spec.boot<{ contracts: { maps: { key: string } } }>(built.artifact("shop"), { sinks: [] });
 
-        expect([built.surface("shop").compiled.issues, app.config.contracts.maps.key, app.config.contracts.media, spec.build(shop, keyed).surface("shop").config.contracts.maps.key]).toEqual([[], "from-the-environment", ["https://maps.example.test/tiles"], "from-the-spec"]);
+        expect([built.surface("shop").compiled.issues, app.config.contracts.maps.key, app.config.contracts.media, spec.build(shop, keyed).surface("shop").config.contracts.maps.key]).toEqual([[], "from-the-spec", ["https://maps.example.test/tiles"], "from-the-spec"]);
         expect(wrong.compiled.issues.map(( issue ) => [issue.path, issue.rule, issue.near])).toEqual([["config.contracts.mapz", "config.unknown", "maps"], ["config.settings.scheme", "config.shape", undefined]]);
 
     });

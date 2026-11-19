@@ -24,7 +24,7 @@ core:fs:dir:new () {
 
     mkdir -m "${mode}" -- "${directory}" 2>/dev/null && return 0
 
-    if ! { mkdir -p -- "${directory}" && chmod "${mode}" -- "${directory}"; }; then
+    if ! { mkdir -p -- "${directory}" && chmod -- "${mode}" "${directory}"; }; then
         core:error:fail "Cannot create directory: ${directory}"
         return
     fi
@@ -88,7 +88,7 @@ core:fs:file:write () {
         return
 
     fi
-    if ! { chmod "${mode}" -- "${staging}" && mv -f -- "${staging}" "${path}"; }; then
+    if ! { chmod -- "${mode}" "${staging}" && mv -f -- "${staging}" "${path}"; }; then
 
         rm -f -- "${staging}"
         core:error:fail "Write failed: ${path}"

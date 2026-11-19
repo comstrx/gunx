@@ -25,6 +25,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["index.ts", "app.config.ts", "src", "specs", "tool.config.ts", "tests"],
+  "include": ["index.ts", "app.config.ts", "src", "specs", "tool.ts", "tests"],
   "exclude": ["node_modules", "dist", ".expo"]
 }

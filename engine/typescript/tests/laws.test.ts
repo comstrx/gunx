@@ -46,7 +46,7 @@ function sources ( member: string ): [string, string][] {
 
     const folder = resolve(source, member, "src");
 
-    return readdirSync(folder).filter(( name ) => /\.tsx?$/.test(name)).map(( name ) => [name, readFileSync(resolve(folder, name), "utf8")]);
+    return readdirSync(folder, { recursive: true, encoding: "utf8" }).filter(( name ) => /\.tsx?$/.test(name)).map(( name ) => [name, readFileSync(resolve(folder, name), "utf8")]);
 
 }
 function files ( member: string ): string[] {

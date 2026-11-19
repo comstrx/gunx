@@ -8,6 +8,7 @@ from engine.exception import exception
 from engine.fs import file
 from engine.json import json
 from engine.http import Action, Answer, App, Channel, Form, Group, Layer, Limits, Next, Request, Response, Route, Router, Throttle
+from engine.rand import rand
 from engine.socket import Sockets
 from engine.test import stage
 from engine.translate import translate
@@ -920,7 +921,7 @@ async def test_optional_typed_queries_and_mixed_shape_routes () -> None:
 
             assert (await reply.json())["data"] == { "page": 1, "enabled": False, "mode": "safe", "order": "asc", "key": None }
 
-        key = "c4960ac0-9b1e-4bdb-862d-88dc571066b9"
+        key = str(rand.uuid())
 
         async with http.get(f"{url}/query?page=7&enabled=yes&mode=fast&order=desc&key={key}") as reply:
 

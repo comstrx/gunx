@@ -1,5 +1,4 @@
 import * as api from "engine/api";
-import type * as spec from "engine/spec";
 import * as validate from "engine/validate";
 
 export const tones = ["plain", "warm", "formal"] as const;
@@ -10,13 +9,6 @@ export const transport = api.feature("hello", {
     me: api.get("/api/hello/me", validate.object({}), greeting, { auth: true }),
     someone: api.get("/api/hello/{name}", validate.object({ name: validate.string().check(validate.minLength(1), validate.maxLength(40)) }), greeting, { auth: false }),
 });
-export const manifest: spec.Manifest = {
-    name: "hello",
-    settings: validate.strictObject({ tone: validate.optional(validate.enum(tones)) }),
-    ports: { greeting: { kind: "one", required: false } },
-    actions: ["refresh"],
-    emits: ["hello.greeted"],
-};
 
 export type Tone = (typeof tones)[number];
 export type Greeting = validate.infer<typeof greeting>;

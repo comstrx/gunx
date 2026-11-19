@@ -1,56 +1,65 @@
-# engine/rust
+# Rust engine
 
-An extended standard library over every Rust dependency: one engineering language for every Rust `api` above it and for the binaries of the tools. It grows from what proved itself in the products and, by decision, from domains proven in another engine.
+## Contract
 
-## Layout
+A general-purpose Rust engine for demanding production systems. Develop comprehensive reusable capabilities, precise logic and a powerful predictable DSL with the highest practical speed, safety and memory efficiency. Express contracts through idiomatic ownership, types and bounded lifecycles.
 
-```
-engine/rust/
-├── Cargo.toml            the workspace: members, [workspace.package] (the one version, edition, rust-version), [workspace.dependencies] (every pin)
-├── src/<name>/           package engine-<name>: version.workspace = true, every dependency { workspace = true }; flat files: arch.rs, <concern>.rs, mod.rs
-├── src/engine/           the facade: one pub mod per domain re-exporting named items, one feature per domain (no default: a consumer names its domains), a prelude, Contract
-├── target/  Cargo.lock    the one artifact and the one lock of the workspace
-├── tests/ benches/ fuzz/ one declared target per crate (<crate>.rs)
-├── xtask/                a task runner the gate never calls: the gate is the infra chain
-└── clippy.toml deny.toml .cargo/config.toml .config/nextest.toml supply-chain/ (cargo-vet)
-```
+## Structure
 
-## Laws
+- `engine/rust/Cargo.toml` owns the Cargo workspace resolver, edition, package metadata, lints, profiles and dependency versions; `Cargo.lock` resolves it.
+- Workspace membership covers domain crates, the facade and the relevant tests, benches, fuzz and development support.
+- A domain lives under `src/<name>` and imports only lower-level contracts. Its flat source places types, traits and constants in arch.rs, implementation in concern files and named exports in the target root. It never depends on the facade.
+- The facade depends only on domain crates, with one named opt-in feature/module per domain, no default feature and named re-exports. Preserve centralized profiles, metadata inheritance and dependency-default-feature policy.
 
-- **Workspace** (test): one version in `[workspace.package]`, one pin per library in `[workspace.dependencies]`; a crate's manifest carries no number and names only the crates and libraries it imports; the facade depends on every crate and nothing else, one feature per domain, no default feature (`deny.toml` refuses workspace default features).
-- **Fault:** `error::Fault` (code, reason, message, errors); one error model, one lifecycle, one shape for every crate.
-- **Layers:** `log` is the floor, `error` above it, then values and mechanics, then io, data, messaging, http, providers; the facade over all.
-- **Registry discipline:** a part's `Cargo.lock` holds only versions present in the engine's vetted lock; a part never adds a registry crate without the owner's written order (`criterion` dev excepted); the default answer is to teach the engine.
-- **Visibility:** `pub` only for the real contract, `pub(crate)` inside a crate; `cargo semver-checks` against the newest `v*` tag refuses a breaking change without a major bump.
-- **Cross-platform:** no code assumes one system; the gate runs on Linux and a platform limit is handled in its chain.
-- **Stage:** `engine-test` carries the reference application, provisioning, clients, sockets, samples, relay and bench.
+## Rules
 
-## Domains
+### Capability and ownership
 
-| Layer     | Domains                                                                               |
-| --------- | ------------------------------------------------------------------------------------- |
-| floor     | `log error context fast`                                                              |
-| values    | `json parse string number list date rand`                                             |
-| mechanics | `func task config validate crypto token adapter`                                      |
-| io        | `fs net storage asset view cache`                                                     |
-| data      | `database` (pool, migrations DSL, query, outbox, documents, RLS, provisioning)        |
-| messaging | `broker queue event schedule socket broadcast`                                        |
-| http      | `http` (server, router, binder, one response, envelope, throttle, trace) `health cli` |
-| providers | `mail sms gateway domain llm rag`                                                     |
-| proof     | `test`                                                                                |
+- Start with a consumer need, clear behavior and a representative workload. Preserve wire compatibility where consumers depend on it; choose the representation that best satisfies Rust ownership and performance requirements.
+- Specify semantics, ownership, cancellation, retries, limits, fault behavior and recovery before choosing types. Use Rust ownership and bounded execution to express the contract.
+- Implement the smallest useful domain first. Grow the ladder as consumers prove needs. Keep independent evolution and review each public addition.
+- Expose one named contract per responsibility; apply the language's ownership and representation knowledge to its internal design.
+- Keep provider, transport and runtime details behind the domain. Introduce an adapter family when there is a real provider boundary and capability distinction.
+- Preserve the approved log → error foundation and reuse error::Fault through its declared contract. Extend the responsibility ladder from actual needs without giving each domain a new error vocabulary.
+- A product migration requires that product’s feature, wire, data, recovery and capacity proofs, and a deliberate rollout decision.
 
-Every domain is a crate (today: `hello`, the proof verb); the ladder is this engine's own.
+### Dependencies and integration
 
-## Gate
+- Keep exact external version constraints and selected features centralized; use inherited dependency declarations in members and review every transitive graph change.
+- Apply root architecture's dependency policy; the language owns toolchain selection and any instrumentation-only nightly requirement.
+- Review deny rules, vetted provenance, licenses, unsafe, build scripts and target support. A part lock uses vetted engine-lock versions; adding a registry crate to a part needs the owner's explicit decision, preserving the existing criterion development exception.
+- Give an HTTP proposal one owner, choose the supported protocol and runtime features, and budget memory and shutdown by deployment. Hyper supplies transport, with engine semantics layered above it.
+- Preserve workspace unsafe guards. Any approved exception needs its own narrow boundary, review and proof; protect checked input handling under the active release profile.
+- Expose only the real contract with pub; keep crate-internal items pub(crate). Preserve the established public-surface compatibility gate against the latest version tag; breaking changes require their deliberate major-version decision.
+- Keep empty/default feature sets, individually selected domains and combined features coherent. A feature may add supported capabilities while leaving other behavior stable.
 
-`infra gate --part rust` = deps · check (+ hack feature powerset) · lint (clippy, rustdoc) · test (nextest, doc tests) · safety (udeps, miri, asan) · audit (deny, vet, semver); `bench` and `fuzz` by name. Parts run plain clippy and test with the same `clippy.toml`.
+### Evidence and integration order
 
-## How to add
+- Define production baseline and target before building. Benchmark observed operations and service scenarios under the same load, error mix and payload distribution.
+- Use safe scalar implementations and test data for differential proof before specialized native, SIMD or unsafe paths.
+- Prove a new provider against its exact wire or real service and test interruption, explicit unavailability, cancellation and clean recovery.
+- Keep domain DAG, public names, independent consumers and the part lock checked. Introduce an independent stage when a domain needs real service or end-to-end proof.
+- Record portability gaps in evidence. Observed behavior on one host does not establish target support elsewhere.
 
-- **A verb:** in its crate, defined in `arch.rs`, implemented in its concern file, re-exported by the facade by name, pinned in `tests/<crate>.rs`, benched when hot.
-- **A crate:** `src/<name>` as `engine-<name>`, its place in the layer order, a `pub mod` in the facade, a test target, a bench target, a fuzz target; the wall refuses anything less.
-- **A provider:** an adapter behind its family's DSL with declared capabilities, a memory or log implementation for tests, the real one proven against the service or its exact wire.
+### Independent and portable consumption
 
-## Direction
+- Verify extracted crates through their declared package contents and dependency closure. Workspace inheritance or local paths must not conceal missing published files or unusable dependencies.
+- Test relevant default/minimal/combined feature sets: workspace feature unification can hide a dependency that an isolated consumer lacks.
+- Keep target adapters and optional native dependencies owned by their domains. Linux/macOS/Windows consumers receive the same semantic contract or an explicit capability refusal.
+- Account for code size, compile time and dependency closure alongside runtime measurements when adding generic or feature-heavy public APIs.
 
-The fastest, broadest and easiest engine in the world, with a std DSL that lets systems above it write a tenth of their code: memory (arenas, pools, buffer reuse), SIMD parsing and search, fs, process, net, http and websockets, database and transactions, cache and brokers, crypto, observability, concurrency and backpressure, all behind one grammar; argon2id, token pairs with fingerprints, sealed values with rotation and tenant isolation by RLS as the security law lands domain by domain. Every measurement is reproducible on a stated machine; TLS and every security surface arrive when a product needs them, never before. The day it is production-ready, the house product's `api` moves to it and `apix` becomes Rust. The gate grows to macOS and Windows beside Linux.
+## Proof
+
+- Cover workspace, public surface, selected feature combinations, independent domain consumption and supported targets.
+- Keep behavioral tests, measurements and failure exploration with each domain; compare optimized paths against a simple correct reference.
+- Exercise ownership, aliasing, cancellation, interruption, bounded resource use and clean recovery.
+- Distinguish instrumentation from clean performance measurements and source inspection from executed behavior. Methods follow the scope and owner timing.
+
+## Sources
+
+- Repository evidence lives in `engine/rust/Cargo.toml`, `engine/rust/src/engine/src/lib.rs`.
+- [Cargo workspaces](https://doc.rust-lang.org/cargo/reference/workspaces.html) · [Cargo features](https://doc.rust-lang.org/cargo/reference/features.html) · [Rust releases](https://doc.rust-lang.org/stable/releases.html)
+
+## Routing
+
+For HTTP transport or serving, read the [library dispatcher](../../lib/index.md) with Hyper and the actual runtime context. For Tokio task/runtime work, select Tokio there. With no external library in scope, read the [language dispatcher](../../lang/index.md) with Rust selected. Return here for workspace ownership and inspect the affected manifests, facade and proofs.

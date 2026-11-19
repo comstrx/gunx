@@ -300,10 +300,28 @@ module:extract:needs () {
 }
 module:extract:order () {
 
-    local name="" need="" ready=0 moved=1
+    local name="" need="" kind="" ready=0 moved=1
     local -a waiting=() later=() order=()
 
-    mapfile -t waiting < <(config:targets:list)
+    for kind in "${EXTRACT_KINDS[@]}"; do
+
+        while IFS= read -r name; do
+            [[ "$(config:targets:get "${name}" type)" != "${kind}" ]] || waiting+=( "${name}" )
+        done < <(config:targets:list)
+
+        moved=1
+
+        module:extract:rank || return
+
+    done
+
+    @print "${order[@]}"
+
+}
+module:extract:rank () {
+
+    local name="" need="" ready=0 moved=1
+    local -a later=()
 
     while (( ${#waiting[@]} > 0 && moved == 1 )); do
 
@@ -315,7 +333,7 @@ module:extract:order () {
             ready=1
 
             while IFS= read -r need; do
-                [[ -z "${need}" ]] || core:list:has "${need}" "${order[@]}" || ready=0
+                [[ -z "${need}" ]] || ! core:list:has "${need}" "${waiting[@]}" || core:list:has "${need}" "${order[@]}" || ready=0
             done < <(module:extract:needs "${name}")
 
             if (( ready == 1 )); then order+=( "${name}" ); moved=1
@@ -329,8 +347,6 @@ module:extract:order () {
     done
 
     (( ${#waiting[@]} == 0 )) || { @err "[deps] depend on each other in a circle: ${waiting[*]}"; return; }
-
-    @print "${order[@]}"
 
 }
 module:extract:keep () {

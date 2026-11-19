@@ -137,6 +137,7 @@ titel = "titel"
 vor = "vor"
 
 [default.extend-words]
+wrk = "wrk"
 brin = "brin"
 certifi = "certifi"
 fo = "fo"

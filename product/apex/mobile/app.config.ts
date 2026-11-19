@@ -7,12 +7,12 @@ type Artifact = { entry: string; surfaces: Readonly<Record<string, Carried>> };
 
 const path = resolve(__dirname, ".cache/spec/current.json");
 
-if ( !existsSync(path) ) throw new Error("compile the spec first: bun run tool compile");
+if ( !existsSync(path) ) throw new Error("compile the spec first: bun tool.ts compile");
 
 const artifact = JSON.parse(readFileSync(path, "utf8")) as Artifact;
 const entry = artifact.surfaces[artifact.entry];
 
-if ( entry === undefined ) throw new Error("the spec artifact carries no entry surface: bun run tool compile");
+if ( entry === undefined ) throw new Error("the spec artifact carries no entry surface: bun tool.ts compile");
 
 const { app, locale } = entry.config.settings;
 const heard = "The microphone is used only while you record.";

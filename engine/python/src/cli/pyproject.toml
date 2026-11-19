@@ -2,12 +2,7 @@
 name = "engine-cli"
 description = "Command lines: groups, arguments, flags, examples and the manual"
 dynamic = ["version", "requires-python", "license"]
-dependencies = [
-    "engine-error",
-    "engine-log",
-    "engine-parse",
-    "engine-string",
-]
+dependencies = ["engine-error", "engine-log", "engine-parse", "engine-string"]
 
 [build-system]
 requires = ["hatchling", "tomli-w"]

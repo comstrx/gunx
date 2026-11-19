@@ -5,16 +5,18 @@ import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as spec from "engine-spec";
 import * as translate from "engine-translate";
-import type { Act, Context, CopyOptions, Defined, Each, Env, Flagged, Joined, Needs, Option, Outcome, Planned, Played, Project, Scope, Step, Steps, Tasks, Vars, View } from "./arch.ts";
-import { counted, worded, writeJson, writeText } from "./core.ts";
+import type { Act, Context, CopyOptions, Defined, Each, Env, Flagged, Joined, Needs, Option, Outcome, Paths, Placement, Placing, Planned, Played, Project, Scope, Step, Steps, Target, Targeted, Tasks, Vars, View } from "./arch.ts";
+import { counted, readJson, worded, writeJson, writeText } from "./core.ts";
 
 const projects = new WeakSet<object>();
 const nodes = new WeakSet<object>();
 const named = /^[a-z][\w:-]{0,63}$/i;
+const placeholder = /\{([\w-]+)\}/g;
+const platforms: readonly spec.Platform[] = ["web", "mobile", "desktop"];
 const variable = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const lowered = /^[a-z][a-z0-9-]*$/;
-const parts: readonly string[] = ["specs", "part", "tasks", "deploy"];
-const config = "tool.config.ts";
+const parts: readonly string[] = ["specs", "part", "seeds", "assets", "paths", "steps", "tasks"];
+const config = "tool.ts";
 
 function isStep ( value: unknown ): value is Step {
 
@@ -31,6 +33,11 @@ function isEnv ( value: unknown ): value is Env {
     return typeof value === "object" && value !== null && nodes.has(value) && "env" in value;
 
 }
+function isTarget ( value: unknown ): value is Targeted {
+
+    return typeof value === "object" && value !== null && nodes.has(value) && "target" in value;
+
+}
 function isOption ( value: unknown ): value is Option {
 
     return typeof value === "object" && value !== null && nodes.has(value) && "option" in value;
@@ -38,7 +45,7 @@ function isOption ( value: unknown ): value is Option {
 }
 function isSteps ( value: unknown ): value is Steps {
 
-    if ( typeof value === "string" || typeof value === "function" || isStep(value) || isEach(value) || isEnv(value) || isOption(value) ) return true;
+    if ( typeof value === "string" || typeof value === "function" || isStep(value) || isEach(value) || isEnv(value) || isTarget(value) || isOption(value) ) return true;
 
     return Array.isArray(value) && value.every(isSteps);
 
@@ -75,6 +82,7 @@ function copied ( from: string, to: string, options: CopyOptions ): number {
 
     const held = statSync(from, { throwIfNoEntry: false });
 
+    if ( held === undefined && options.optional === true ) return 0;
     if ( held === undefined ) throw exception.fault("not_found", "tool.copy", { message: `${from}: nothing to copy` });
 
     if ( held.isFile() ) return copiedFile(from, to) ? 1 : 0;
@@ -85,30 +93,96 @@ function copied ( from: string, to: string, options: CopyOptions ): number {
     return sources.filter(( source ) => copiedFile(source, join(to, relative(from, source)))).length;
 
 }
-function staged ( project: Project<never>, env: Vars ): spec.Deploy {
-
-    return { url: env.API_URL, release: env.ENGINE_ENV === "production", config: project.deploy?.(env) };
-
-}
 function buildOf ( project: Project<never>, context: Context ): spec.Build | undefined {
 
     if ( project.specs === undefined || project.part === undefined ) return undefined;
 
-    context.held.build ??= spec.build(project.specs, project.part, staged(project, context.env));
+    context.held.build ??= spec.build(project.specs, project.part, { release: context.target.release === true, platform: context.target.platform, seeds: project.seeds, served: project.assets?.url, places: project.assets?.urls });
 
     return context.held.build;
 
 }
-function shown ( text: string, role: string | undefined ): string {
+function shown ( text: string, role: string | undefined, paths: Paths = {} ): string {
 
-    return role === undefined ? text : text.replaceAll("{role}", role);
+    const placed = text.replace(placeholder, ( whole, name: string ) => (Object.hasOwn(paths, name) ? paths[name] ?? whole : whole));
+
+    return role === undefined ? placed : placed.replaceAll("{role}", role);
 
 }
-function expanded ( text: string, role: string | undefined ): string {
+function expanded ( text: string, role: string | undefined, paths: Paths ): string {
 
-    if ( role === undefined && text.includes("{role}") ) throw exception.fault("internal", "tool.path", { message: `${text}: {role} names a role, so the project needs specs` });
+    const placed = shown(text, undefined, paths);
 
-    return shown(text, role);
+    if ( role === undefined && placed.includes("{role}") ) throw exception.fault("internal", "tool.path", { message: `${text}: {role} names a role, so the project needs specs` });
+
+    return shown(placed, role);
+
+}
+function settled ( paths: Paths ): Paths {
+
+    const out: Record<string, string> = { ...paths };
+
+    for ( let round = 0; round < 8; round += 1 ) {
+
+        let moved = false;
+
+        for ( const [name, path] of Object.entries(out) ) {
+
+            const next = shown(path, undefined, out);
+
+            if ( next !== path ) {
+
+                out[name] = next;
+                moved = true;
+
+            }
+
+        }
+
+        if ( !moved ) break;
+
+    }
+
+    const ring = Object.entries(out).find(([, path]) => Object.keys(out).some(( name ) => path.includes(`{${name}}`)));
+
+    if ( ring === undefined ) return Object.freeze(out);
+
+    throw exception.fault("internal", "tool.project", { message: "paths name each other in a ring; a path may use another, never itself" });
+
+}
+function served ( root: string, path: string ): string {
+
+    const inside = relative(root, path).split(sep).join("/");
+
+    if ( inside === ".." || inside.startsWith("../") || isAbsolute(inside) ) throw exception.fault("internal", "tool.project", { message: `${path}: a served place lives inside ${root}` });
+
+    return `/${inside}`;
+
+}
+function placed ( given: Placing, paths: Paths ): Placement {
+
+    const root = shown(given.root, undefined, paths);
+    const into = shown(given.into, undefined, paths);
+    const entry = Object.fromEntries(Object.entries(given.entry ?? {}).map(([kind, path]) => [kind, shown(path, undefined, paths)]));
+    const places = Object.fromEntries(Object.entries(given.places ?? {}).map(([name, path]) => [name, shown(path, undefined, paths)]));
+
+    return Object.freeze({ root, into, url: served(root, into), entry: Object.freeze(entry), places: Object.freeze(places), urls: Object.freeze(Object.fromEntries(Object.entries(places).map(([name, path]) => [name, served(root, path)]))) });
+
+}
+function aliasOf ( root: string, alias: string ): string {
+
+    const config = readJson<{ compilerOptions?: { paths?: Record<string, unknown> } }>(join(root, "tsconfig.json"));
+    const mapped = config?.compilerOptions?.paths?.[alias];
+    const target = Array.isArray(mapped) && typeof mapped[0] === "string" ? mapped[0] : undefined;
+
+    if ( target === undefined ) throw exception.fault("not_found", "tool.alias", { message: `${alias}: tsconfig.json maps no path to it; add "paths": { "${alias}": ["./..."] }` });
+
+    return target;
+
+}
+function stepsOf ( project: Project<never>, name: string ): Steps<never> | undefined {
+
+    return Object.hasOwn(project.tasks, name) ? project.tasks[name] : Object.hasOwn(project.steps, name) ? project.steps[name] : undefined;
 
 }
 function located ( specs: spec.Spec, written: string, reason: string ): string {
@@ -124,7 +198,7 @@ function offered ( value: Steps<never>, into: Set<string> ): Set<string> {
 
     if ( Array.isArray(value) ) for ( const one of value ) offered(one as Steps<never>, into);
     if ( isEach(value) ) offered(value.each as Steps<never>, into);
-    if ( isEnv(value) ) offered(value.steps as Steps<never>, into);
+    if ( isEnv(value) || isTarget(value) ) offered(value.steps as Steps<never>, into);
 
     if ( isOption(value) ) {
 
@@ -141,7 +215,7 @@ function opted ( project: Project<never>, argv: readonly string[] ): ReadonlySet
 
     const known = new Set<string>();
 
-    for ( const steps of Object.values(project.tasks) ) offered(steps, known);
+    for ( const steps of [...Object.values(project.tasks), ...Object.values(project.steps)] ) offered(steps, known);
 
     const asked = argv.filter(( word ) => word.startsWith("--") && word !== "--all").map(( word ) => word.slice(2));
     const stray = known.size === 0 ? undefined : asked.find(( word ) => !known.has(word));
@@ -193,7 +267,7 @@ function viewOf ( build: spec.Build, name: string, views: Map<string, View> ): V
     if ( lost ) throw exception.fault("validation", "tool.specs", { message: `${lost.name}: ${counted(lost.compiled.issues.length, "problem")} in a spec ${name} transfers to; the specs step shows them` });
 
     const reach = { names: reached.map(( one ) => one.name), addresses: [...new Set(reached.flatMap(( one ) => (one.address === undefined ? [] : [one.address])))], world: [...new Set(reached.flatMap(( one ) => one.config.settings.world))], surfaces: reached.map(( one ) => ({ name: one.name, id: one.id, settings: one.config.settings, themes: one.config.themes, media: one.config.contracts.media.flatMap(( address ) => (URL.canParse(address) ? [new URL(address).origin] : [])) })) };
-    const view: View = { ...built.compiled, name, id: built.id, address: built.address, config: built.config, settings: built.config.settings, themes: built.config.themes, locale, dir: translate.direction(locale), index: reached.map(( one ) => build.listed(one.name)), reach };
+    const view: View = { ...built.compiled, name, id: built.id, address: built.address, config: built.config, settings: built.config.settings, themes: built.config.themes, locale, dir: translate.direction(locale), places: built.places, index: reached.map(( one ) => build.listed(one.name)), reach };
 
     views.set(name, view);
 
@@ -202,8 +276,8 @@ function viewOf ( build: spec.Build, name: string, views: Map<string, View> ): V
 }
 
 export function define<D extends object> ( project: Defined<D> ): Project<View<D>>;
-export function define ( project: { tasks: Tasks<undefined> } ): Project<undefined>;
-export function define ( project: { specs?: unknown; part?: unknown; tasks: unknown; deploy?: unknown } ): Project<never> {
+export function define ( project: { tasks: Tasks<undefined>; steps?: Tasks<undefined> | undefined; paths?: Paths | undefined } ): Project<undefined>;
+export function define ( project: { specs?: unknown; part?: unknown; seeds?: unknown; assets?: unknown; tasks: unknown; steps?: unknown; paths?: unknown } ): Project<never> {
 
     if ( !json.isRecord(project) ) throw exception.fault("internal", "tool.project", { message: "a project is { tasks } or { specs, part, tasks }" });
 
@@ -220,13 +294,28 @@ export function define ( project: { specs?: unknown; part?: unknown; tasks: unkn
 
     }
 
-    const { specs, part, deploy } = project;
+    const { specs, part, seeds, assets, steps = {}, paths = {} } = project;
 
-    if ( deploy !== undefined && (typeof deploy !== "function" || specs === undefined) ) throw exception.fault("internal", "tool.project", { message: "deploy is a function of the environment that answers config for the specs, such as ( env ) => ({ contracts: { maps: { key: env.MAPS_KEY ?? \"\" } } })" });
+    if ( !json.isRecord(steps) ) throw exception.fault("internal", "tool.project", { message: "steps are an object of named step lists the tasks call by name, such as { site: [...] }" });
+
+    for ( const [name, held] of Object.entries(steps) ) {
+
+        if ( !named.test(name) || Object.hasOwn(tasks, name) ) throw exception.fault("internal", "tool.project", { message: `${name}: a steps name is a word that no task already carries` });
+        if ( !isSteps(held) ) throw exception.fault("internal", "tool.project", { message: `${name}: a steps entry is a step, a function, each, env, a name or a list of them` });
+
+    }
+
+    if ( !json.isRecord(paths) || !Object.entries(paths).every(([name, path]) => named.test(name) && name !== "role" && typeof path === "string" && path !== "") ) throw exception.fault("internal", "tool.project", { message: "paths name places once, such as { out: \"out\", dist: \"dist/{role}\" }; a step writes {dist}" });
+
 
     if ( (specs !== undefined || part !== undefined) && (!spec.isSpec(specs) || !spec.isPart(part)) ) throw exception.fault("internal", "tool.project", { message: "specs and part come together: specs is spec.define({ ...surfaces }) and part is spec.part({ platform, ... })" });
 
-    const made: Project<never> = Object.freeze({ tasks: Object.freeze({ ...tasks }) as Tasks<never>, specs: specs as spec.Spec | undefined, part: part as spec.Part | undefined, deploy: deploy as Project<never>["deploy"] });
+    if ( seeds !== undefined && (!json.isRecord(seeds) || specs === undefined) ) throw exception.fault("internal", "tool.project", { message: "seeds are the part's own messages and assets, such as { messages, assets }, beside its specs" });
+    if ( assets !== undefined && (!json.isRecord(assets) || typeof assets.root !== "string" || typeof assets.into !== "string" || (assets.entry !== undefined && !json.isRecord(assets.entry)) || (assets.places !== undefined && !json.isRecord(assets.places))) ) throw exception.fault("internal", "tool.project", { message: "assets say which folder is served at / and where the surfaces' files go: { root, into, entry?, places? }" });
+
+    const resolved = settled(paths as Paths);
+    const placing = assets === undefined ? undefined : placed(assets as Placing, resolved);
+    const made: Project<never> = Object.freeze({ tasks: Object.freeze({ ...tasks }) as Tasks<never>, steps: Object.freeze({ ...steps }) as Tasks<never>, paths: resolved, specs: specs as spec.Spec | undefined, part: part as spec.Part | undefined, seeds: seeds as spec.Seeds | undefined, assets: placing });
 
     projects.add(made);
 
@@ -269,6 +358,18 @@ export function env<S extends Steps<never>> ( vars: Vars, steps: S ): Env<Joined
     return made;
 
 }
+export function target<S extends Steps<never>> ( given: Target, steps: S ): Targeted<Joined<Needs<S>>> {
+
+    if ( !json.isRecord(given) || Object.keys(given).length === 0 || !Object.keys(given).every(( key ) => key === "release" || key === "platform") || (given.release !== undefined && typeof given.release !== "boolean") || (given.platform !== undefined && !platforms.includes(given.platform)) ) throw exception.fault("internal", "tool.target", { message: `target names what a build is for: { release: true } or { platform: ${platforms.join(" | ")} }` });
+    if ( !isSteps(steps) ) throw exception.fault("internal", "tool.target", { message: "target plays steps for what it names" });
+
+    const made = Object.freeze({ target: Object.freeze({ ...given }), steps }) as Targeted<Joined<Needs<S>>>;
+
+    nodes.add(made);
+
+    return made;
+
+}
 export function option<S extends Steps<never>, O extends Steps<never> = readonly []> ( name: string, on: S, off?: O ): Option<Joined<Needs<S> | Needs<O>>> {
 
     if ( typeof name !== "string" || !lowered.test(name) || name === "all" || name === "role" || name === "plan" || name === "config" ) throw exception.fault("internal", "tool.option", { message: "an option is a lowercase word the command line may carry, such as desk for --desk" });
@@ -295,10 +396,12 @@ export async function play ( project: Project<never>, names: readonly string[], 
 
     const scopeOf = ( task: string, name: string, said: string[], context: Context ): Scope<never> => {
 
-        const expand = ( text: string ): string => expanded(text, context.role);
+        const expand = ( text: string ): string => expanded(text, context.role, project.paths);
         const at = ( path: string ): string => {
 
             const text = expand(path);
+
+            if ( text.startsWith("#") ) return resolve(root, aliasOf(root, text));
 
             return isAbsolute(text) ? text : resolve(root, text);
 
@@ -318,6 +421,7 @@ export async function play ( project: Project<never>, names: readonly string[], 
             root,
             argv,
             env: context.env,
+            placing: project.assets,
             get build (): spec.Build | undefined {
 
                 return buildOf(project, context);
@@ -374,9 +478,9 @@ export async function play ( project: Project<never>, names: readonly string[], 
 
         if ( typeof value === "string" ) {
 
-            const found = project.tasks[value];
+            const found = stepsOf(project, value);
 
-            if ( found === undefined ) throw exception.fault("not_found", "tool.task", { message: `${task}: no task named ${value}` });
+            if ( found === undefined ) throw exception.fault("not_found", "tool.task", { message: `${task}: no task or steps named ${value}` });
             if ( trail.includes(value) ) throw exception.fault("conflict", "tool.task", { message: `a task cycle: ${[...trail, value].join(" → ")}` });
 
             return perform(found, value, [...trail, value], context);
@@ -401,6 +505,8 @@ export async function play ( project: Project<never>, names: readonly string[], 
 
         if ( isOption(value) ) return perform((carried.has(value.option) ? value.on : value.off) as Steps<never>, task, trail, context);
 
+        if ( isTarget(value) ) return perform(value.steps, task, trail, { role: context.role, env: context.env, target: { ...context.target, ...value.target }, held: { build: undefined, views: new Map() } });
+
         if ( isEnv(value) ) {
 
             const saved = Object.fromEntries(Object.keys(value.env).map(( name ) => [name, process.env[name]]));
@@ -419,7 +525,7 @@ export async function play ( project: Project<never>, names: readonly string[], 
 
             try {
 
-                return await perform(value.steps, task, trail, { role: context.role, env: { ...context.env, ...value.env }, held: { build: undefined, views: new Map() } });
+                return await perform(value.steps, task, trail, { role: context.role, env: { ...context.env, ...value.env }, target: context.target, held: { build: undefined, views: new Map() } });
 
             } finally {
 
@@ -430,7 +536,7 @@ export async function play ( project: Project<never>, names: readonly string[], 
         }
 
         const current = typeof value === "function" ? { name: value.name || "step", act: value } : value as Step<never>;
-        const name = shown(current.name, context.role);
+        const name = shown(current.name, context.role, project.paths);
         const said: string[] = [];
         const before = flagged.length;
 
@@ -469,7 +575,7 @@ export async function play ( project: Project<never>, names: readonly string[], 
         return true;
 
     };
-    const start: Context = { role: asked ?? specs?.current, env: { ...process.env, ...(given.env ?? {}) }, held: { build: undefined, views: new Map() } };
+    const start: Context = { role: asked ?? specs?.current, env: { ...process.env, ...(given.env ?? {}) }, target: {}, held: { build: undefined, views: new Map() } };
 
     for ( const name of names ) {
 
@@ -495,9 +601,9 @@ export function plan ( project: Project<never>, names: readonly string[], given:
 
         if ( typeof value === "string" ) {
 
-            const found = project.tasks[value];
+            const found = stepsOf(project, value);
 
-            if ( found === undefined ) throw exception.fault("not_found", "tool.task", { message: `${trail.at(-1) ?? value}: no task named ${value}` });
+            if ( found === undefined ) throw exception.fault("not_found", "tool.task", { message: `${trail.at(-1) ?? value}: no task or steps named ${value}` });
             if ( trail.includes(value) ) throw exception.fault("conflict", "tool.task", { message: `a task cycle: ${[...trail, value].join(" → ")}` });
 
             lines.push(`${pad}${value}`);
@@ -537,6 +643,15 @@ export function plan ( project: Project<never>, names: readonly string[], given:
 
         }
 
+        if ( isTarget(value) ) {
+
+            lines.push(`${pad}target ${Object.entries(value.target).map(([name, text]) => `${name}=${String(text)}`).join(" ")}`);
+            draw(value.steps, trail, role, depth + 1);
+
+            return;
+
+        }
+
         if ( isEnv(value) ) {
 
             lines.push(`${pad}env ${Object.entries(value.env).map(([name, text]) => (text === undefined ? `-${name}` : `${name}=${text}`)).join(" ")}`);
@@ -547,7 +662,7 @@ export function plan ( project: Project<never>, names: readonly string[], given:
         }
 
         steps += 1;
-        lines.push(`${pad}${shown(typeof value === "function" ? value.name || "step" : (value as Step<never>).name, role)}`);
+        lines.push(`${pad}${shown(typeof value === "function" ? value.name || "step" : (value as Step<never>).name, role, project.paths)}`);
 
     };
 
@@ -566,10 +681,9 @@ export function plan ( project: Project<never>, names: readonly string[], given:
 export async function main ( argv: readonly string[], cwd: string = process.cwd() ): Promise<number> {
 
     const out = ( line: string ): void => { process.stdout.write(`${line}\n`); };
-    const asked = argv.filter(( word ) => word !== "--plan");
-    const planning = asked.length !== argv.length;
-    const pointed = asked.indexOf("--config");
-    const file = pointed === -1 ? config : asked.splice(pointed, 2)[1] ?? config;
+    const given = [...argv];
+    const pointed = given.indexOf("--config");
+    const file = pointed === -1 ? config : given.splice(pointed, 2)[1] ?? config;
     const path = resolve(cwd, file);
     const loaded = await exception.rescueAsync(async () => ({ project: (await import(pathToFileURL(path).href) as { default?: unknown }).default }), ( caught ) => {
 
@@ -581,9 +695,7 @@ export async function main ( argv: readonly string[], cwd: string = process.cwd(
 
     if ( loaded === undefined ) return 1;
 
-    const { project } = loaded;
-
-    if ( !isProject(project) ) {
+    if ( !isProject(loaded.project) ) {
 
         out(`tool: ${relative(cwd, path) || file} exports no project; write export default tool.define({ tasks })`);
 
@@ -591,6 +703,17 @@ export async function main ( argv: readonly string[], cwd: string = process.cwd(
 
     }
 
+    return await start(loaded.project, given, cwd);
+
+}
+export async function start ( project: Project<never>, argv: readonly string[], root: string = process.cwd() ): Promise<number> {
+
+    const out = ( line: string ): void => { process.stdout.write(`${line}\n`); };
+
+    if ( !isProject(project) ) throw exception.fault("internal", "tool.start", { message: "start runs a project made by tool.define({ tasks })" });
+
+    const asked = argv.filter(( word ) => word !== "--plan");
+    const planning = asked.length !== argv.length;
     const split = asked.indexOf("--");
     const leading = split === -1 ? asked : asked.slice(0, split);
     const count = leading.findIndex(( word ) => project.tasks[word] === undefined);
@@ -619,7 +742,7 @@ export async function main ( argv: readonly string[], cwd: string = process.cwd(
 
         }
 
-        const outcome = await play(project, names, { root: cwd, argv: rest, out });
+        const outcome = await play(project, names, { root, argv: rest, out });
 
         out(`${outcome.failed ? "✗" : "✓"} ${names.join(" ")}: ${counted(outcome.steps, "step")}, ${counted(outcome.written, "file")} written, ${counted(outcome.flagged.length, "issue")}`);
 

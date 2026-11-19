@@ -1,7 +1,6 @@
 "use client";
 
 import { useId } from "react";
-import { tools } from "@/api/probe.ts";
 import { Block } from "@/elements/block.tsx";
 import { Button } from "@/elements/button.tsx";
 import { Heading } from "@/elements/heading.tsx";
@@ -11,7 +10,7 @@ import { Text } from "@/elements/text.tsx";
 import type { Placed } from "@/features/index.ts";
 import { useProbe } from "@/features/probe/hooks/use-probe.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
-import { host } from "@/specs/app.ts";
+import { host, tools } from "@/specs/index.ts";
 
 export function Probe ({ id }: Placed ) {
 

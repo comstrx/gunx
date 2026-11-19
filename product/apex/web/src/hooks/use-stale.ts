@@ -1,4 +1,4 @@
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 import { bind } from "@/stores/bind.ts";
 import { faults, instance } from "@/stores/preferences.ts";
 

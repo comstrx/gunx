@@ -1,5 +1,4 @@
 import * as api from "engine/api";
-import type * as spec from "engine/spec";
 import * as validate from "engine/validate";
 
 const person = validate.object({ id: validate.string(), email: validate.string(), name: validate.string(), status: validate.string() });
@@ -19,13 +18,6 @@ export const transport = api.feature("sessions", {
     photo: api.put("/api/me/avatar", validate.object({ file: api.file({ accept: photoKinds }) }), stored, { auth: true }),
     unphoto: api.del("/api/me/avatar", validate.object({}), validate.unknown(), { auth: true }),
 });
-export const manifest: spec.Manifest = {
-    name: "account",
-    settings: validate.strictObject({ email: validate.optional(validate.email()) }),
-    actions: ["code", "start", "end", "greet"],
-    emits: ["session.started", "session.ended"],
-    signals: ["signed"],
-};
 
 export type Signed = validate.infer<typeof signed>;
 export type Person = { id: string; email: string; name: string; roles: string[]; tenant: string | null };

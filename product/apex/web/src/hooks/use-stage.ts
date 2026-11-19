@@ -1,6 +1,6 @@
-import type * as spec from "engine/spec";
 import { createContext, useContext } from "react";
-import { host } from "@/specs/app.ts";
+import type * as spec from "@/specs/index.ts";
+import { host } from "@/specs/index.ts";
 
 export type Stage = { live: spec.Runtime; screen: string };
 

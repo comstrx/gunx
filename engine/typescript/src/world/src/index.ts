@@ -2,9 +2,9 @@ export type { Appearance, Assets, Axes, Browse, Catalog, Choice, ClassValue, Col
 export { alpha, blend, channels, color, contrast, darken, ensureReadable, fromHsl, fromOklch, grayscale, hsl, isColor, isDark, lighten, luminance, mix, oklch, onColor, readable, rgb, rotate, saturate, shades, toCss, toHex, toHsl, toOklch } from "./color.ts";
 export { countries, defineCountries, defineKeys, dialings, everyCountry, isArabic, keys, nameIn, regionName, regionOf, regions } from "./country.ts";
 export { currencies, defineCurrencies, everyCurrency } from "./currency.ts";
-export { defineEmoji, emojiCode, emojiFolder, emojiGlyph, emojiGroups, emojis, emojisIn, everyEmoji, isEmoji, onlyEmoji, plainEmoji, stripEmoji } from "./emoji.ts";
-export { flagCode, flagEmoji, flagFile, flagFolder, isFlag } from "./flag.ts";
-export { families, fontFaces, fontFiles, fontFolder, fontFor, fontLinks, fontOf, fontPreload, fontStack } from "./font.ts";
+export { defineEmoji, emojiCode, emojiGlyph, emojiGroups, emojis, emojisIn, everyEmoji, isEmoji, onlyEmoji, plainEmoji, stripEmoji } from "./emoji.ts";
+export { flagCode, flagEmoji, flagFile, isFlag } from "./flag.ts";
+export { families, fontFaces, fontFiles, fontFor, fontLinks, fontOf, fontPreload, fontStack } from "./font.ts";
 export { icons } from "./icon.ts";
 export { defineLanguages, everyLanguage, languages } from "./language.ts";
 export { baseOf, catalogs } from "./lazy.ts";

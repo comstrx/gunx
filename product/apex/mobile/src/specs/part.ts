@@ -30,7 +30,7 @@ export const defaults = {
     settings: { budget: { bundle: 4_200_000 as number | string } },
     themes: {},
     contents: { name: {} as Readonly<Record<string, string>>, tagline: {} as Readonly<Record<string, string>>, url: "" },
-    contracts: { maps: { key: "" }, media: ["https://maps.googleapis.com"], live: { path: "/live" }, baseUrl: "http://10.0.2.2:8100" },
+    contracts: { maps: { key: "" } },
 };
 export const messages = { ar, en };
 export const part = spec.part({ platform, blocks, screen, carries: ["session"], features: manifests, catalogue, defaults, messages, maxDepth: 4 });

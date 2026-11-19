@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { transport as hello } from "@/api/hello.ts";
 import { type Person, photoKinds, transport } from "@/api/session.ts";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 import { bind } from "@/stores/bind.ts";
 import { client } from "@/stores/client.ts";
 import { request, session, start } from "@/stores/session.ts";

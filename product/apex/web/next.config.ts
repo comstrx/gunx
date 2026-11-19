@@ -17,7 +17,9 @@ const engine = realpathSync(resolve(home, "node_modules/engine"));
 const manifest = JSON.parse(readFileSync(resolve(engine, "package.json"), "utf8")) as { dependencies?: Record<string, string> };
 const members = Object.keys(manifest.dependencies ?? {}).filter(( name ) => name.startsWith("engine-"));
 const root = shared(home, engine);
-const output = process.env.WEB_OUTPUT === "standalone" ? "standalone" : "export";
+const aliased = (JSON.parse(readFileSync(resolve(home, "tsconfig.json"), "utf8")) as { compilerOptions: { paths: Record<string, string[]> } }).compilerOptions.paths["#spec.json"]?.[0] ?? "";
+const compiled = JSON.parse(readFileSync(resolve(home, aliased), "utf8")) as { entry: string; surfaces: Record<string, { config: { settings: { output?: string } } }> };
+const output = compiled.surfaces[compiled.entry]?.config.settings.output === "standalone" ? "standalone" : "export";
 
 const config: NextConfig = {
     output,

@@ -6,7 +6,6 @@ import type { Display, Family, FontLink } from "./arch.ts";
 import { scripted } from "./language.ts";
 import { baseOf, rootOf, word } from "./lazy.ts";
 
-export const fontFolder = "/world/font";
 export const families: readonly Family[] = fontRows as unknown as Family[];
 
 const systemStack = ["system-ui", "-apple-system", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "Noto Sans", "sans-serif"];
@@ -72,7 +71,7 @@ export function fontFiles (): string[] {
     return families.flatMap(( family ) => family.files.map(( face ) => face.file));
 
 }
-export function fontFaces ( folder = fontFolder, display: Display = "swap" ): string {
+export function fontFaces ( folder: string, display: Display = "swap" ): string {
 
     const root = rootOf(word(folder));
 
@@ -105,7 +104,7 @@ export function fontStack ( script: "Arab" | "Latn" | "any" = "any" ): string {
     return made;
 
 }
-export function fontLinks ( folder = fontFolder, scripts: readonly string[] = [], faces = Number.POSITIVE_INFINITY ): FontLink[] {
+export function fontLinks ( folder: string, scripts: readonly string[] = [], faces = Number.POSITIVE_INFINITY ): FontLink[] {
 
     const root = rootOf(word(folder));
     const kept = Number.isFinite(faces) ? Math.max(0, Math.trunc(faces)) : undefined;
@@ -113,7 +112,7 @@ export function fontLinks ( folder = fontFolder, scripts: readonly string[] = []
     return wanted(scripts).flatMap(( family ) => family.files.slice(0, kept).map(( face ): FontLink => ({ rel: "preload", as: "font", type: "font/woff2", crossOrigin: "anonymous", href: `${root}/${face.file}` })));
 
 }
-export function fontPreload ( folder = fontFolder, scripts: readonly string[] = [], faces = Number.POSITIVE_INFINITY ): string[] {
+export function fontPreload ( folder: string, scripts: readonly string[] = [], faces = Number.POSITIVE_INFINITY ): string[] {
 
     return fontLinks(folder, scripts, faces).map(( link ) => `<link rel="${link.rel}" as="${link.as}" type="${link.type}" crossorigin href="${string.escapeHtml(link.href)}">`);
 

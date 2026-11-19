@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ElectrobunConfig } from "electrobun";
-import type { Spoken } from "./src/render/host/contract.ts";
+import { page, type Spoken, spoken } from "./src/render/host/contract.ts";
 
-const current = resolve(import.meta.dir, "dist/current/host.json");
+export const packaging = { current: "dist/current", build: "build/{role}", artifacts: "artifacts/{role}" };
+
+const told = resolve(import.meta.dir, `${packaging.current}/${spoken}`);
 const unbuilt: Spoken = {
     identity: "page",
     name: "Page",
@@ -11,16 +13,17 @@ const unbuilt: Spoken = {
     version: "0.0.0",
     window: { width: 1280, height: 800, minWidth: 960, minHeight: 640 },
 };
-const host = existsSync(current) ? (JSON.parse(readFileSync(current, "utf8")) as Spoken) : unbuilt;
+const host = existsSync(told) ? (JSON.parse(readFileSync(told, "utf8")) as Spoken) : unbuilt;
+const placed = ( path: string ): string => path.replaceAll("{role}", host.identity);
 
 export default {
     app: { name: host.identifier.split(".").slice(1).join("-"), identifier: host.identifier, version: host.version, description: host.name },
     build: {
         mainProcess: "bun",
-        buildFolder: `build/${host.identity}`,
-        artifactFolder: `artifacts/${host.identity}/desk`,
+        buildFolder: placed(packaging.build),
+        artifactFolder: `${placed(packaging.artifacts)}/desk`,
         bun: { entrypoint: "src/render/host/index.ts", minify: true, sourcemap: false },
-        copy: { "dist/current": "views/page" },
+        copy: { [packaging.current]: `views/${page}` },
         mac: { bundleCEF: false },
         win: { bundleCEF: false },
         linux: { bundleCEF: false },

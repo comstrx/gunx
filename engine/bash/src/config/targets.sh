@@ -150,7 +150,7 @@ config:targets:address () {
 config:targets:settle () {
 
     local name="" key="" repo="" owner="" label=""
-    local -A known=()
+    local -A addresses=()
 
     while IFS= read -r name; do
 
@@ -165,9 +165,9 @@ config:targets:settle () {
 
         if [[ -n "${repo}" ]]; then
 
-            [[ -n "${known[${repo}]+x}" ]] || known["${repo}"]="$(config:targets:address "${repo}")"
+            [[ -n "${addresses[${repo}]+x}" ]] || addresses["${repo}"]="$(config:targets:address "${repo}")"
 
-            repo="${known[${repo}]}"
+            repo="${addresses[${repo}]}"
 
             [[ -n "${label}" ]] || label="$(core:git:leaf "${repo}")"
             if [[ -z "${owner}" && "${repo%/}" == */* ]]; then
@@ -209,9 +209,9 @@ config:targets:settle () {
 
         fi
 
-        [[ -n "${known[${repo}]+x}" ]] || known["${repo}"]="$(config:targets:address "${repo}")"
+        [[ -n "${addresses[${repo}]+x}" ]] || addresses["${repo}"]="$(config:targets:address "${repo}")"
 
-        TARGETS["${key}"]="${known[${repo}]}"
+        TARGETS["${key}"]="${addresses[${repo}]}"
 
     done
 

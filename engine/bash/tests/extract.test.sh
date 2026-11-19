@@ -494,13 +494,12 @@ test:module:extract:gates-the-tree-and-ships-what-it-keeps () {
     printf 'theirs\n' > "${into}/node_modules/kept.js"
     printf 'stale\n' > "${into}/old/stale.txt"
 
-    module:gate:within () { printf 'bash\t%s\n' "${1}"; }
-
     core:git:init "${tree}"
     module:extract:gate "${tree}" demox >/dev/null 2>&1 || true
 
     [[ -f "${tree}/made" && -f "${tree}/demo.lock" ]] || @err 'the gates did not run in the tree'
-    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'fetch check lint test safety audit semver '
+    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | awk -F '\t' '$1 == "bash" { print $3 }' | tr '\n' ' ')" 'fetch check lint test safety audit semver '
+    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | awk -F '\t' '$1 == "root" { print $3 }' | tr '\n' ' ')" 'fetch quality security '
 
     core:git:sync "${tree}" "${into}"
 
@@ -512,19 +511,19 @@ test:module:extract:locks-every-chain-of-the-tree-before-the-gates () {
 
     local tree="${TMPDIR}/tree"
 
-    mkdir -p "${tree}/part"
+    mkdir -p "${tree}/part" "${tree}/docs"
 
-    module:gate:within () { printf 'demo\t%s\n' "${1}/part"; }
-    module:gate:demo:lock () { printf locked > locked; }
-    module:gate:demo:fetch () { printf installed > installed; }
+    printf '[project]\nname = "part"\n' > "${tree}/part/pyproject.toml"
+    printf '# Notes\n' > "${tree}/docs/notes.md"
+
+    fixture:module:gate:tools uv
 
     module:extract:lock "${tree}" demox >/dev/null 2>&1
 
-    [[ -f "${tree}/part/locked" && ! -e "${tree}/part/installed" ]] || @err 'the lock step did not run alone in the chain folder'
-    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3,4 | tr '\t\n' '  ')" 'lock passed '
+    @eq "$(cat "${FAKE_LOG}")" 'uv lock' 'the lock step ran something but the lock of the one chain'
+    @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f1,3,4 | tr '\t\n' '  ')" 'python lock passed '
 
-    module:gate:demo:lock () { return 1; }
-
+    export FAKE_EXIT=1
     @errors 'the lock files of demox could not be brought in line with its manifests' module:extract:lock "${tree}" demox
 
 }
@@ -827,14 +826,15 @@ test:module:extract:extracts-every-target-in-order () {
     fixture:module:extract:root
 
     fixture:module:extract:deps demox "${bash}" otherx \
-        "lastx = { type = \"engine\", path = \"engine/demo\", repo = \"lastx\", refs = [{ src = \"product/other/web\", repo = \"otherx\" }, { src = \"engine/bash\", repo = \"${bash}\" }] }"
+        "lastx = { type = \"engine\", path = \"engine/demo\", repo = \"lastx\", refs = [{ src = \"engine/demo\", repo = \"demox\" }, { src = \"engine/bash\", repo = \"${bash}\" }] }" \
+        "shop = { path = \"product/other\", repo = \"shop\", engines = [\"bash\"] }"
     module:extract:open
 
-    @eq "$(module:extract:order | tr '\n' ' ')" 'corex demox otherx lastx '
-    @eq "$(module:extract:needs lastx | tr '\n' ' ')" 'otherx corex '
+    @eq "$(module:extract:order | tr '\n' ' ')" 'corex demox lastx otherx shop '
+    @eq "$(module:extract:needs lastx | tr '\n' ' ')" 'demox corex '
 
-    printf 'KEY=1\n' > "${TMPDIR}/source/product/other/web/.secrets"
-    git -C "${TMPDIR}/source" add product/other/web/.secrets
+    printf 'KEY=1\n' > "${TMPDIR}/source/engine/demo/.secrets"
+    git -C "${TMPDIR}/source" add engine/demo/.secrets
 
     CLI_VALUED=( [--to]=true [--tag]=true )
     CLI_FLAGS=( [--no-gates]=true [--to]="${all}" )
@@ -844,9 +844,9 @@ test:module:extract:extracts-every-target-in-order () {
     @contains "${report}" 'Extract'
     @contains "${report}" 'extracted, placed'
     @contains "${report}" 'failed at extract'
-    @contains "${report}" 'skipped: otherx failed'
-    @contains "${report}" 'extract failed: otherx (extract), lastx (waits for otherx)'
-    [[ -f "${all}/demox/Cargo.toml" && -f "${all}/corex/bash.toml" && ! -e "${all}/otherx" && ! -e "${all}/lastx" ]] || @err 'the run did not isolate the failure'
+    @contains "${report}" 'skipped: demox failed'
+    @contains "${report}" 'extract failed: demox (extract), lastx (waits for demox)'
+    [[ -f "${all}/corex/bash.toml" && ! -e "${all}/demox" && ! -e "${all}/lastx" ]] || @err 'the run did not isolate the failure'
 
     TARGETS=(
         [onex]=4 [onex.type]=engine [onex.path]=engine/one [onex.repo]=o/onex [onex.refs]=1 [onex.refs.0.src]=engine/two [onex.refs.0.repo]=o/twox
@@ -1120,7 +1120,7 @@ test:module:extract:flags-write-over-a-row-or-open-one () {
     module:extract:open
     @eq "$(config:targets:get demox tag) $(config:targets:get corex tag)" 'v9 v9'
 
-    CLI_FLAGS=( [--engines]=bash,demo )
+    CLI_FLAGS=( [--engines]='bash,demo' )
     module:extract:open shopx
     @eq "$(config:targets:get shopx type) $(config:targets:get shopx path)" 'product product/shopx'
 
@@ -1342,11 +1342,11 @@ test:module:extract:refuses-flags-that-would-bend-the-table () {
 }
 test:module:extract:the-lock-step-stands-between-the-tree-and-its-delivery () {
 
-    local into="${TMPDIR}/into"
+    local into="${TMPDIR}/into" mark=locked
 
     fixture:module:extract:root
 
-    module:extract:lock () { printf 'locked\n' >> "${1}/Cargo.lock"; }
+    module:extract:lock () { printf '%s\n' "${mark}" >> "${1}/Cargo.lock"; [[ "${mark}" == locked ]]; }
     module:extract:gate () { @contains "$(cat "${1}/Cargo.lock")" locked; }
 
     CLI_VALUED=( [--to]=true )
@@ -1358,7 +1358,7 @@ test:module:extract:the-lock-step-stands-between-the-tree-and-its-delivery () {
     CLI_FLAGS=( [--to]="${into}/second" )
     @contains "$(module:extract:extract demox 2>&1)" 'demox: proved, placed'
 
-    module:extract:lock () { printf 'half\n' >> "${1}/Cargo.lock"; return 1; }
+    mark=half
 
     CLI_FLAGS=( [--to]="${into}/third" [--no-gates]=true )
     @errors 'extract of demox failed at lock' module:extract:extract demox

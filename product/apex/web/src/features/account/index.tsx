@@ -10,7 +10,7 @@ import { Text } from "@/elements/text.tsx";
 import { useAccount } from "@/features/account/hooks/use-account.ts";
 import type { Placed } from "@/features/index.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export function Account ({ id }: Placed ) {
 

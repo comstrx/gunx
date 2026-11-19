@@ -5,14 +5,15 @@ import * as log from "engine-log";
 import * as parse from "engine-parse";
 import * as seo from "engine-seo";
 import * as translate from "engine-translate";
-import type { App, AppOptions, Artifact, Asked, Brand, Carried, CompiledScreen, Context, Doors, Effect, Fed, Feeder, Host, Labels, Listed, Located, Messages, Meta, Mounted, Moved, Popup, Public, Runtime, RuntimeOptions, Settled } from "./arch.ts";
-import { generated, version } from "./arch.ts";
+import type { App, AppOptions, Artifact, Asked, Carried, CompiledScreen, Context, Doors, Effect, Fed, Feeder, Host, Labels, Listed, Located, Messages, Meta, Mounted, Moved, Popup, Public, Runtime, RuntimeOptions, Settled, Themed } from "./arch.ts";
+import { version } from "./arch.ts";
 import { open as opened, revive } from "./compiled.ts";
+import { publish } from "./head.ts";
 import { match, menuOf, readable, runtime, spoken, titleOf } from "./runtime.ts";
+import { theme } from "./theme.ts";
 
 const tagged = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/;
 const outer = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
-const pictured: readonly string[] = ["logo", "icon"];
 
 function refused ( message: string ): exception.Fault {
 
@@ -23,7 +24,7 @@ function carriedOf ( artifact: Artifact, name: string ): Carried {
 
     const found: unknown = Object.hasOwn(artifact.surfaces, name) ? artifact.surfaces[name] : undefined;
 
-    if ( !json.isRecord(found) || typeof found.id !== "string" || !json.isRecord(found.config) || !json.isRecord(found.messages) || !json.isRecord(found.brand) || !json.isRecord(found.links) || !json.isRecord(found.compiled) ) throw refused(`${name}: the artifact carries no such surface; compile the specs again`);
+    if ( !json.isRecord(found) || typeof found.id !== "string" || !json.isRecord(found.config) || !json.isRecord(found.messages) || !json.isRecord(found.assets) || !json.isRecord(found.places) || !json.isRecord(found.links) || !json.isRecord(found.compiled) ) throw refused(`${name}: the artifact carries no such surface; compile the specs again`);
 
     return found as Carried;
 
@@ -54,6 +55,7 @@ function made<D extends object> ( name: string, carried: Carried, options: AppOp
     let feeder: Feeder | undefined;
     let serial = 0;
     let synced: (() => void) | undefined;
+    let painted: Themed | undefined;
 
     function spoke ( locale: string ): translate.Translate {
 
@@ -123,27 +125,45 @@ function made<D extends object> ( name: string, carried: Carried, options: AppOp
         return sheet;
 
     }
-    function asset ( path: string ): string {
+    function themed (): Themed {
 
-        if ( typeof path !== "string" || path === "" || outer.test(path) ) return typeof path === "string" ? path : "";
+        painted ??= theme(config.themes);
 
-        const clean = path.replace(/^\/+/, "");
-        const cut = clean.indexOf("/");
-        const kind = clean.slice(0, Math.max(cut, 0));
-        const name = clean.slice(cut + 1);
-        const tables = carried.brand as unknown as Brand;
-        const table = Object.hasOwn(tables, kind) ? tables[kind] : undefined;
-        const over = table !== undefined && Object.hasOwn(table, name) ? table[name] : undefined;
+        return painted;
 
-        return `/${generated}/${carried.id}/${kind === "" ? name : `${kind}/${over ?? name}`}`;
+    }
+    function asset ( key: string ): string {
+
+        if ( typeof key !== "string" || key === "" ) return "";
+        if ( outer.test(key) ) return key;
+
+        const urls = carried.assets;
+
+        return Object.hasOwn(urls, key) ? urls[key] ?? "" : "";
+
+    }
+    function place ( name: string ): string {
+
+        const places = json.isRecord(carried.places) ? carried.places as Readonly<Record<string, string>> : {};
+
+        return typeof name === "string" && Object.hasOwn(places, name) ? places[name] ?? "" : "";
+
+    }
+    function pointed ( held: unknown ): string | undefined {
+
+        return json.isRecord(held) && Object.keys(held).length === 1 && typeof held.asset === "string" ? asset(held.asset) : undefined;
 
     }
     function content ( key: string, locale: string ): string {
 
         const held: unknown = Object.hasOwn(config.contents, key) ? config.contents[key] : undefined;
 
-        if ( typeof held === "string" ) return pictured.includes(key) ? asset(held) : held;
+        if ( typeof held === "string" ) return held;
         if ( !json.isRecord(held) ) return "";
+
+        const linked = pointed(held);
+
+        if ( linked !== undefined ) return linked;
 
         const spoken: unknown = Object.hasOwn(held, locale) ? held[locale] : held[fallback];
 
@@ -165,7 +185,7 @@ function made<D extends object> ( name: string, carried: Carried, options: AppOp
 
         const { url } = indexing();
 
-        return url === undefined ? undefined : { name: content("name", locale), url, locale, locales: localized ? tongues : [locale], default: localized ? fallback : locale, hide: true, description: told(locale), image: worded(asset(worded(found().image) ?? "")), twitter: worded(found().twitter) };
+        return url === undefined ? undefined : { name: content("name", locale), url, locale, locales: localized ? tongues : [locale], default: localized ? fallback : locale, hide: true, description: told(locale), image: worded(pointed(found().image) ?? found().image), twitter: worded(found().twitter) };
 
     }
     function href ( path: string, locale: string ): string {
@@ -379,7 +399,6 @@ function made<D extends object> ( name: string, carried: Carried, options: AppOp
         compiled,
         config,
         messages,
-        brand: carried.brand as unknown as Brand,
         links: carried.links as Readonly<Record<string, string>>,
         live,
         bus,
@@ -409,6 +428,9 @@ function made<D extends object> ( name: string, carried: Carried, options: AppOp
         settings: ( screen, feature ) => live.settings(screen, feature),
         content,
         asset,
+        place,
+        theme: themed,
+        publish,
         indexing,
         crawl,
         graph,
@@ -446,7 +468,11 @@ function listedOf ( artifact: Artifact ): Listed[] {
 
 }
 
-export function boot<D extends object = object> ( artifact: unknown, options: AppOptions = {} ): Host<D> {
+export function boot<D extends object = object> ( emitted: unknown, asked: AppOptions = {} ): Host<D> {
+
+    const bundled = json.isRecord(emitted) && json.isRecord(emitted.artifact) ? emitted : undefined;
+    const artifact: unknown = bundled === undefined ? emitted : bundled.artifact;
+    const options: AppOptions = bundled !== undefined && json.isRecord(bundled.load) ? { ...asked, load: bundled.load as AppOptions["load"] } : asked;
 
     if ( !json.isRecord(artifact) || artifact.version !== version || typeof artifact.entry !== "string" || !json.isRecord(artifact.surfaces) ) throw refused("not a spec artifact of this engine; compile the specs again");
 

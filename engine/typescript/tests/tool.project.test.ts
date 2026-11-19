@@ -69,6 +69,44 @@ describe("tool project", () => {
         ].map(reasonOf)).toEqual(["tool.project", "tool.project", "tool.project", "tool.project", "tool.step", "tool.step", "tool.run", "tool.emit", "tool.copy", "tool.bundle", "tool.css", "tool.fonts", "tool.project", "tool.project", "tool.each", "tool.each", "tool.env", "tool.env", "tool.env"]);
 
     });
+    it("paths name places once and every step writes {name}; steps are named lists the tasks call, never commands of their own", async () => {
+
+        const temp = stage.tmp();
+        const lines: string[] = [];
+
+        try {
+
+            const project = tool.define({
+                paths: { out: "out", notes: "out/notes" },
+                steps: { write: [tool.emit("{notes}/a.txt", "a"), tool.option("loud", tool.emit("{out}/loud.txt", "!"))] },
+                tasks: { build: ["write", tool.copy("{notes}/a.txt", "{out}/b.txt")] },
+            });
+
+            expect((await tool.play(project, ["build"], { root: temp.path, argv: ["--loud"], out: ( line ) => lines.push(line) })).failed).toBe(false);
+            expect([readFileSync(temp.file("out/notes/a.txt"), "utf8"), readFileSync(temp.file("out/b.txt"), "utf8"), existsSync(temp.file("out/loud.txt"))]).toEqual(["a", "a", true]);
+            expect(lines).toContain("✓ write › emit out/notes/a.txt");
+            expect(tool.plan(project, ["build"]).lines).toEqual(["build", "  write", "    emit out/notes/a.txt", "    option --loud (not given)", "  copy out/notes/a.txt → out/b.txt"]);
+            expect([await tool.start(project, ["write"], temp.path), Object.keys(project.steps), project.paths.out]).toEqual([1, ["write"], "out"]);
+            const roleless = await tool.play(tool.define({ paths: { dist: "dist/{role}" }, tasks: { x: tool.emit("{dist}/a.txt", "a") } }), ["x"], { root: temp.path, out: () => undefined });
+
+            expect([roleless.failed, roleless.flagged[0]?.message]).toEqual([true, "{dist}/a.txt: {role} names a role, so the project needs specs"]);
+            expect([
+                () => tool.define({ steps: { build: [] }, tasks: { build: [] } }),
+                () => tool.define({ steps: { "two words": [] }, tasks: {} }),
+                () => tool.define({ steps: { half: 7 as never }, tasks: {} }),
+                () => tool.define({ steps: [] as never, tasks: {} }),
+                () => tool.define({ paths: { role: "x" }, tasks: {} }),
+                () => tool.define({ paths: { out: "" }, tasks: {} }),
+                () => tool.define({ paths: { out: 7 as never }, tasks: {} }),
+            ].map(reasonOf)).toEqual(Array.from({ length: 7 }, () => "tool.project"));
+
+        } finally {
+
+            temp.remove();
+
+        }
+
+    });
     it("tasks play in order, reuse each other by name, expand what a step returns, and keep a ledger of writes and issues", async () => {
 
         const temp = stage.tmp();
@@ -134,6 +172,11 @@ describe("tool project", () => {
             const self = await tool.play(tool.define({ tasks: { self: tool.copy("assets/c.txt", ".") } }), ["self"], { root: temp.path, out: () => undefined });
 
             expect([fenced.flagged[0]?.message, self.flagged[0]?.rule, existsSync(join(temp.path, "..", "beyond.txt"))]).toEqual(["../beyond.txt: a step writes inside the project, never the project itself or beyond it", "failed", false]);
+
+            const absent = await tool.play(tool.define({ tasks: { needed: tool.copy("assets/none", "out/none"), optional: tool.copy("assets/none", "out/none", { optional: true }) } }), ["optional"], { root: temp.path, out: () => undefined });
+            const needed = await tool.play(tool.define({ tasks: { needed: tool.copy("assets/none", "out/none") } }), ["needed"], { root: temp.path, out: () => undefined });
+
+            expect([absent.failed, absent.written, existsSync(temp.file("out/none")), needed.failed, needed.flagged[0]?.message.endsWith("assets/none: nothing to copy")]).toEqual([false, 0, false, true, true]);
 
             const env = await tool.play(tool.define({ tasks: { env: tool.run("echo $HELD:$KEPT > out/env.txt", { env: { HELD: undefined, KEPT: "kept" } }) } }), ["env"], { root: temp.path, env: { HELD: "held" }, out: () => undefined });
 
@@ -227,10 +270,11 @@ describe("tool project", () => {
                 build: [
                     tool.css("src/globals.css", "dist/theme.css", { process: async ( css, options ) => { seen.push(options); return { css: css.toUpperCase() }; } }),
                     tool.page("src/index.html", "dist/index.html", { lang: "ar", dir: "rtl", surface: { locales: ["ar", "en"] }, appearance: { scheme: "system" } }),
-                    tool.fonts("dist/fonts", { css: "dist/fonts.css" }),
+                    tool.fonts("dist/fonts", { css: "dist/fonts.css", url: "/fonts" }),
                     tool.fonts("dist/static", { url: "./static" }),
                 ],
                 lost: tool.page("src/index.html", "dist/lost.html", { lang: "ar" }),
+                nameless: tool.fonts("dist/fonts", { css: "dist/nameless.css" }),
                 publish: [tool.copy("dist/admin", "dist/current", { clean: true })],
             } });
             const played = await tool.play(project, ["build"], { root: temp.path, out: () => undefined });
@@ -240,6 +284,8 @@ describe("tool project", () => {
             expect(readFileSync(temp.file("dist/index.html"), "utf8")).toBe("<html lang=\"ar\" dir=\"rtl\"><script data-locales=\"ar en\" data-appearance=\"{&quot;scheme&quot;:&quot;system&quot;}\"></script></html>\n");
             expect([faces.includes("@font-face"), faces.includes("/fonts/figtree-latin.woff2"), existsSync(temp.file("dist/fonts/figtree-latin.woff2")), existsSync(temp.file("dist/static/figtree-latin.woff2")), existsSync(temp.file("dist/static.css"))]).toEqual([true, true, true, true, false]);
             expect((await tool.play(project, ["lost"], { root: temp.path, out: () => undefined })).flagged[0]?.message).toBe("the template names {{dir}}, which was not given as text or json");
+
+            expect((await tool.play(project, ["nameless"], { root: temp.path, out: () => undefined })).flagged[0]?.message).toBe("dist/fonts: name where the fonts are served, as fonts({ url }) or a place in assets.places");
 
             temp.write("dist/admin/app.js", "new");
             temp.write("dist/current/old.js", "old");
@@ -268,12 +314,17 @@ describe("tool project", () => {
             writeFileSync(join(part, "src/api/lone.ts"), "export const lone = \"no one imports me\";\n");
             writeFileSync(join(part, "src/app/page.tsx"), "import { a } from \"../api/a.ts\";\nconst text = `\nimport ghost from \"../api/ghost.ts\";\n`;\nexport const page = [a, text];\n");
             writeFileSync(join(part, "src/app/brand.ts"), "export const title = \"Shop admin\";\n");
+            writeFileSync(join(part, "src/api/c.ts"), "import type * as spec from \"engine/spec\";\nimport * as api from \"engine/api\";\nexport const c: spec.Platform | typeof api = api;\n");
+            writeFileSync(join(part, "src/app/mapped.ts"), "import { compiled } from \"#spec\";\nimport { lost } from \"#nowhere\";\nexport const mapped = [compiled, lost];\n");
+            writeFileSync(join(part, "tsconfig.json"), JSON.stringify({ compilerOptions: { paths: { "#spec": ["./.made/spec/current.ts"] } } }));
 
-            const project = tool.define({ tasks: { check: [tool.layers({ layers: ["api", "app"], entries: ["app/page.tsx"] })] } });
+            const project = tool.define({ tasks: { check: [tool.layers({ layers: ["api", "app"], entries: ["app/page.tsx", "api/c.ts", "app/mapped.ts"], owners: { spec: ["app"], api: ["api"] }, outside: [".made"] })] } });
             const played = await tool.play(project, ["check"], { root: part, out: () => undefined });
 
             expect(played.flagged.map(( one ) => `${one.rule} ${one.where} ${one.message}`)).toEqual([
                 "layer api/b.ts:2 api reaches up into app: ../app/page.tsx",
+                "owner api/c.ts:1 engine/spec is imported only from app",
+                "outside app/mapped.ts:2 #nowhere is mapped by no tsconfig.json path",
                 "cycle api/a.ts a cycle joins api/a.ts, api/b.ts, app/page.tsx",
                 "orphan api/lone.ts no entry reaches this file",
                 "orphan app/brand.ts no entry reaches this file",
@@ -317,7 +368,7 @@ describe("tool project", () => {
         }
 
     });
-    it("main loads tool.config.ts, runs the leading task names with the rest as arguments, and says what went wrong", async () => {
+    it("main loads tool.ts, start runs a project in hand; both run the leading task names with the rest as arguments, and says what went wrong", async () => {
 
         const temp = stage.tmp();
         const screen = quiet();
@@ -326,7 +377,7 @@ describe("tool project", () => {
 
         try {
 
-            temp.write("tool.config.ts", `import * as tool from ${JSON.stringify(door)};\nexport default tool.define({ tasks: {\n    show: tool.emit("seen.json", ( _role, scope ) => scope.argv),\n    fail: tool.step("fail", ( scope ) => scope.flag("x", "bad")),\n    both: ["show", tool.env({ MODE: "plan" }, [tool.emit("planned.txt", "x"), () => undefined])],\n} });\n`);
+            temp.write("tool.ts", `import * as tool from ${JSON.stringify(door)};\nexport default tool.define({ tasks: {\n    show: tool.emit("seen.json", ( _role, scope ) => scope.argv),\n    fail: tool.step("fail", ( scope ) => scope.flag("x", "bad")),\n    both: ["show", tool.env({ MODE: "plan" }, [tool.emit("planned.txt", "x"), () => undefined])],\n} });\n`);
             temp.write("other.ts", `import * as tool from ${JSON.stringify(door)};\nexport default tool.define({ tasks: { other: tool.emit("other.txt", "o") } });\n`);
             temp.write("plain.ts", "export default { tasks: {} };\n");
             temp.write("broken.ts", "export default (\n");
@@ -343,6 +394,9 @@ describe("tool project", () => {
             expect(await tool.main(["show", "--config", "absent.ts"], temp.path)).toBe(1);
             expect(await tool.main(["both", "--plan"], temp.path)).toBe(0);
             expect(existsSync(temp.file("planned.txt"))).toBe(false);
+            expect(await tool.start(tool.define({ tasks: { mark: tool.emit("started.txt", "s") } }), ["mark"], temp.path)).toBe(0);
+            expect([existsSync(temp.file("started.txt")), await tool.start(tool.define({ tasks: {} }), ["--plan"], temp.path)]).toEqual([true, 0]);
+            await expect(tool.start({ tasks: {} } as never, [], temp.path)).rejects.toMatchObject({ reason: "tool.start" });
             expect(screen.lines).toContain("tasks: show, fail, both");
             expect(screen.lines.join("\n")).toContain("both\n  show\n    emit seen.json\n  env MODE=plan\n    emit planned.txt\n    step\n3 steps planned");
             expect(screen.lines).toContain("tool: no task named nothing");

@@ -1,7 +1,7 @@
 import * as translate from "engine/translate";
 import { createContext, useCallback, useContext, useEffect } from "react";
 import { speak, useSpoken } from "@/hooks/use-path.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 import { bound, instance } from "@/stores/preferences.ts";
 
 export type Preferred = { locale: string; direction: translate.Direction; ready: boolean; toggleLocale: () => void; setLocale: ( locale: string ) => void };

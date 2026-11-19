@@ -8,7 +8,7 @@ import { Text } from "@/elements/text.tsx";
 import type { Placed } from "@/features/index.ts";
 import { useNotices } from "@/features/notices/hooks/use-notices.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export function Notices ({ id }: Placed ) {
 

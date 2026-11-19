@@ -1,6 +1,6 @@
 import * as history from "engine/history";
 import { useMemo, useSyncExternalStore } from "react";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 type Query = history.Entry["query"];
 

@@ -2,9 +2,8 @@ import type * as device from "engine/device";
 import * as exception from "engine/exception";
 import * as geo from "engine/geo";
 import { useEffect, useRef, useState } from "react";
-import { accuracies } from "@/api/locate.ts";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import { accuracies, host } from "@/specs/index.ts";
 import { held } from "@/stores/device.ts";
 import { mapOf, stretched, type Track } from "@/stores/locate.ts";
 

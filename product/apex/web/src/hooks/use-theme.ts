@@ -3,7 +3,7 @@ import type * as translate from "engine/translate";
 import type * as world from "engine/world";
 import { useEffect } from "react";
 import { usePreferences } from "@/hooks/use-preferences.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 import { schemed } from "@/stores/scheme.ts";
 
 export type Theme = world.ThemeState<Record<string, string>> & { locale: string; direction: translate.Direction; set: ( preference: world.Preference ) => void; toggle: () => void; cycle: () => void };

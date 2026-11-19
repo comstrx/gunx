@@ -28,11 +28,24 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "#spec": ["./.cache/spec/current.ts"],
+      "#spec.json": ["./.cache/spec/current.json"],
+      "#styles.css": ["./.cache/styles/index.css"]
     },
     "allowJs": true,
     "esModuleInterop": true
   },
-  "include": ["next-env.d.ts", "src", "specs", "tool.config.ts", "tests", "electrobun.config.ts", "hutch.config.ts", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "src",
+    "specs",
+    "tool.config.ts",
+    "tests",
+    "electrobun.config.ts",
+    "hutch.config.ts",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
   "exclude": ["node_modules", ".next", "out", "dist", "build", "artifacts", ".hutch", ".cottontail-tmp"]
 }

@@ -256,30 +256,64 @@ TOOL
     @absent "$(module:gate:one bash "${root}" 'lint' 7 false 2>&1)" '--fast'
 
 }
+fixture:module:gate:tools () {
+
+    local bin="${TMPDIR}/fake" name=""
+
+    mkdir -p "${bin}"
+    export PATH="${bin}:${PATH}" FAKE_LOG="${TMPDIR}/fake.log"
+
+    CONFIG[RUN_RETRIES]=1
+
+    : > "${FAKE_LOG}"
+
+    cat > "${bin}/.fake" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s %s\n' "${0##*/}" "$*" >> "${FAKE_LOG}"
+exit "${FAKE_EXIT:-0}"
+FAKE
+
+    for name in "$@"; do
+
+        cp -- "${bin}/.fake" "${bin}/${name}"
+        chmod 755 "${bin}/${name}"
+
+    done
+
+}
 test:module:gate:a-writer-runs-first-and-alone () {
 
     local root="${TMPDIR}/part"
 
     mkdir -p "${root}"
 
-    module:gate:demo:lock () { :; }
-    module:gate:demo:fetch () { :; }
-    module:gate:demo:check () { :; }
+    fixture:module:gate:tools uv
 
     GATE_RESULTS=()
-    module:gate:one demo "${root}" 'lock' 7 false >/dev/null 2>&1
+    module:gate:one python "${root}" 'lock' 7 false >/dev/null 2>&1
     @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'lock '
+    @eq "$(cat "${FAKE_LOG}")" 'uv lock'
 
+    : > "${FAKE_LOG}"
     GATE_RESULTS=()
-    module:gate:one demo "${root}" 'check lock' 7 false >/dev/null 2>&1
+    module:gate:one python "${root}" 'check lock' 7 false >/dev/null 2>&1
     @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'lock fetch check '
+    @eq "$(cat "${FAKE_LOG}")" $'uv lock\nuv sync --locked\nuv run mypy'
 
+    : > "${FAKE_LOG}"
     GATE_RESULTS=()
-    module:gate:one demo "${root}" 'lock fetch' 7 false >/dev/null 2>&1
+    module:gate:one python "${root}" 'lock fetch' 7 false >/dev/null 2>&1
     @eq "$(printf '%s\n' "${GATE_RESULTS[@]}" | cut -f3 | tr '\n' ' ')" 'lock fetch '
+    @eq "$(cat "${FAKE_LOG}")" $'uv lock\nuv sync --locked'
 
-    @errors 'demo does not support the test gate' module:gate:one demo "${root}" 'check test' 7 false
-    @eq "$(module:gate:one demo "${root}" 'quality' 7 false 2>&1)" ''
+    : > "${FAKE_LOG}"
+    export FAKE_EXIT=1
+    @errors 'failed at lock' module:gate:one python "${root}" 'check lock' 7 false
+    @eq "$(cat "${FAKE_LOG}")" 'uv lock' 'a failed lock stops the chain before fetch'
+    unset FAKE_EXIT
+
+    @errors 'nochain does not support the check gate' module:gate:one nochain "${root}" 'check' 7 false
+    @eq "$(module:gate:one nochain "${root}" 'quality' 7 false 2>&1)" ''
     @eq "$(module:gate:one root "${root}" 'lock' 7 false 2>&1)" ''
 
 }
@@ -301,23 +335,32 @@ test:module:gate:every-language-speaks-every-gate () {
 }
 test:module:gate:holds-every-tool-to-its-lock () {
 
-    uv () { printf 'uv %s\n' "$*"; }
-    cargo () { printf 'cargo %s\n' "$*"; }
     module:gate:install:rust () { :; }
+
+    fixture:module:gate:tools uv cargo
 
     GATE_ARGS=()
 
-    @eq "$(module:gate:python:fetch 2>&1)" 'uv sync --locked'
-    @eq "$(module:gate:rust:fetch 2>&1)" 'cargo fetch --locked'
-    @contains "$(module:gate:rust:check 2>&1)" 'cargo check --workspace --all-targets --all-features --locked'
-    @eq "$(module:gate:python:lock 2>&1)" 'uv lock'
-    @eq "$(module:gate:rust:lock 2>&1)" 'cargo update --workspace'
+    module:gate:python:fetch
+    module:gate:rust:fetch
+    module:gate:rust:check
+    module:gate:python:lock
+    module:gate:rust:lock
+
+    @eq "$(cat "${FAKE_LOG}")" "$(printf '%s\n' 'uv sync --locked' 'cargo fetch --locked' \
+        'cargo check --workspace --all-targets --all-features --locked' 'cargo hack check --workspace --feature-powerset --locked' \
+        'uv lock' 'cargo update --workspace')"
+
+    : > "${FAKE_LOG}"
 
     GATE_LOCK_UV=()
     GATE_LOCK_CARGO=()
+    GATE_ARGS=( --offline )
 
-    @eq "$(module:gate:python:fetch 2>&1)" 'uv sync'
-    @eq "$(module:gate:rust:fetch 2>&1)" 'cargo fetch'
+    module:gate:python:fetch
+    module:gate:rust:fetch
+
+    @eq "$(cat "${FAKE_LOG}")" $'uv sync --offline\ncargo fetch --offline'
 
 }
 test:module:gate:watches-what-it-builds-on () {
@@ -373,7 +416,7 @@ TOOL
 }
 test:module:gate:names-the-tool-a-chain-lacks () {
 
-    core:sys:has () { return 1; }
+    local PATH="${TMPDIR}/none"
 
     GATE_ARGS=()
 
@@ -391,14 +434,12 @@ test:module:gate:a-refused-gate-runs-nothing () {
 
     mkdir -p "${root}"
 
-    module:gate:demo:fetch () { printf ran > fetched; }
-    module:gate:demo:check () { printf ran > checked; }
+    fixture:module:gate:tools uv
 
-    GATE_RESULTS=()
+    unset -f module:gate:python:lint
 
-    @errors 'demo does not support the lint gate' module:gate:one demo "${root}" 'check lint' 7 false
-
-    [[ ! -e "${root}/fetched" && ! -e "${root}/checked" && ${#GATE_RESULTS[@]} -eq 0 ]] || @err 'a refused chain still ran a gate'
+    @errors 'python does not support the lint gate' module:gate:one python "${root}" 'check lint' 7 false
+    @eq "$(cat "${FAKE_LOG}")" '' 'a refused chain still ran a gate'
 
     @fails module:gate:owes root lock
     @fails module:gate:owes rust quality

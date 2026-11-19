@@ -86,18 +86,11 @@
     }
   },
   "javascript": {
-    "globals": [
-      "Bun"
-    ]
+    "globals": ["Bun"]
   },
   "overrides": [
     {
-      "includes": [
-        "src/render/**",
-        "electrobun.config.ts",
-        "tests/setup.ts",
-        "tests/host.test.ts"
-      ],
+      "includes": ["src/render/**", "electrobun.config.ts", "tests/setup.ts", "tests/host.test.ts"],
       "linter": {
         "rules": {
           "correctness": {
@@ -108,9 +101,7 @@
       }
     },
     {
-      "includes": [
-        "src/elements/image.tsx"
-      ],
+      "includes": ["src/elements/image.tsx"],
       "linter": {
         "rules": {
           "performance": {

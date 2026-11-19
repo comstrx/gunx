@@ -6,7 +6,6 @@ import { isArabic } from "./country.ts";
 import { flagCode, flagFile } from "./flag.ts";
 import { live, once, rootOf, slot, word } from "./lazy.ts";
 
-export const emojiFolder = "/world/emoji";
 export const emojiGroups: readonly EmojiGroup[] = groupRows as EmojiGroup[];
 
 const selector = "\uFE0F";
@@ -94,9 +93,9 @@ export function onlyEmoji ( text: string ): boolean {
 }
 export function defineEmoji ( options: EmojiOptions = {} ): Emojis {
 
-    const { folder = emojiFolder, flags, locale = "en" } = options;
+    const { folder, flags, locale = "en" } = options;
     const all = everyEmoji();
-    const root = rootOf(folder);
+    const root = folder === undefined ? undefined : rootOf(folder);
     const found = list.catalog(all, ( emoji ) => plainEmoji(emoji.glyph), ( emoji ) => [emoji.glyph, emoji.name.en, emoji.name.ar].concat(emoji.keywords.en, emoji.keywords.ar));
     const get = ( glyph: string ): Emoji | undefined => found.get(plainEmoji(glyph));
     const sorted = once(() => {
@@ -193,7 +192,9 @@ export function defineEmoji ( options: EmojiOptions = {} ): Emojis {
 
             const code = flagCode(emoji.glyph);
 
-            return code ? flagFile(code, flags) : `${root}/${emoji.code}.webp`;
+            const file = code ? flagFile(code, flags) : root === undefined ? "" : `${root}/${emoji.code}.webp`;
+
+            return file === "" ? undefined : file;
 
         },
     };

@@ -3,7 +3,8 @@ name = "engine-net"
 description = "Outbound HTTP: SSRF-safe egress, bounded bodies, retries, breakers, Remote"
 dynamic = ["version", "requires-python", "license"]
 dependencies = [
-    "engine-context", "engine-error",
+    "engine-context",
+    "engine-error",
     "engine-fs",
     "engine-func",
     "engine-json",

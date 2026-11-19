@@ -1,7 +1,6 @@
 import type { FlagPlace } from "./arch.ts";
 import { rootOf, word } from "./lazy.ts";
 
-export const flagFolder = "/world/flag";
 
 const indicator = 0x1f1e6;
 const letter = 65;
@@ -48,10 +47,12 @@ export function flagCode ( glyph: string ): string | undefined {
 }
 export function flagFile ( code: string, place: FlagPlace = {} ): string {
 
+    if ( place.folder === undefined ) return "";
+
     const quick = lower(code);
     const name = quick ? code : word(code).trim().toLowerCase();
 
-    return quick || (name.length <= 16 && named.test(name)) ? `${rootOf(place.folder ?? flagFolder)}/${name}.${place.format === "webp" ? "webp" : "svg"}` : "";
+    return quick || (name.length <= 16 && named.test(name)) ? `${rootOf(place.folder)}/${name}.${place.format === "webp" ? "webp" : "svg"}` : "";
 
 }
 export function isFlag ( glyph: string ): boolean {

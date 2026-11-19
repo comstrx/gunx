@@ -165,8 +165,8 @@ describe("world", () => {
         expect(world.emojis.shortcode("😀")).toBe(":grinning_face:");
         expect(world.emojis.byShortcode("grinning_face")?.glyph).toBe("😀");
         expect(world.emojis.byShortcode(":nope:")).toBeUndefined();
-        expect(world.emojis.imageOf("😀")).toBe("/world/emoji/1f600.webp");
-        expect(world.emojis.imageOf("🇪🇬")).toBe("/world/flag/eg.svg");
+        expect([world.emojis.imageOf("😀"), world.emojis.imageOf("🇪🇬")]).toEqual([undefined, undefined]);
+        expect([world.defineEmoji({ folder: "/e", flags: { folder: "/f" } }).imageOf("😀"), world.defineEmoji({ folder: "/e", flags: { folder: "/f" } }).imageOf("🇪🇬")]).toEqual(["/e/1f600.webp", "/f/eg.svg"]);
         expect(world.emojis.imageOf("x")).toBeUndefined();
         expect(world.defineEmoji({ folder: "/e/", flags: { folder: "/f", format: "webp" } }).imageOf("🇸🇦")).toBe("/f/sa.webp");
         expect(world.emojis.files.length).toBeGreaterThan(1500);
@@ -188,26 +188,26 @@ describe("world", () => {
         expect(world.flagCode("🇪🇬")).toBe("EG");
         expect(world.flagCode("😀")).toBeUndefined();
         expect(world.isFlag("🇸🇦") && !world.isFlag("x")).toBe(true);
-        expect(world.flagFile("EG")).toBe("/world/flag/eg.svg");
+        expect([world.flagFile("EG"), world.flagFile("EG", { folder: "/flags" })]).toEqual(["", "/flags/eg.svg"]);
         expect(world.flagFile("sa", { folder: "/static/flags/", format: "webp" })).toBe("/static/flags/sa.webp");
         expect(world.families.map(( family ) => family.family)).toEqual(["Readex Pro", "Figtree"]);
         expect(world.fontOf("Arab")?.family).toBe("Readex Pro");
         expect(world.fontOf("Cyrl")?.family).toBe("Figtree");
         expect(world.fontFiles()).toEqual(["readex-pro-arabic.woff2", "figtree-latin.woff2", "figtree-latin-ext.woff2"]);
         expect(world.fontFaces("/fonts").split("@font-face").length - 1).toBe(3);
-        expect(world.fontFaces()).toContain('src: url(/world/font/readex-pro-arabic.woff2) format("woff2");');
+        expect(world.fontFaces("/type")).toContain('src: url(/type/readex-pro-arabic.woff2) format("woff2");');
         expect(world.fontFaces("/f/", "optional")).toContain("font-display: optional;");
         expect(world.fontStack("Arab")).toBe('"Readex Pro", Figtree, "Noto Naskh Arabic", Tahoma, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif');
         expect(world.fontStack("Latn").startsWith("Figtree, system-ui")).toBe(true);
         expect(world.fontFor("ar-EG").startsWith('"Readex Pro"') && world.fontFor("en").startsWith("Figtree")).toBe(true);
         expect(world.fontPreload("/fonts", ["Arab"])).toHaveLength(3);
         expect(world.fontLinks("/fonts/", ["latn"])).toEqual([{ rel: "preload", as: "font", type: "font/woff2", crossOrigin: "anonymous", href: "/fonts/figtree-latin.woff2" }, { rel: "preload", as: "font", type: "font/woff2", crossOrigin: "anonymous", href: "/fonts/figtree-latin-ext.woff2" }]);
-        expect([world.fontLinks().length, world.fontLinks("/f", ["Cyrl"]).length]).toEqual([3, 2]);
+        expect([world.fontLinks("/type").length, world.fontLinks("/f", ["Cyrl"]).length]).toEqual([3, 2]);
         expect(world.fontPreload("/fonts", ["Latn"])).toHaveLength(2);
         expect(world.fontLinks("/fonts", ["en", "ar-EG"], 1).map(( link ) => link.href)).toEqual(["/fonts/readex-pro-arabic.woff2", "/fonts/figtree-latin.woff2"]);
         expect(world.fontLinks("/fonts", ["en"], 1).map(( link ) => link.href)).toEqual(["/fonts/figtree-latin.woff2"]);
         expect([world.fontLinks("/fonts", ["fa"]).length, world.fontLinks("/fonts", [], 0).length, world.fontPreload("/fonts", ["de"], 1).length]).toEqual([3, 0, 1]);
-        expect(world.fontPreload()[0]).toBe('<link rel="preload" as="font" type="font/woff2" crossorigin href="/world/font/readex-pro-arabic.woff2">');
+        expect(world.fontPreload("/type")[0]).toBe('<link rel="preload" as="font" type="font/woff2" crossorigin href="/type/readex-pro-arabic.woff2">');
 
     });
     it("a scoped world speaks one locale over chosen countries and currencies", () => {
@@ -270,8 +270,8 @@ describe("world", () => {
         expect(() => world.currencies.minor(1e15, "EGP")).toThrow(exception.Fault);
         expect([world.currencies.digitsOf("HUF"), world.currencies.exponentOf("HUF"), world.currencies.minor(1, "HUF"), world.currencies.round(1.234, "HUF"), world.currencies.round(1.234, "BHD"), world.currencies.exponentOf("BHD")]).toEqual([0, 2, 100, 1, 1.234, 3]);
         expect([world.languages.scriptOf("ar-Latn"), world.languages.directionOf("ar-Latn"), world.languages.scriptOf("zh-TW"), world.languages.scriptOf("zh-Hans-TW"), world.languages.scriptOf("sr-Cyrl-RS"), world.languages.directionOf("yi"), world.languages.directionOf("AR_eg"), world.languages.scriptOf(""), world.languages.nameOf(""), world.languages.ofCountry("zz"), world.languages.get("ar-EG")?.code, world.languages.scriptOf("x-Arab"), world.languages.directionOf("x-Hebr")]).toEqual(["Latn", "ltr", "Hant", "Hans", "Cyrl", "rtl", "rtl", "Latn", "", [], "ar", "Arab", "rtl"]);
-        expect([world.emojiGlyph(""), world.emojiGlyph("-".repeat(40)), world.emojiGlyph("110000"), world.emojiGlyph("d800"), world.emojiGlyph("1f600-"), world.emojiGlyph("zz"), world.emojiCode(""), world.emojis.imageOf("☺️"), world.emojis.get("☺")?.code, world.emojis.byShortcode(":Grinning Face:")?.glyph, world.emojis.of("nope").length, world.emojis.browse({ group: "nope" }).length, world.emojis.browse({ query: "grin", group: "food" }).length]).toEqual(["", "", "", "", "😀", "", "", "/world/emoji/263a.webp", "263a", "😀", 0, 0, 0]);
-        expect([world.flagFile("../x"), world.flagFile("EG", { folder: "" }), world.flagFile("eu"), world.flagFile("x".repeat(17)), world.flagFile("E G"), world.flagEmoji("eg "), world.flagEmoji("🇪🇬"), world.flagCode("🇪🇬🇪🇬"), world.flagCode("🇪"), world.flagFile("a-b1")]).toEqual(["", "/eg.svg", "/world/flag/eu.svg", "", "", "🇪🇬", "", undefined, undefined, "/world/flag/a-b1.svg"]);
+        expect([world.emojiGlyph(""), world.emojiGlyph("-".repeat(40)), world.emojiGlyph("110000"), world.emojiGlyph("d800"), world.emojiGlyph("1f600-"), world.emojiGlyph("zz"), world.emojiCode(""), world.defineEmoji({ folder: "/e" }).imageOf("☺️"), world.emojis.get("☺")?.code, world.emojis.byShortcode(":Grinning Face:")?.glyph, world.emojis.of("nope").length, world.emojis.browse({ group: "nope" }).length, world.emojis.browse({ query: "grin", group: "food" }).length]).toEqual(["", "", "", "", "😀", "", "", "/e/263a.webp", "263a", "😀", 0, 0, 0]);
+        expect([world.flagFile("../x"), world.flagFile("EG", { folder: "" }), world.flagFile("eu", { folder: "/flags" }), world.flagFile("x".repeat(17)), world.flagFile("E G"), world.flagEmoji("eg "), world.flagEmoji("🇪🇬"), world.flagCode("🇪🇬🇪🇬"), world.flagCode("🇪"), world.flagFile("a-b1", { folder: "/flags" })]).toEqual(["", "/eg.svg", "/flags/eu.svg", "", "", "🇪🇬", "", undefined, undefined, "/flags/a-b1.svg"]);
         expect([world.regionName("002"), world.regionName(" 002 ", "ar"), world.nameIn({ en: "", ar: "ع", native: "" }, "en", "f"), world.nameIn({ en: "E", ar: "", native: "" }, "ar", "f")]).toEqual(["Africa", "أفريقيا", "f", "E"]);
 
     });
@@ -292,7 +292,7 @@ describe("world", () => {
         expect(world.everyCountry().length).toBe(250);
         expect(world.everyCurrency().length).toBe(153);
         expect(world.everyLanguage().length).toBe(135);
-        expect([world.emojiFolder, world.flagFolder, world.fontFolder]).toEqual(["/world/emoji", "/world/flag", "/world/font"]);
+        expect(["emojiFolder", "flagFolder", "fontFolder"].filter(( name ) => name in world)).toEqual([]);
 
     });
 });

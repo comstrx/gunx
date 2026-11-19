@@ -1,6 +1,5 @@
 "use client";
 
-import type * as spec from "engine/spec";
 import * as React from "react";
 import { useEffect, useMemo } from "react";
 import { Confirm } from "@/components/confirm.tsx";
@@ -18,8 +17,9 @@ import { usePreferences } from "@/hooks/use-preferences.ts";
 import { useLeaving } from "@/hooks/use-presence.ts";
 import { useOpens, usePopups, useSigning, useVisible } from "@/hooks/use-session.ts";
 import { StageContext, useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
-import type { PopupProps, StackProps } from "@/specs/part.ts";
+import type * as spec from "@/specs/index.ts";
+import type { PopupProps, StackProps } from "@/specs/index.ts";
+import { host } from "@/specs/index.ts";
 
 type Keyed = { block: spec.Block; key: string };
 

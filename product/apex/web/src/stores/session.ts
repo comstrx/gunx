@@ -1,11 +1,10 @@
-import type * as api from "engine/api";
 import * as auth from "engine/auth";
 import * as cache from "engine/cache";
 import * as exception from "engine/exception";
 import * as json from "engine/json";
-import { createClient } from "@/api/index.ts";
+import { type Client, createClient } from "@/api/index.ts";
 import { type Person, type Signed, transport } from "@/api/session.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 import { instance } from "@/stores/preferences.ts";
 
 type Handed = { tokens: auth.Tokens; user: Person };
@@ -27,7 +26,7 @@ const made = host.own(( app ) => {
 
     if ( app.address === undefined ) throw exception.fault("internal", "spec.address", { message: "the surface names no api address; set contracts.baseUrl" });
 
-    const open: api.Client = createClient({ baseUrl: app.address, wire: app.config.contracts.wire, locale: () => instance().getState().locale });
+    const open: Client = createClient({ baseUrl: app.address, client: app.compiled.surface.platform, wire: app.config.contracts.wire, locale: () => instance().getState().locale });
     const held = auth.session<Person>({
         name: "session",
         box: cache.open({ kind: cache.volatile("secure") ? app.config.settings.storage.secure : "secure", prefix: `${app.id}.session` }),

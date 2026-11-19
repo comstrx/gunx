@@ -58,7 +58,7 @@
   },
   "overrides": [
     {
-      "includes": ["src/**", "!src/tool/**", "!src/test/**", "!src/engine/bin/**"],
+      "includes": ["src/**", "!src/tool/**", "!src/test/**"],
       "linter": {
         "rules": {
           "style": {

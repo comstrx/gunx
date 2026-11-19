@@ -148,16 +148,15 @@ export function part<D extends object = object> ( given: PartOptions<D> ): Part<
     return made;
 
 }
-export function settle<D extends object> ( owner: Part<D>, found: Pick<Surface, "config" | "messages">, deployed: json.Dictionary = {} ): { config: Settled<D>; messages: Messages; issues: Issue[] } {
+export function settle<D extends object> ( owner: Part<D>, found: Pick<Surface, "config" | "messages"> ): { config: Settled<D>; messages: Messages; issues: Issue[] } {
 
     const issues: Issue[] = [];
     const known = json.deepMerge(base, owner.defaults as json.Dictionary);
-    const merged = json.clone(json.deepMerge(json.deepMerge(known, found.config), deployed));
+    const merged = json.clone(json.deepMerge(known, found.config));
     const settings: json.Dictionary = json.isRecord(merged.settings) ? merged.settings : {};
     const locales = Array.isArray(settings.locales) ? settings.locales.filter(( item ): item is string => typeof item === "string") : [];
 
     strangers(known, found.config, "", issues);
-    strangers(known, deployed, "", issues);
 
     if ( settings.locale === undefined && locales[0] !== undefined ) settings.locale = locales[0];
 
@@ -194,13 +193,13 @@ export function settle<D extends object> ( owner: Part<D>, found: Pick<Surface, 
 
     for ( const name of Object.keys(contents) ) {
 
-        const key = keyOf(given(deployed, name) ?? given(found.config, name) ?? given(owner.defaults as json.Dictionary, name));
+        const key = keyOf(given(found.config, name) ?? given(owner.defaults as json.Dictionary, name));
 
         if ( key === undefined ) continue;
 
         const told = spoken(voices, locales, key);
 
-        if ( told.missing.length > 0 ) issues.push({ path: `config.contents.${name}`, rule: "text.unknown", message: `${key}: no message carries this key in ${told.missing.join(", ")}`, fix: "add the key to the part's messages or the surface's brand/messages in every locale" });
+        if ( told.missing.length > 0 ) issues.push({ path: `config.contents.${name}`, rule: "text.unknown", message: `${key}: no message carries this key in ${told.missing.join(", ")}`, fix: "add the key to the seeds' messages or the role's messages in every locale" });
 
         contents[name] = told.said;
 

@@ -7,7 +7,7 @@ import { Link } from "@/elements/link.tsx";
 import { Text } from "@/elements/text.tsx";
 import { navigate } from "@/hooks/use-path.ts";
 import { useMenu } from "@/hooks/use-session.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export type DeniedProps = { locale: string; at: string; page: string };
 

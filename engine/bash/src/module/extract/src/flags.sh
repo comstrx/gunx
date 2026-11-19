@@ -65,7 +65,7 @@ module:extract:flags:engines () {
 module:extract:flags:refs () {
 
     local name="${1}" item=""
-    local -a items=() pairs=()
+    local -a items=() links=()
 
     module:extract:flags:items items "${2-}"
 
@@ -78,10 +78,10 @@ module:extract:flags:refs () {
 
         fi
 
-        pairs+=( "${item%%:*}" "${item#*:}" )
+        links+=( "${item%%:*}" "${item#*:}" )
 
     done
 
-    config:targets:link "${name}" "${pairs[@]}"
+    config:targets:link "${name}" "${links[@]}"
 
 }

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export function useShield ( wanted: boolean ): void {
 

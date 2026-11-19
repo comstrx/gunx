@@ -2,11 +2,7 @@
 name = "engine-adapter"
 description = "The adapter law: families, names, capabilities, one manager per family"
 dynamic = ["version", "requires-python", "license"]
-dependencies = [
-    "engine-error",
-    "engine-log",
-    "engine-rand",
-]
+dependencies = ["engine-error", "engine-log", "engine-rand"]
 
 [build-system]
 requires = ["hatchling", "tomli-w"]

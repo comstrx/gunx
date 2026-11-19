@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Status } from "@/api/index.ts";
 import { type Notice, transport } from "@/api/notices.ts";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 import { bind } from "@/stores/bind.ts";
 import { client } from "@/stores/client.ts";
 import { held } from "@/stores/device.ts";

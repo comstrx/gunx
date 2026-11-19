@@ -7,7 +7,7 @@ import { Dialog } from "@/elements/dialog.tsx";
 import { Heading } from "@/elements/heading.tsx";
 import { Text } from "@/elements/text.tsx";
 import { useStale } from "@/hooks/use-stale.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export type StaleProps = { locale: string };
 

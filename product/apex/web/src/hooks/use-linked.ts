@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { navigator, useQuery } from "@/hooks/use-path.ts";
 import { usePopups } from "@/hooks/use-session.ts";
-import { host } from "@/specs/app.ts";
-import type { PopupProps } from "@/specs/part.ts";
+import type { PopupProps } from "@/specs/index.ts";
+import { host } from "@/specs/index.ts";
 
 const key = "open";
 

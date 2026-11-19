@@ -107,6 +107,8 @@ describe("fuzz world", () => {
     });
     it("every catalog emoji codes and decodes to its plain glyph, is found by its glyph and shortcode, and images are files", () => {
 
+        const pictured = world.defineEmoji({ folder: "/e", flags: { folder: "/f" } });
+
         fc.assert(fc.property(fc.constantFrom(...world.emojis.all), ( emoji ) => {
 
             const plain = world.plainEmoji(emoji.glyph);
@@ -117,7 +119,7 @@ describe("fuzz world", () => {
             expect(world.isEmoji(emoji.glyph) && world.onlyEmoji(emoji.glyph)).toBe(true);
             expect(world.emojisIn(`a ${emoji.glyph} b`)).toEqual([emoji.glyph]);
             expect(world.emojis.byShortcode(world.emojis.shortcode(emoji.glyph) ?? "")?.name.en === emoji.name.en).toBe(true);
-            expect((world.emojis.imageOf(emoji.glyph) ?? "").endsWith(world.isFlag(emoji.glyph) ? ".svg" : ".webp")).toBe(true);
+            expect([world.emojis.imageOf(emoji.glyph), (pictured.imageOf(emoji.glyph) ?? "").endsWith(world.isFlag(emoji.glyph) ? ".svg" : ".webp")]).toEqual([undefined, true]);
 
         }), { numRuns: runs });
         fc.assert(fc.property(fc.string({ maxLength: 40, unit: "grapheme" }), ( text ) => {
@@ -141,7 +143,7 @@ describe("fuzz world", () => {
             expect(world.flagCode(glyph)).toBe(code.toUpperCase());
             expect(world.flagCode(world.flagEmoji(code.toUpperCase()))).toBe(code.toUpperCase());
             expect(world.isFlag(glyph)).toBe(true);
-            expect(world.flagFile(code, { format })).toBe(`/world/flag/${code}.${format ?? "svg"}`);
+            expect([world.flagFile(code, { format }), world.flagFile(code, { folder: "/f", format })]).toEqual(["", `/f/${code}.${format ?? "svg"}`]);
 
         }), { numRuns: runs });
         fc.assert(fc.property(fc.string({ maxLength: 6 }), ( text ) => {
@@ -149,7 +151,7 @@ describe("fuzz world", () => {
             const glyph = world.flagEmoji(text);
 
             expect(glyph === "" || world.flagCode(glyph) === text.trim().toUpperCase()).toBe(true);
-            expect(world.flagFile(text) === "" || /^\/world\/flag\/[a-z0-9]+(?:-[a-z0-9]+)*\.svg$/.test(world.flagFile(text))).toBe(true);
+            expect(world.flagFile(text, { folder: "/f" }) === "" || /^\/f\/[a-z0-9]+(?:-[a-z0-9]+)*\.svg$/.test(world.flagFile(text, { folder: "/f" }))).toBe(true);
 
         }), { numRuns: runs });
 

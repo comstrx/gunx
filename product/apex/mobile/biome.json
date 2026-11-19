@@ -42,13 +42,7 @@
         "useComponentExportOnlyModules": {
           "level": "error",
           "options": {
-            "allowExportNames": [
-              "metadata",
-              "generateMetadata",
-              "viewport",
-              "dynamic",
-              "revalidate"
-            ]
+            "allowExportNames": ["metadata", "generateMetadata", "viewport", "dynamic", "revalidate"]
           }
         }
       },
@@ -79,15 +73,11 @@
     }
   },
   "javascript": {
-    "globals": [
-      "Bun"
-    ]
+    "globals": ["Bun"]
   },
   "overrides": [
     {
-      "includes": [
-        "tests/setup.ts"
-      ],
+      "includes": ["tests/setup.ts"],
       "linter": {
         "rules": {
           "correctness": {
@@ -98,11 +88,7 @@
       }
     },
     {
-      "includes": [
-        "src/components/**",
-        "src/features/**",
-        "src/app/**"
-      ],
+      "includes": ["src/components/**", "src/features/**", "src/app/**"],
       "linter": {
         "rules": {
           "correctness": {

@@ -1,7 +1,7 @@
 import * as json from "engine/json";
-import type * as spec from "engine/spec";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import type * as spec from "@/specs/index.ts";
+import { host } from "@/specs/index.ts";
 import { bind } from "@/stores/bind.ts";
 import { session } from "@/stores/session.ts";
 

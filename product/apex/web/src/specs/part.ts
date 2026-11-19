@@ -1,8 +1,7 @@
 import * as spec from "engine/spec";
 import * as validate from "engine/validate";
-import { catalogue, manifests, platform } from "@/api/index.ts";
-import ar from "../../messages/ar.json" with { type: "json" };
-import en from "../../messages/en.json" with { type: "json" };
+import { catalogue } from "@/api/index.ts";
+import { manifests } from "@/specs/features.ts";
 
 const space = validate.enum(["none", "xs", "sm", "md", "lg", "xl"]);
 
@@ -30,7 +29,7 @@ export const defaults = {
     settings: { budget: { js: 1_150_000 as number | string, desk: 640_000 as number | string }, output: "export", window: { width: 1280, height: 800, minWidth: 960, minHeight: 640 } },
     themes: {},
     contents: { name: {} as Readonly<Record<string, string>>, tagline: {} as Readonly<Record<string, string>>, url: "" },
-    contracts: { maps: { key: "" }, media: ["https://maps.googleapis.com"], live: { path: "/live" }, baseUrl: "http://localhost:8100" },
+    contracts: { maps: { key: "" } },
 };
-export const messages = { ar, en };
-export const part = spec.part({ platform, blocks, screen, carries: ["session"], features: manifests, catalogue, defaults, messages, maxDepth: 4 });
+export const platform: spec.Platform = "web";
+export const part = spec.part({ platform, blocks, screen, carries: ["session"], features: manifests, catalogue, defaults, maxDepth: 4 });

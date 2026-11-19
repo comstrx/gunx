@@ -1,0 +1,2 @@
+Contact: mailto:security@example.test
+Preferred-Languages: en, ar

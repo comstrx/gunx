@@ -53,11 +53,18 @@ Bun 1.4.4 or newer. Every release is a `vX.Y.Z` tag of this repository; the newe
 **Everything a role needs, declared in one folder.**
 
 ```text
-specs/<role>/
-├── config/     contracts · settings · contents · themes · features
-├── brand/      messages in every locale
-└── schema/     the screens, one file each
+seeds/                the part's own defaults
+├── messages/         every key, in every locale
+└── assets/           images · videos · audios · fonts · attachments · security
+
+specs/<role>/         a role overrides only what it needs
+├── config/           contracts · settings · contents · themes · features
+├── schema/           the screens, one file each
+├── messages/         its own wording
+└── assets/           its own files
 ```
+
+A role is merged over the seeds key by key. Every file a role names is placed under its own address, and its `security` files are served from `/.well-known`.
 
 **Spec-Driven Roles** · **Web and Desktop from One Tree** · **Themes per Role** · **Languages in the Address** · **Right-to-Left and Left-to-Right** · **Typed API Contracts** · **Sessions and a Vault** · **Realtime** · **Offline-Aware States** · **Byte Budgets**
 

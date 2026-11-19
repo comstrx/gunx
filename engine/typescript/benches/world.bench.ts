@@ -29,7 +29,7 @@ bench("world.emojisIn", () => do_not_optimize(world.emojisIn("go 🇪🇬 now �
 bench("world.stripEmoji", () => do_not_optimize(world.stripEmoji("go 🇪🇬 now 👍🏽 and 👨‍👩‍👧 ok")));
 bench("world.emojiCode", () => do_not_optimize(world.emojiCode("👨‍👩‍👧")));
 bench("world.flagEmoji", () => do_not_optimize(world.flagEmoji("EG")));
-bench("world.flagFile", () => do_not_optimize(world.flagFile("eg")));
+bench("world.flagFile", () => do_not_optimize(world.flagFile("eg", { folder: "/f" })));
 bench("world.fontFor", () => do_not_optimize(world.fontFor("ar-EG")));
 bench("world.assets", () => do_not_optimize(en.assets()));
 

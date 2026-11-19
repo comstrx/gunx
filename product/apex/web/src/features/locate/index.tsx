@@ -10,7 +10,7 @@ import { Text } from "@/elements/text.tsx";
 import type { Placed } from "@/features/index.ts";
 import { useLocate } from "@/features/locate/hooks/use-locate.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export function Locate ({ id }: Placed ) {
 

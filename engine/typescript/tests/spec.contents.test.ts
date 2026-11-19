@@ -21,20 +21,34 @@ describe("spec contents", () => {
         const offers = app.meta(app.compiled.byName.offers as spec.CompiledScreen, "en");
         const named = ( meta: spec.Meta, name: string ): string | undefined => meta.tags.map(( tag ) => ("name" in tag && tag.name === name) || ("property" in tag && tag.property === name) ? tag.content : undefined).find(( content ) => content !== undefined);
 
-        expect([home.description, offers.description, home.keywords, named(home, "keywords"), named(home, "og:image"), named(home, "twitter:site"), named(home, "twitter:card"), home.canonical]).toEqual(["The whole market in one place", "Every offer of the week", ["market", "fresh"], "market, fresh", "https://shop.example.test/_generated/shop/images/share.png", "@shop", "summary_large_image", "https://shop.example.test"]);
+        expect([home.description, offers.description, home.keywords, named(home, "keywords"), named(home, "og:image"), named(home, "twitter:site"), named(home, "twitter:card"), home.canonical]).toEqual(["The whole market in one place", "Every offer of the week", ["market", "fresh"], "market, fresh", "https://shop.example.test/images/share.png", "@shop", "summary_large_image", "https://shop.example.test"]);
         expect(home.tags.some(( tag ) => "rel" in tag && tag.rel === "canonical")).toBe(true);
         expect(booted({ name: "Shop", tagline: "Fresh every day", url: "https://shop.example.test" }).meta(app.compiled.byName.home as spec.CompiledScreen, "en").description).toBe("Fresh every day");
 
     });
-    it("a file is named by its public path and answered from the surface's generated folder, the brand's file in its place", () => {
+    it("seeds and a role's assets merge by key, each file read from its own folder, and the app answers every key with its served address", () => {
 
-        const built = spec.build(spec.define({ shop: spec.surface({ schema: screens, config: { contents: { logo: "/images/logo.svg", icon: "https://cdn.example.test/icon.svg" } }, brand: { messages: { en: { hello: "Hi" } }, images: { "logo.svg": "mark.png", "extra.png": "extra.png" } } }) }), part);
+        const seeds = { messages: { en: { hello: "Hi", bye: "Bye" } }, assets: { home: "/part/seeds/assets", images: { logo: "images/logo.svg", hero: { home: "images/hero.gif" } }, security: { "security.txt": "security/security.txt" } } };
+        const shop = spec.surface({ schema: screens, config: { contents: { url: "https://shop.example.test", logo: { asset: "images.logo" }, icon: "https://cdn.example.test/icon.svg", seo: { image: { asset: "images.hero.home" } } } }, messages: { en: { hello: "Hello" } }, assets: { home: "/part/specs/shop/assets/", images: { logo: "images/mark.png", extra: "images/extra.png" } } });
+        const built = spec.build(spec.define({ shop }), part, { seeds, served: "/_files/", places: { fonts: "/type", paint: "/paint.js" } });
+        const one = built.surface("shop");
         const app = spec.boot(JSON.parse(JSON.stringify(built.artifact("shop"))), { sinks: [] }).app;
+        const first = app.theme();
 
-        expect(spec.generated).toBe("_generated");
-        expect([app.asset("/images/logo.svg"), app.asset("images/hero.gif"), app.asset("/videos/intro/a.mp4"), app.asset("robots.txt")]).toEqual(["/_generated/shop/images/mark.png", "/_generated/shop/images/hero.gif", "/_generated/shop/videos/intro/a.mp4", "/_generated/shop/robots.txt"]);
-        expect([app.asset(""), app.asset("https://cdn.example.test/a.png"), app.asset("data:image/png;base64,AA"), app.asset("//cdn.example.test/a.png"), app.asset("/constructor/x")]).toEqual(["", "https://cdn.example.test/a.png", "data:image/png;base64,AA", "//cdn.example.test/a.png", "/_generated/shop/constructor/x"]);
-        expect([app.content("logo", "en"), app.content("icon", "en"), app.text("en", "hello"), app.brand.images]).toEqual(["/_generated/shop/images/mark.png", "https://cdn.example.test/icon.svg", "Hi", { "logo.svg": "mark.png", "extra.png": "extra.png" }]);
+        expect(one.files.map(( file ) => [file.key, file.from, file.to, file.at])).toEqual([
+            ["images.logo", "/part/specs/shop/assets/images/mark.png", "images/logo.png", "specs.shop.assets.images.logo"],
+            ["images.hero.home", "/part/seeds/assets/images/hero.gif", "images/hero/home.gif", "seeds.assets.images.hero.home"],
+            ["security.security.txt", "/part/seeds/assets/security/security.txt", "security/security.txt", "seeds.assets.security.security.txt"],
+            ["images.extra", "/part/specs/shop/assets/images/extra.png", "images/extra.png", "specs.shop.assets.images.extra"],
+        ]);
+        expect([app.asset("images.logo"), app.asset("images.hero.home"), app.asset("images.ghost"), app.asset(""), app.asset("https://cdn.example.test/a.png"), app.asset("constructor")]).toEqual(["/_files/shop/images/logo.png", "/_files/shop/images/hero/home.gif", "", "", "https://cdn.example.test/a.png", ""]);
+        expect([app.content("logo", "en"), app.content("icon", "en"), app.text("en", "hello"), app.text("en", "bye"), app.site("en")?.image]).toEqual(["/_files/shop/images/logo.png", "https://cdn.example.test/icon.svg", "Hello", "Bye", "/_files/shop/images/hero/home.gif"]);
+        expect([first === app.theme(), first, app.publish === spec.publish]).toEqual([true, spec.theme(app.config.themes), true]);
+        expect([app.place("paint"), app.place("fonts"), app.place("ghost"), spec.boot(JSON.parse(JSON.stringify(spec.build(spec.define({ shop }), part).artifact("shop"))), { sinks: [] }).app.place("paint")]).toEqual(["/paint.js", "/type", "", ""]);
+        expect(spec.build(spec.define({ shop }), part, { seeds: { messages: { en: { a: "1" }, ar: { b: "2" } } } }).surface("shop").compiled.issues.map(( issue ) => [issue.path, issue.rule])).toEqual([["seeds.messages.en.b", "messages.keys"], ["seeds.messages.ar.a", "messages.keys"]]);
+        expect(spec.assets(undefined)).toEqual({});
+        expect(() => spec.assets({ images: { logo: "a.svg" } })).toThrow("assets.home: name the folder of these files");
+        expect(spec.filed([{ given: { home: "/a", x: { y: "y.txt" } }, at: "here" }], "id").urls).toEqual({ "x.y": "/id/x/y.txt" });
 
     });
     it("the role's identity is told as structured data: its logo, contacts, address and social pages", () => {
@@ -44,7 +58,7 @@ describe("spec contents", () => {
         const things = Array.isArray(told) ? told : told["@graph"] ?? [told as Record<string, unknown>];
         const found = things.find(( thing ) => thing["@type"] === "Organization");
 
-        expect(found).toMatchObject({ name: "Shop", url: "https://shop.example.test", logo: "https://shop.example.test/_generated/shop/images/logo.svg", description: "Fresh every day", email: "hello@shop.example.test", telephone: "+20 100 000 0000", address: "12 Market Street, Cairo", sameAs: ["https://github.com/shop"] });
+        expect(found).toMatchObject({ name: "Shop", url: "https://shop.example.test", logo: "https://shop.example.test/images/logo.svg", description: "Fresh every day", email: "hello@shop.example.test", telephone: "+20 100 000 0000", address: "12 Market Street, Cairo", sameAs: ["https://github.com/shop"] });
         expect(things.some(( thing ) => thing["@type"] === "WebSite")).toBe(true);
         expect(booted({ name: "Shop" }).graph("en")).toBeUndefined();
 

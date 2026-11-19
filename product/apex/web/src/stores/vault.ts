@@ -1,6 +1,6 @@
 import * as cache from "engine/cache";
-import type { Kind } from "@/api/vault.ts";
-import { host } from "@/specs/app.ts";
+import type { Kind } from "@/specs/index.ts";
+import { host } from "@/specs/index.ts";
 
 export type Shelf = { kind: Kind; volatile: boolean; box: cache.Box };
 

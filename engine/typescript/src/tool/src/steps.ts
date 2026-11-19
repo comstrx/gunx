@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { join, normalize } from "node:path";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import * as exception from "engine-exception";
 import * as net from "engine-net";
 import * as spec from "engine-spec";
@@ -104,9 +104,54 @@ export function spoken ( root: string ): Step {
     });
 
 }
+function aliased ( scope: Scope, alias: string ): boolean {
+
+    return exception.probe(() => scope.at(alias)) !== undefined;
+
+}
+function materialized ( scope: Scope, build: spec.Build, entry: string ): number {
+
+    const placing = scope.placing;
+    let written = 0;
+
+    if ( placing === undefined ) return 0;
+
+    rmSync(scope.at(placing.into), { recursive: true, force: true });
+
+    for ( const into of Object.values(placing.entry ?? {}) ) rmSync(scope.at(into), { recursive: true, force: true });
+
+    for ( const name of build.names ) {
+
+        const { id, files } = build.surface(name);
+
+        for ( const file of files ) {
+
+            if ( !existsSync(file.from) ) {
+
+                scope.flag(file.at, `${file.from}: the file this key names is not there`, "assets");
+
+                continue;
+
+            }
+
+            written += scope.copy(file.from, `${placing.into}/${id}/${file.to}`);
+
+            if ( name !== entry ) continue;
+
+            for ( const [kind, into] of Object.entries(placing.entry ?? {}) ) if ( file.key.startsWith(`${kind}.`) ) written += scope.copy(file.from, `${into}/${file.to.slice(kind.length + 1)}`);
+
+        }
+
+    }
+
+    return written;
+
+}
 export function specs ( into: string ): Step {
 
     checked(into, "specs");
+
+    if ( !into.startsWith("#") ) throw exception.fault("internal", "tool.specs", { message: `${into}: name the compiled module by its tsconfig alias, such as #spec; ${into}.json, when mapped, receives the artifact as JSON` });
 
     return step(`specs ${into}`, ( scope ) => {
 
@@ -116,6 +161,8 @@ export function specs ( into: string ): Step {
         if ( build === undefined ) throw exception.fault("internal", "tool.specs", { message: "specs writes the project's surfaces, so the project needs specs: define({ specs, part, tasks })" });
 
         const current = scope.expand("{role}");
+        const module = relative(scope.root, scope.at(into));
+        const folder = dirname(module);
 
         for ( const name of build.names ) {
 
@@ -131,19 +178,24 @@ export function specs ( into: string ): Step {
 
         if ( problems ) throw exception.fault("validation", "tool.specs", { message: `${counted(problems, "problem")} in the specs; nothing after them runs` });
 
-        for ( const name of build.names ) scope.emit(`${into}/surface/${name}.json`, build.carried(name));
+        for ( const name of build.names ) scope.emit(`${folder}/surface/${name}.json`, build.carried(name));
 
         const others = build.reach(current).filter(( name ) => name !== current);
 
-        scope.emit(`${into}/current.json`, build.artifact(current, false));
-        scope.emit(`${into}/current.ts`, [
+        if ( aliased(scope, `${into}.json`) ) scope.emit(relative(scope.root, scope.at(`${into}.json`)), build.artifact(current, false));
+        scope.emit(module, [
             `import entry from ${JSON.stringify(`./surface/${current}.json`)} with { type: "json" };`,
             "",
-            `export const artifact = ${JSON.stringify({ ...build.artifact(current, false), surfaces: "@entry" }).replace("\"@entry\"", `{ ${JSON.stringify(current)}: entry }`)};`,
-            "",
-            `export const load = {${others.map(( name ) => `\n    ${JSON.stringify(name)}: () => import(${JSON.stringify(`./surface/${name}.json`)}),`).join("")}${others.length ? "\n" : ""}};`,
+            `export const compiled = {`,
+            `    artifact: ${JSON.stringify({ ...build.artifact(current, false), surfaces: "@entry" }).replace("\"@entry\"", `{ ${JSON.stringify(current)}: entry }`)},`,
+            `    load: {${others.map(( name ) => `\n        ${JSON.stringify(name)}: () => import(${JSON.stringify(`./surface/${name}.json`)}),`).join("")}${others.length ? "\n    " : ""}},`,
+            "};",
             "",
         ].join("\n"));
+
+        const placed = materialized(scope, build, current);
+
+        if ( placed > 0 ) scope.say(`${placed} asset files placed`);
 
     });
 
@@ -259,7 +311,7 @@ export function page ( from: string, to: string, values: Values = {}, sources: S
 }
 export function fonts ( into: string, options: Fonts = {} ): Step {
 
-    const { css: sheet, url = "/fonts" } = options;
+    const { css: sheet, url } = options;
 
     checked(into, "fonts");
 
@@ -268,55 +320,31 @@ export function fonts ( into: string, options: Fonts = {} ): Step {
     return step(`fonts → ${into}`, ( scope ) => {
 
         const written = scope.copy(join(assets(), "font"), into, { extensions: [".woff2"] });
+        const folder = url ?? Object.entries(scope.placing?.places ?? {}).find(([, path]) => scope.expand(path) === scope.expand(into))?.[0];
+        const address = url ?? (folder === undefined ? undefined : scope.placing?.urls[folder]);
 
-        if ( sheet !== undefined ) scope.emit(sheet, `${world.fontFaces(url)}\n`);
+        if ( sheet !== undefined && address === undefined ) throw exception.fault("internal", "tool.fonts", { message: `${into}: name where the fonts are served, as fonts({ url }) or a place in assets.places` });
+        if ( sheet !== undefined && address !== undefined ) scope.emit(sheet, `${world.fontFaces(address)}\n`);
 
-        scope.say(`${written} written, served from ${url}`);
+        scope.say(`${written} written${address === undefined ? "" : `, served from ${address}`}`);
 
     });
 
 }
-export function brand ( from: string, into: string, home: ( name: string ) => string ): Step {
+export function styles ( into: string, imports: readonly string[] ): Step {
 
-    checked(from, "brand");
-    checked(into, "brand");
+    checked(into, "styles");
 
-    if ( typeof home !== "function" ) throw exception.fault("internal", "tool.brand", { message: "brand takes where a role keeps its brand, such as ( name ) => `specs/${name}/brand`" });
+    if ( !Array.isArray(imports) || imports.length === 0 ) throw exception.fault("internal", "tool.styles", { message: "styles writes one sheet that imports the given sheets in order, such as [\"src/styles/globals.css\", \"{theme}\"]" });
 
-    return step(`brand ${from} → ${into}`, ( scope ) => {
+    for ( const one of imports ) checked(one, "styles");
 
-        const build = scope.build;
+    return step(`styles ${into}`, ( scope ) => {
 
-        if ( build === undefined ) throw exception.fault("internal", "tool.brand", { message: "brand merges every surface's files, so the project needs specs: define({ specs, part, tasks })" });
+        const target = scope.at(into);
+        const lines = imports.map(( one ) => `@import ${JSON.stringify(relative(dirname(target), scope.at(one)).replaceAll("\\", "/").replace(/^(?!\.)/, "./"))};`);
 
-        const base = existsSync(scope.at(from)) ? readdirSync(scope.at(from), { withFileTypes: true }).filter(( entry ) => entry.isDirectory() && normalize(join(from, entry.name)) !== normalize(into)).map(( entry ) => entry.name) : [];
-        let written = 0;
-
-        rmSync(scope.at(into), { recursive: true, force: true });
-
-        for ( const name of build.names ) {
-
-            const { id, brand: tables } = build.carried(name);
-            const kept = `${into}/${id}`;
-
-            for ( const folder of base ) written += scope.copy(`${from}/${folder}`, `${kept}/${folder}`);
-
-            for ( const [kind, table] of Object.entries(tables as Readonly<Record<string, Readonly<Record<string, string>>>>) ) {
-
-                for ( const file of new Set(Object.values(table)) ) {
-
-                    const source = `${home(name)}/${kind}/${file}`;
-
-                    if ( file.split("/").includes("..") || !existsSync(scope.at(source)) ) scope.flag(`${name}: brand.${kind}`, `${source}: the brand names a file that is not in its folder`, "brand");
-                    else written += scope.copy(source, `${kept}/${kind}/${file}`);
-
-                }
-
-            }
-
-        }
-
-        scope.say(`${counted(build.names.length, "surface")}, ${written} written`);
+        scope.emit(relative(scope.root, target), `${lines.join("\n")}\n`);
 
     });
 

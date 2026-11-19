@@ -5,7 +5,7 @@ import { type Greeting, type Tone, tones, transport } from "@/api/hello.ts";
 import type { Status } from "@/api/index.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 import { bind } from "@/stores/bind.ts";
 import { client } from "@/stores/client.ts";
 

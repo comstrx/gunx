@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Shell } from "@/app/shell.tsx";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 type Params = { path?: string[] | undefined };
 

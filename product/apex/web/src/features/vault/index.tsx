@@ -8,7 +8,7 @@ import { Text } from "@/elements/text.tsx";
 import type { Placed } from "@/features/index.ts";
 import { useVault } from "@/features/vault/hooks/use-vault.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export function Vault ({ id }: Placed ) {
 

@@ -6,7 +6,7 @@ import * as json from "engine-json";
 import type * as spec from "engine-spec";
 import type { Member, Pending, Scope, View, Walked, WalkOptions } from "./arch.ts";
 
-const skipped: readonly string[] = ["node_modules", ".git", ".next", ".expo", "dist", "build", ".bun", ".cache", ".cottontail-tmp", ".hutch", ".infra"];
+const skipped: readonly string[] = ["node_modules", ".git"];
 const deepest = 64;
 const widest = 64;
 

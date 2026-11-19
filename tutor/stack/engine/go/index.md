@@ -1,45 +1,63 @@
-# engine/go
+# Go engine
 
-One Go workspace (`go.work`) of modules, one per domain under `src/` (`engine/<domain>`, each a package that stands alone), one facade module `engine` (`src/engine`), and the development modules `tests`, `benches` and `fuzz` that link the engine the way a consumer does.
+## Contract
 
-## Layout
+A general-purpose Go engine for demanding production systems. Develop comprehensive reusable capabilities, precise logic and a powerful predictable DSL with the highest practical speed, safety and memory efficiency. Use idiomatic Go composition and explicit resource ownership.
 
-```
-engine/go/
-├── go.work  go.work.sum  the workspace: the one Go version, `use` of every module below, the one workspace sum
-├── src/engine/           module `engine`, the facade: doc.go, engine.go (aliases and constructors); its go.mod names no sibling (the workspace resolves them)
-├── src/<domain>/         module `engine/<domain>`, one package: doc.go, arch.go (types, interfaces, errors), <concern>.go, go.mod naming only the libraries it imports; no test file
-├── src/internal/         what no consumer imports: stage, testkit, generated code (a module when it exists)
-├── src/cmd/<name>/       binaries: main.go only (a module each)
-├── tests/                module `tests`: one <domain>_test.go per domain plus engine_test.go and api_test.go (the recorded exported names of every package), package tests
-├── benches/              module `benches`: one <domain>_test.go per domain holding Benchmark* only, package benches
-├── fuzz/                 module `fuzz`: one <domain>_test.go per domain holding Fuzz* only, package fuzz
-└── .golangci.yml         every linter on (`exhaustruct gomodguard wsl` deprecated and off; `gomodguard_v2` off: depguard owns imports; `whitespace wsl_v5` off: they fight the hand style; `testpackage` allows `tests benches fuzz`); depguard allows the standard library and `engine`
-```
+## Structure
 
-## Laws
+- The workspace owns module membership and the Go version; domain modules, facade, tests, benches and fuzz retain their own responsibilities.
+- A domain module under `src/<domain>` is `engine/<domain>`. Put the package comment in doc.go, public type/port declarations in arch.go and implementations in concern files. The facade lives under `src/engine` as module `engine`.
+- Keep modules independently importable. Current sibling resolution is directory-based through `go.work`; member manifests do not invent sibling versions or `replace` overrides.
+- The workspace root is not a Go module. Member directories define applicable boundaries; tests, benches and fuzz own every _test.go, keeping shipped src test-free. Internal stage support belongs under src/internal; command entrypoints under src/cmd.
+- go.work owns the toolchain version; go.mod directives repeat that approved version where required by Go, rather than selecting independent versions. Preserve clean module metadata and maintain generated sums when dependencies require them.
+- Record exported surface in the existing API test; a new module joins the workspace, facade and proof targets together.
 
-- **Workspace** (test): one `go.work` naming every module; a domain is its own module `engine/<domain>` that imports no facade and names only the libraries it imports, so it works alone; `tests`, `benches` and `fuzz` hold every `_test.go` of the engine, so `src/` ships test-free; no `go.mod` names a sibling module, no `require` of one, no `replace`, no `v0.0.0`: the workspace resolves siblings by directory; `go mod tidy -diff` is empty in every module; the version of Go lives in `go.work` and every `go.mod` repeats it.
-- **Fault:** `fault.Fault` (code, reason, message, errors); wrapped once per layer, read with `errors.Is` / `errors.As`.
-- **Layers:** `log` is the floor, `fault` above it, then what this engine needs in the order it needs it; a DAG, refused by a test over `go list -deps`.
-- **Cross-platform:** no code assumes one system; the gate runs on Linux; cgo off.
-- **Stage:** `src/internal/stage` carries provisioning, clients, samples and the bench rig.
+## Rules
 
-## Domains
+### Demand and domain boundaries
 
-`hello`, the proof verb. The first round names the rest from real need, floor first (`log fault`), then what a consumer asks for.
+- Name the backend consumer, observable capability, scale and recovery need before adding a domain. Verify existing Go facilities and engine paths before adding abstractions.
+- Add the smallest suitable domain in the real dependency order. Keep each provider private behind its adapter, capability and error contracts.
+- For a command, keep flag, process and exit behavior explicit and preserve the `--version` output. For a controller/provider, prove idempotent reconcile, retry, shutdown and unknown outcome semantics against the actual API.
+- Keep dependencies directed down the domain graph. The facade is a caller convenience. Consumer-defined interfaces should express the smallest real port.
+- Preserve the approved log → fault foundation when adding domains. Reuse fault.Fault and its declared contract; wrap with layer context through the language error contract without introducing another fault family.
+- Record whether a domain can ship independently and which deployment platforms have proof. Verify versioned standalone consumption before changing extraction.
 
-## Gate
+### Backend and dependencies
 
-`infra gate --part go`, over every module of the workspace (`go list -m -f '{{.Dir}}'`; a bare `./...` has no module at the root) = deps (golangci-lint and govulncheck at their pins, `go mod download` in each module) · check (`go mod tidy -diff` in each module, `go vet`) · lint (`golangci-lint run`) · test (`go test -race -shuffle=on -count=1`) · safety (`go test -asan` on Linux with a C compiler) · audit (`govulncheck -C <module> ./...`); `bench` (`go test -run '^$' -bench . -benchmem`) and `fuzz` (each `Fuzz*` target alone: `-fuzz '^<Target>$' -fuzztime <s>`) by name.
+- Give backend transport one HTTP owner, explicit resource budgets and the consuming part's wire contract. Go knowledge owns standard HTTP mechanics; the selected library owns router mechanics.
+- The HTTP owner exposes protocol capabilities and their evidence; runtime and library details remain in their responsible skills.
+- Keep middleware, validation, auth, response, fault and egress semantics in the engine. Own context, deadlines, transport pools, server drain and upgrades at their lifecycle boundaries.
+- Introduce dependencies only through the owning module. Keep the allowed import policy aligned with deliberate dependency decisions and the responsible adapter.
+- Apply root architecture's dependency policy to the owning module; the selected language/library owns toolchain and upstream compatibility.
 
-## How to add
+### Operational evidence
 
-- **A verb:** in its package, declared in `arch.go`, implemented in its concern file, aliased by the facade, pinned in `tests/<domain>_test.go`, fuzzed in `fuzz/<domain>_test.go` when it parses input, benched in `benches/<domain>_test.go` when hot.
-- **A domain:** `src/<domain>/` as module `engine/<domain>` with `go.mod` (`module` and `go` lines only), `doc.go`, `arch.go`, a `use` line in `go.work`, its alias in the facade, its test file under `tests/`, its place in the DAG; the wall refuses anything less.
-- **A provider:** an adapter behind its family's DSL with declared capabilities, a memory or log implementation for tests, the real one proven against the service or its exact wire.
-- **A binary:** `src/cmd/<name>/main.go` as its own module, `--version`.
+- Prove bounded goroutine, queue and connection counts. Exercise cancellation and retry with a failing upstream and account for already committed operations.
+- Compare CPU, p95/p99, throughput, allocation rate, retained heap/RSS, startup and drain under equal conditions before promoting a new server or runtime setting.
+- Keep concurrency limits and memory budgets compatible with deployment quotas and dependent services. Profile before tuning pools, GC or PGO.
+- Grow the stage only with a domain that needs it. Real services and exact wire fakes are evidence for boundary behavior; preserve both consumer paths and shutdown where relevant.
 
-## Direction
+### Independent and portable consumption
 
-The engine of operators, controllers, providers and CLIs; its own domains at its own pace, shipped as `gox` on every tag. The gate grows to `linux darwin windows` on `amd64 arm64`, a binary becomes a row of the release's native builds, and the release writes `require engine/<domain> vX.Y.Z` into the published facade.
+- A workspace can hide missing module requirements. Verify extracted/versioned consumers without relying on local go.work resolution before claiming independent delivery.
+- Keep OS-specific service/process/filesystem integration behind its owning domain. Match Linux/macOS/Windows public contracts while recording unsupported optional adapters explicitly.
+- Exercise empty/default configuration and each advertised optional integration through the actual consumer facade. Unused providers should not become mandatory startup dependencies.
+- Keep production build requirements separate from race/fuzz/benchmark tooling requirements defined by Go knowledge.
+
+## Proof
+
+- Cover workspace membership, domain DAG, public contracts, independent consumers and versioned compatibility.
+- Exercise concurrent access, cancellation, bounded queues/connections and resource recovery; distinguish supported targets.
+- Transport coverage includes advertised protocols, byte/deadline limits, overload and graceful stop.
+- Compare whole-service behavior under equivalent work; use appropriate static, race, memory and input-exploration methods without conflating their coverage.
+
+## Sources
+
+- Repository evidence lives in `engine/go/go.work`, `engine/go/src/engine/engine.go`.
+- [Go release history](https://go.dev/doc/devel/release) · [Go modules and workspaces](https://go.dev/ref/mod) · [Go net/http](https://pkg.go.dev/net/http)
+
+## Routing
+
+For Gin or x/sync work, read the [library dispatcher](../../lib/index.md) with the relevant library selections. If no external library applies, read the [language dispatcher](../../lang/index.md) with Go selected. Follow other library context when relevant; return here for module ownership.

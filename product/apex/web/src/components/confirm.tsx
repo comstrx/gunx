@@ -7,7 +7,7 @@ import { Dialog } from "@/elements/dialog.tsx";
 import { Heading } from "@/elements/heading.tsx";
 import { Text } from "@/elements/text.tsx";
 import { useAsked } from "@/hooks/use-session.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export type ConfirmProps = { locale: string };
 

@@ -2,7 +2,6 @@
 
 import * as device from "engine/device";
 import * as json from "engine/json";
-import type * as spec from "engine/spec";
 import * as React from "react";
 import { useEffect, useRef, useState } from "react";
 import { Nav } from "@/app/nav.tsx";
@@ -12,8 +11,9 @@ import { arrived, navigate, redirect, usePath, watched } from "@/hooks/use-path.
 import { Spoken } from "@/hooks/use-preferences.ts";
 import { useActive } from "@/hooks/use-session.ts";
 import { useShield } from "@/hooks/use-shield.ts";
-import { host } from "@/specs/app.ts";
-import type { ScreenProps } from "@/specs/part.ts";
+import type * as spec from "@/specs/index.ts";
+import type { ScreenProps } from "@/specs/index.ts";
+import { host } from "@/specs/index.ts";
 import { passing, shared } from "@/stores/box.ts";
 import { live } from "@/stores/live.ts";
 import { instance } from "@/stores/preferences.ts";

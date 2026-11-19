@@ -76,16 +76,19 @@ module:gate:watch () {
 module:gate:fresh () {
 
     local dir="${1}" changed="${2:-}" watched="" file=""
+    local -a folders=()
 
     [[ -n "${changed}" ]] || return 1
 
-    while IFS= read -r watched; do
+    mapfile -t folders < <(module:gate:watch "${dir}")
+
+    for watched in "${folders[@]}"; do
 
         while IFS= read -r file; do
             [[ "${file}" != "${watched}" && "${file}" != "${watched}/"* ]] || return 0
         done <<< "${changed}"
 
-    done < <(module:gate:watch "${dir}")
+    done
 
     return 1
 

@@ -1,11 +1,11 @@
 import * as device from "engine/device";
 import * as event from "engine/event";
 import type * as exception from "engine/exception";
-import type * as spec from "engine/spec";
 import * as state from "engine/state";
 import * as translate from "engine/translate";
-import { host } from "@/specs/app.ts";
-import type { Defaults } from "@/specs/part.ts";
+import type * as spec from "@/specs/index.ts";
+import type { Defaults } from "@/specs/index.ts";
+import { host } from "@/specs/index.ts";
 import { bind } from "@/stores/bind.ts";
 import { box } from "./box.ts";
 

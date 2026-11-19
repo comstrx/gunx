@@ -177,8 +177,9 @@ export type Compiled = {
     issues: Issue[];
 };
 export type Messages = Readonly<Record<string, json.Dictionary>>;
-export type Table = Readonly<Record<string, string>>;
-export type Brand = Readonly<Record<string, Table>>;
+export type Assets = Readonly<Record<string, unknown>>;
+export type Seeds = { readonly messages?: Messages | undefined; readonly assets?: Assets | undefined };
+export type Placed = { readonly key: string; readonly from: string; readonly to: string; readonly at: string };
 export type Settings = { locales: string[]; locale: string; localization: boolean; scheme: string; world: world.Catalog[]; grants: string[]; storage: { secure: string }; app: { name: string; identifier: string; version: string; slug: string; scheme: string }; home?: string | undefined; login?: string | undefined; account?: string | undefined; [key: string]: unknown };
 export type Toned = { light: Record<string, string>; dark: Record<string, string> };
 export type Themed = { color: Toned; shadow: Toned; radius: Record<string, number | string>; motion: Record<string, number | string>; font: Record<string, string[]> };
@@ -186,8 +187,8 @@ export type Painted = { base: Record<string, string>; dark: Record<string, strin
 export type Contracts = { baseUrl: string; realtime: boolean; media: string[]; wire: api.Overrides; live: { path: string; channel: string; events: { created: string; updated: string; deleted: string }; key: string }; [key: string]: unknown };
 export type Config = { settings: Settings; themes: json.Dictionary; contents: json.Dictionary; contracts: Contracts; features: string[] };
 export type Schema = readonly Screen[] | { screens: readonly Screen[]; signals?: readonly string[] | undefined; on?: Reactions | undefined; triggers?: readonly Trigger[] | undefined };
-export type SurfaceOptions = { id?: string | undefined; config?: object | undefined; schema: Schema; messages?: Messages | undefined; brand?: Readonly<Record<string, unknown>> | undefined };
-export type Surface = { readonly id: string | undefined; readonly config: json.Dictionary; readonly screens: readonly Screen[]; readonly signals: readonly string[]; readonly on: Reactions; readonly triggers: readonly Trigger[]; readonly messages: Messages; readonly brand: Brand };
+export type SurfaceOptions = { id?: string | undefined; config?: object | undefined; schema: Schema; messages?: Messages | undefined; assets?: Assets | undefined };
+export type Surface = { readonly id: string | undefined; readonly config: json.Dictionary; readonly screens: readonly Screen[]; readonly signals: readonly string[]; readonly on: Reactions; readonly triggers: readonly Trigger[]; readonly messages: Messages; readonly assets: Assets };
 export type Groups = { readonly [name: string]: Surface | Groups };
 export type SpecOptions = { current?: string | undefined };
 export type Spec = { readonly surfaces: Readonly<Record<string, Surface>>; readonly names: readonly string[]; readonly current: string };
@@ -217,9 +218,12 @@ export type Part<D extends object = object> = {
     readonly maxDepth: number | undefined;
 };
 export type Settled<D extends object = object> = Config & D;
-export type Deploy = { url?: string | undefined; release?: boolean | undefined; config?: json.Dictionary | undefined };
-export type Built<D extends object = object> = { name: string; id: string; address: string | undefined; home: string | undefined; login: string | undefined; account: string | undefined; config: Settled<D>; messages: Messages; brand: Brand; compiled: Compiled; links: Record<string, string> };
-export type Carried = { id: string; address?: string | undefined; home?: string | undefined; login?: string | undefined; account?: string | undefined; config: json.Dictionary; messages: json.Dictionary; brand: json.Dictionary; links: json.Dictionary; compiled: json.Dictionary };
+export type Deploy = { release?: boolean | undefined; platform?: Platform | undefined; seeds?: Seeds | undefined; served?: string | undefined; places?: Readonly<Record<string, string>> | undefined };
+export type Mode = "dev" | "release";
+export type Aim = { readonly platform: Platform; readonly release: boolean };
+export type Choices<T> = Readonly<Partial<Record<Platform, T>>> | Readonly<Partial<Record<Mode, T>>>;
+export type Built<D extends object = object> = { name: string; id: string; address: string | undefined; home: string | undefined; login: string | undefined; account: string | undefined; config: Settled<D>; messages: Messages; assets: Readonly<Record<string, string>>; places: Readonly<Record<string, string>>; files: readonly Placed[]; compiled: Compiled; links: Record<string, string> };
+export type Carried = { id: string; address?: string | undefined; home?: string | undefined; login?: string | undefined; account?: string | undefined; config: json.Dictionary; messages: json.Dictionary; assets: Readonly<Record<string, string>>; places: Readonly<Record<string, string>>; links: json.Dictionary; compiled: json.Dictionary };
 export type Listed = { name: string; id: string; indexable: boolean; settings: Pick<Settings, "locales" | "locale" | "scheme" | "world"> };
 export type Artifact = { version: number; entry: string; index: Listed[]; surfaces: Record<string, Carried> };
 export type Loaders = Readonly<Record<string, () => Promise<unknown>>>;
@@ -270,7 +274,6 @@ export type App<D extends object = object> = {
     readonly compiled: Compiled;
     readonly config: Settled<D>;
     readonly messages: Messages;
-    readonly brand: Brand;
     readonly links: Readonly<Record<string, string>>;
     readonly live: Runtime;
     readonly bus: event.Bus;
@@ -291,7 +294,10 @@ export type App<D extends object = object> = {
     text: ( locale: string, key: string, params?: translate.Params, count?: number ) => string;
     settings: ( screen: string, feature: string ) => json.Dictionary;
     content: ( key: string, locale: string ) => string;
-    asset: ( path: string ) => string;
+    asset: ( key: string ) => string;
+    place: ( name: string ) => string;
+    theme: () => Themed;
+    publish: ( meta: Meta | undefined ) => () => void;
     indexing: () => Public;
     crawl: () => string;
     graph: ( locale: string ) => string | undefined;
@@ -422,6 +428,5 @@ export const namespaces = ["params", "query", "signals", "form", "user", "device
 export const namePattern = /^[a-z][a-z0-9_.-]*$/;
 export const pathPattern = /^\/(?:[a-z0-9-]+|\{[a-z][a-z0-9_]*\}|\*)?(?:\/(?:[a-z0-9-]+|\{[a-z][a-z0-9_]*\}|\*))*$/;
 export const version = 2;
-export const generated = "_generated";
 export const segmentPattern = /^[a-z][a-z0-9_-]*$/;
 export const maxDepth = 64;

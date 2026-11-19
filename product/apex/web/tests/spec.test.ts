@@ -3,9 +3,8 @@ import * as exception from "engine/exception";
 import * as seo from "engine/seo";
 import * as spec from "engine/spec";
 import { specs } from "../specs/index.ts";
-import { platform } from "../src/api/index.ts";
 import { host } from "../src/specs/app.ts";
-import { part } from "../src/specs/part.ts";
+import { part, platform } from "../src/specs/part.ts";
 
 const { answer, ask, compiled, confirmations, labels, live, logger, logs, menu, report, screenAt, title } = host.app;
 const { current } = specs;
@@ -120,11 +119,10 @@ describe("spec", () => {
         logs.clear();
 
     });
-    it("a release refuses the lab address and ships only a public https one", () => {
+    it("a release takes the role's public https address and a development build its lab one, both from the role's own config", () => {
 
         expect(host.app.address).toBe(host.app.config.contracts.baseUrl);
-        expect(built({ url: "https://api.acme.example/", release: true }).address).toBe("https://api.acme.example");
-        expect(() => built({ release: true })).toThrow("a release calls a public https address");
+        expect([built({ release: true }).address, built().address?.startsWith("http://")]).toEqual(["https://api.acme.example", true]);
 
     });
     it("a surface reached by transfer loads on demand, reads what was carried, and its screens flip, wait and describe themselves", async () => {

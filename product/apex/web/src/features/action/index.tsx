@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { type Look, looks } from "@/api/action.ts";
 import { Button } from "@/elements/button.tsx";
 import type { Placed } from "@/features/index.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import { host, type Look, looks } from "@/specs/index.ts";
 
 export function Action ({ id }: Placed ) {
 

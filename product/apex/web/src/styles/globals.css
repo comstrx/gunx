@@ -1,7 +1,5 @@
 @import "tailwindcss" source("..");
 @import "./tokens.css";
-@import "../../.cache/styles/fonts.css";
-@import "../../.cache/styles/theme.css";
 @import "./elements.css";
 
 @layer base {

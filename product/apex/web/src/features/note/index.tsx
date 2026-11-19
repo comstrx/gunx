@@ -7,7 +7,7 @@ import { Text } from "@/elements/text.tsx";
 import type { Placed } from "@/features/index.ts";
 import { usePreferences } from "@/hooks/use-preferences.ts";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export function Note ({ id }: Placed ) {
 

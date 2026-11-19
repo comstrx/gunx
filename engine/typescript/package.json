@@ -26,9 +26,6 @@
     "zustand": "5.0.16",
     "unicode-segmenter": "0.17.3"
   },
-  "bin": {
-    "tool": "./src/engine/bin/tool.ts"
-  },
   "exports": {
     ".": {
       "browser": "./src/engine/src/runtime.ts",
@@ -135,6 +132,6 @@
     "bench": "for file in benches/*.bench.ts; do bun \"$file\" || exit 1; done",
     "audit": "bun audit --audit-level=low",
     "gate": "bun install --frozen-lockfile && bun run link && bun run check && bun run lint && bun run test && bun run fuzz && bun run audit",
-    "link": "BUN_INSTALL_GLOBAL_DIR=\"$(pwd)/.bun\" sh -c 'bun link && cd node_modules/react && bun link && cd ../react-dom && bun link'"
+    "link": "BUN_INSTALL_GLOBAL_DIR=\"$(pwd)/.bun\" bun link"
   }
 }

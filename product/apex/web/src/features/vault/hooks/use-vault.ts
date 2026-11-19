@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { type Kind, kinds } from "@/api/vault.ts";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import { host, type Kind, kinds } from "@/specs/index.ts";
 import { bump, clear, count, expire, shelf } from "@/stores/vault.ts";
 
 export type Row = { kind: Kind; volatile: boolean; count: number | undefined };

@@ -1,4 +1,4 @@
-import { host } from "@/specs/app.ts";
+import { host } from "@/specs/index.ts";
 
 export const dynamic = "force-static";
 

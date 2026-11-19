@@ -1,25 +1,18 @@
 import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as string from "engine-string";
-import type { Brand, Found, Groups, Messages, Reactions, Schema, Screen, Spec, SpecOptions, Surface, SurfaceOptions, Table, Trigger } from "./arch.ts";
+import type { Found, Groups, Messages, Reactions, Schema, Screen, Spec, SpecOptions, Surface, SurfaceOptions, Trigger } from "./arch.ts";
 import { maxDepth, segmentPattern } from "./arch.ts";
+import { assets } from "./assets.ts";
 
 const surfaces = new WeakSet<object>();
 const specs = new WeakSet<object>();
-const holds: readonly string[] = ["id", "config", "schema", "messages", "brand"];
+const holds: readonly string[] = ["id", "config", "schema", "messages", "assets"];
 const parts: readonly string[] = ["screens", "signals", "on", "triggers"];
 
 function refused ( reason: string, message: string ): exception.Fault {
 
     return exception.fault("internal", reason, { message });
-
-}
-function tabled ( given: unknown, kind: string ): Table {
-
-    if ( given === undefined ) return Object.freeze({});
-    if ( !json.isRecord(given) || !Object.entries(given).every(([name, path]) => json.safeKey(name) && typeof path === "string" && path !== "") ) throw refused("spec.surface", `brand.${kind}: a table of names and the paths that replace them, such as { logo: "./logo.svg" }`);
-
-    return Object.freeze({ ...given }) as Table;
 
 }
 function spoken ( given: unknown ): Messages {
@@ -89,20 +82,13 @@ export function isSpec ( value: unknown ): value is Spec {
 }
 export function surface ( given: SurfaceOptions ): Surface {
 
-    if ( !json.isRecord(given) ) throw refused("spec.surface", "a surface is { config, schema, messages, brand }");
+    if ( !json.isRecord(given) ) throw refused("spec.surface", "a surface is { config, schema, messages, assets }");
 
     for ( const key of Object.keys(given) ) if ( !holds.includes(key) ) throw refused("spec.surface", `${key}: a surface holds ${holds.join(", ")}`);
 
     if ( given.id !== undefined && (typeof given.id !== "string" || !/^[a-z][a-z0-9_.-]{0,63}$/.test(given.id)) ) throw refused("spec.surface", "id: lowercase letters, digits, dots, dashes and underscores, from a letter");
     if ( given.config !== undefined && !json.isRecord(given.config) ) throw refused("spec.surface", "config: the surface's settings, themes, contents, contracts and features");
-    if ( given.brand !== undefined && !json.isRecord(given.brand) ) throw refused("spec.surface", "brand: the role's messages and its tables of files, such as { messages, images }");
-
-    const { messages: told, ...tables } = given.brand ?? {};
-
-    for ( const kind of Object.keys(tables) ) if ( !json.safeKey(kind) ) throw refused("spec.surface", `brand.${kind}: a table is named by a plain word`);
-
-    const brand: Brand = Object.fromEntries(Object.entries(tables).map(([kind, table]) => [kind, tabled(table, kind)]));
-    const made: Surface = Object.freeze({ id: given.id, config: (given.config ?? {}) as json.Dictionary, ...drawn(given.schema), messages: spoken(told ?? given.messages), brand: Object.freeze(brand) });
+    const made: Surface = Object.freeze({ id: given.id, config: (given.config ?? {}) as json.Dictionary, ...drawn(given.schema), messages: spoken(given.messages), assets: assets(given.assets) });
 
     surfaces.add(made);
 
@@ -143,6 +129,8 @@ export function locate ( spec: Pick<Spec, "names">, written: string, from?: stri
     const where = from === undefined ? "spec" : from;
 
     if ( tail.length === 0 || !tail.every(( piece ) => segmentPattern.test(piece)) ) return { issue: { path: where, rule: "surface.name", message: `${label}: a surface is named like delivery, v1.delivery or shop:v1:delivery` } };
+
+    if ( tail.length > 1 && spec.names.includes(tail.join(".")) ) return { name: tail.join(".") };
 
     for ( let depth = group.length; depth >= 0; depth -= 1 ) {
 

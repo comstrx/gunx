@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import * as exception from "engine-exception";
 import type { Analysis, Found, Issue, Resolved, Rule, Rules, Visit } from "./arch.ts";
@@ -249,6 +249,8 @@ export function defineRules ( rules: Rules ): Resolved {
 
     if ( rules.only !== undefined && (typeof rules.only !== "object" || Array.isArray(rules.only) || !Object.values(rules.only).every(Array.isArray)) ) throw exception.fault("internal", "tool.rules", { message: "only names, for a folder, the layers that may import it" });
 
+    if ( rules.owners !== undefined && (typeof rules.owners !== "object" || Array.isArray(rules.owners) || !Object.values(rules.owners).every(Array.isArray)) ) throw exception.fault("internal", "tool.rules", { message: "owners name the layers that alone may import an engine member, such as { spec: [\"specs\"] }" });
+
     if ( rules.framework !== undefined && (typeof rules.framework !== "object" || Array.isArray(rules.framework) || !Object.values(rules.framework).every(Array.isArray)) ) throw exception.fault("internal", "tool.rules", { message: "a framework names the layers it may enter, such as { next: [\"app\"] }" });
 
     return {
@@ -262,10 +264,20 @@ export function defineRules ( rules: Rules ): Resolved {
         engine: rules.engine ?? "engine",
         members: [...(rules.members ?? [])],
         framework: Object.fromEntries(Object.entries(rules.framework ?? {}).map(([name, layers]) => [name, [...layers]])),
+        owners: Object.fromEntries(Object.entries(rules.owners ?? {}).map(([name, layers]) => [name, [...layers]])),
         outside: [...(rules.outside ?? [])],
         shared: [...(rules.shared ?? shared)],
         entries: [...(rules.entries ?? [])],
     };
+
+}
+function mapped ( root: string ): Readonly<Record<string, string>> {
+
+    const path = resolve(root, "tsconfig.json");
+    const config = existsSync(path) ? exception.probe(() => JSON.parse(readFileSync(path, "utf8")) as { compilerOptions?: { paths?: Record<string, unknown> } }) : undefined;
+    const paths = config?.compilerOptions?.paths ?? {};
+
+    return Object.fromEntries(Object.entries(paths).filter(( entry ): entry is [string, string[]] => entry[0].startsWith("#") && Array.isArray(entry[1]) && typeof entry[1][0] === "string").map(([name, targets]) => [name, targets[0] ?? ""]));
 
 }
 export function analyze ( given: Rules ): Analysis {
@@ -282,6 +294,7 @@ export function analyze ( given: Rules ): Analysis {
     const issues: Issue[] = [];
     const edges: Record<string, string[]> = {};
     const prefix = `${rules.engine}/`;
+    const mappings = mapped(rules.root);
 
     for ( const file of files ) {
 
@@ -312,15 +325,29 @@ export function analyze ( given: Rules ): Analysis {
                 else if ( rules.members.length && rules.members.includes(headOf(member)) && member.includes("/") ) told(line, "member", `an import reaches inside an engine member: ${target}`);
                 else if ( rules.members.length && !rules.members.includes(member) ) told(line, "member", `unknown engine member: ${member}`);
 
+                const owners = Object.hasOwn(rules.owners, headOf(member)) ? rules.owners[headOf(member)] : undefined;
+
+                if ( owners !== undefined && !owners.includes(head) ) told(line, "owner", `${target} is imported only from ${owners.join(", ")}`);
+
                 targets.add(target);
 
                 continue;
 
             }
 
-            if ( target.startsWith(".") || target.startsWith(rules.alias) ) {
+            const mapped = target.startsWith("#") ? mappings[target] : undefined;
 
-                const absolute = target.startsWith(rules.alias) ? join(root, target.slice(rules.alias.length)) : resolve(dirname(file.path), target);
+            if ( target.startsWith("#") && mapped === undefined ) {
+
+                told(line, "outside", `${target} is mapped by no tsconfig.json path`);
+
+                continue;
+
+            }
+
+            if ( mapped !== undefined || target.startsWith(".") || target.startsWith(rules.alias) ) {
+
+                const absolute = mapped !== undefined ? resolve(rules.root, mapped) : target.startsWith(rules.alias) ? join(root, target.slice(rules.alias.length)) : resolve(dirname(file.path), target);
                 const inside = slashed(relative(root, absolute));
 
                 if ( inside === ".." || inside.startsWith("../") ) {

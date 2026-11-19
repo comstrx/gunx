@@ -7,7 +7,6 @@ import * as tool from "engine/tool";
 
 const defaults = { settings: { budget: { js: 0 as number | string }, app: { name: "", identifier: "" } }, themes: { brand: "#000000" } };
 const part = spec.part({ platform: "web", defaults });
-const quiet = { API_URL: undefined, ENGINE_ENV: undefined };
 
 function home ( locale: string, path = "/" ): spec.Screen {
 
@@ -32,6 +31,12 @@ function themed ( role: { name: string; themes: { brand: string } } ): string {
 
 }
 
+function mapping ( temp: { write: ( path: string, text: string ) => void }, folder: string ): void {
+
+    temp.write("tsconfig.json", JSON.stringify({ compilerOptions: { paths: { "#spec": [`./${folder}/current.ts`], "#spec.json": [`./${folder}/current.json`] } } }));
+
+}
+
 describe("tool specs", () => {
 
     it("specs writes every surface's artifact and the current one, settled config included, and stops on a surface's problems", async () => {
@@ -41,8 +46,9 @@ describe("tool specs", () => {
 
         try {
 
-            const tasks = { compile: [tool.specs(".cache/spec"), tool.emit("after.txt", "ran")] };
-            const played = await tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, env: quiet, out: ( line ) => lines.push(line) });
+            mapping(temp, ".cache/spec");
+            const tasks = { compile: [tool.specs("#spec"), tool.emit("after.txt", "ran")] };
+            const played = await tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, out: ( line ) => lines.push(line) });
             const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
             const light = JSON.parse(read(".cache/spec/current.json"));
             const carried = JSON.parse(read(".cache/spec/surface/admin.json"));
@@ -50,17 +56,17 @@ describe("tool specs", () => {
 
             expect([played.failed, light.version, light.entry, light.surfaces.admin.id, light.index.map(( one: { name: string } ) => one.name), carried.config.settings.app, courier.config.settings.app, carried.address]).toEqual([false, spec.version, "admin", "admin", ["admin"], { name: "Shop Admin", identifier: "test.shop.admin", version: "0.0.0", slug: "", scheme: "" }, { ...defaults.settings.app, version: "0.0.0", slug: "", scheme: "" }, "https://admin.example.test"]);
             expect(spec.boot<typeof defaults>({ ...light, entry: "courier", index: [], surfaces: { courier } }, { sinks: [] }).app.compiled.surface.role).toBe("courier");
-            expect(read(".cache/spec/current.ts")).toBe(`import entry from "./surface/admin.json" with { type: "json" };\n\nexport const artifact = ${JSON.stringify({ ...light, surfaces: "@" }).replace('"@"', '{ "admin": entry }')};\n\nexport const load = {};\n`);
+            expect(read(".cache/spec/current.ts")).toBe(`import entry from "./surface/admin.json" with { type: "json" };\n\nexport const compiled = {\n    artifact: ${JSON.stringify({ ...light, surfaces: "@" }).replace('"@"', '{ "admin": entry }')},\n    load: {},\n};\n`);
             expect(lines).toContain("  courier: 1 screen, 0 features, 0 topics");
 
-            const entered = await tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, argv: ["--role", "courier"], env: quiet, out: () => undefined });
+            const entered = await tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, argv: ["--role", "courier"], out: () => undefined });
 
             expect([entered.failed, JSON.parse(read(".cache/spec/current.json")).entry, tool.plan(tool.define({ specs, part, tasks: { build: tool.emit("{role}.txt", "x") } }), ["build"], ["--role", "courier"]).lines]).toEqual([false, "courier", ["build", "  emit courier.txt"]]);
-            await expect(tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, argv: ["--role", "ghost"], env: quiet, out: () => undefined })).rejects.toMatchObject({ reason: "tool.role" });
+            await expect(tool.play(tool.define({ specs, part, tasks }), ["compile"], { root: temp.path, argv: ["--role", "ghost"], out: () => undefined })).rejects.toMatchObject({ reason: "tool.role" });
             await expect(tool.play(tool.define({ tasks: { compile: [] } }), ["compile"], { root: temp.path, argv: ["--role", "admin"], out: () => undefined })).rejects.toMatchObject({ reason: "tool.role" });
 
-            const failed = await tool.play(tool.define({ specs: broken, part, tasks }), ["compile"], { root: temp.path, env: quiet, out: () => undefined });
-            const bare = await tool.play(tool.define({ tasks: { compile: tool.specs(".cache/spec") } }), ["compile"], { root: temp.path, out: () => undefined });
+            const failed = await tool.play(tool.define({ specs: broken, part, tasks }), ["compile"], { root: temp.path, out: () => undefined });
+            const bare = await tool.play(tool.define({ tasks: { compile: tool.specs("#spec") } }), ["compile"], { root: temp.path, out: () => undefined });
 
             expect([failed.failed, failed.flagged.map(( one ) => one.rule), failed.flagged.at(-1)?.message, failed.steps]).toEqual([true, ["shape", "failed"], "1 problem in the specs; nothing after them runs", 1]);
             expect(bare.flagged[0]?.message).toBe("specs writes the project's surfaces, so the project needs specs: define({ specs, part, tasks })");
@@ -92,7 +98,7 @@ describe("tool specs", () => {
             };
             const project = tool.define({ specs, part, tasks });
             const lines: string[] = [];
-            const play = ( argv: string[], task = "build", given = project ): Promise<tool.Outcome> => tool.play(given, [task], { root: temp.path, argv, env: quiet, out: ( line ) => lines.push(line) });
+            const play = ( argv: string[], task = "build", given = project ): Promise<tool.Outcome> => tool.play(given, [task], { root: temp.path, argv, out: ( line ) => lines.push(line) });
 
             expect((await play([])).failed).toBe(false);
             expect([readFileSync(temp.file("dist/admin/theme.txt"), "utf8"), JSON.parse(readFileSync(temp.file("dist/admin/view.json"), "utf8")), readFileSync(temp.file("dist/admin/shell.txt"), "utf8")]).toEqual(["admin #ff4500\n", { name: "admin", id: "admin", locale: "ar", dir: "rtl", address: "https://admin.example.test", index: [["admin", ["locales", "locale", "scheme", "world"]]] }, "admin\n"]);
@@ -124,17 +130,21 @@ describe("tool specs", () => {
         }
 
     });
-    it("env plays steps under its variables, so a role compiles against them, and puts every variable back after", async () => {
+    it("target tells a build it is a release: every pick chooses its release value, and env only sets variables for the steps and puts them back", async () => {
 
         const temp = stage.tmp();
 
         try {
 
-            const project = tool.define({ specs, part, tasks: { release: tool.env({ API_URL: "https://release.example.test", ENGINE_ENV: "production" }, [tool.specs("spec"), tool.each(tool.emit("{role}.txt", ( role: { address: string | undefined } ) => role.address ?? ""))]), plain: tool.emit("plain.txt", ( role: { address: string | undefined } ) => role.address ?? "") } });
-            const held = process.env.API_URL;
+            mapping(temp, "spec");
+            const staged = spec.surface({ config: { settings: { locale: "en", locales: ["en"] }, contracts: { baseUrl: spec.pick({ dev: "http://localhost:8100", release: "https://release.example.test" }) } }, schema: [home("en")] });
+            const address = ( role: { address: string | undefined } ): string => role.address ?? "";
+            const project = tool.define({ specs: spec.define({ staged }), part, tasks: { release: tool.target({ release: true }, [tool.specs("#spec"), tool.each(tool.emit("{role}.txt", address))]), plain: tool.emit("plain.txt", address), shell: tool.env({ HELD_BY_TOOL: "set" }, tool.run("echo $HELD_BY_TOOL > shell.txt")) } });
 
-            expect((await tool.play(project, ["release", "plain"], { root: temp.path, env: quiet, out: () => undefined })).failed).toBe(false);
-            expect([JSON.parse(readFileSync(temp.file("spec/surface/courier.json"), "utf8")).address, readFileSync(temp.file("admin.txt"), "utf8"), readFileSync(temp.file("plain.txt"), "utf8"), process.env.API_URL]).toEqual(["https://release.example.test", "https://release.example.test", "https://admin.example.test", held]);
+            expect((await tool.play(project, ["release", "plain", "shell"], { root: temp.path, out: () => undefined })).failed).toBe(false);
+            expect([JSON.parse(readFileSync(temp.file("spec/surface/staged.json"), "utf8")).address, readFileSync(temp.file("staged.txt"), "utf8"), readFileSync(temp.file("plain.txt"), "utf8"), readFileSync(temp.file("shell.txt"), "utf8"), process.env.HELD_BY_TOOL]).toEqual(["https://release.example.test", "https://release.example.test", "http://localhost:8100", "set\n", undefined]);
+            expect(tool.plan(project, ["release"]).lines.slice(0, 2)).toEqual(["release", "  target release=true"]);
+            expect([() => tool.target({}, []), () => tool.target({ platform: "tv" as never }, []), () => tool.target({ release: "yes" as never }, []), () => tool.target({ stage: 1 } as never, []), () => tool.target({ release: true }, 7 as never)].map(( make ) => { try { make(); return ""; } catch ( caught ) { return (caught as { reason?: string }).reason; } })).toEqual(Array.from({ length: 5 }, () => "tool.target"));
 
         } finally {
 
@@ -167,7 +177,7 @@ describe("tool specs", () => {
                 },
             });
             const lines: string[] = [];
-            const played = await tool.play(project, ["build"], { root: temp.path, argv: ["--all"], env: quiet, out: ( line ) => lines.push(line) });
+            const played = await tool.play(project, ["build"], { root: temp.path, argv: ["--all"], out: ( line ) => lines.push(line) });
             const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
 
             expect(read("dist/admin/index.html")).toBe("<html lang=\"ar\" dir=\"rtl\"><meta content=\"default-src &#x27;self&#x27;; script-src &#x27;self&#x27;; style-src &#x27;self&#x27;; font-src &#x27;self&#x27;; img-src &#x27;self&#x27; data: https://admin.example.test; media-src &#x27;self&#x27; blob: https://admin.example.test; connect-src &#x27;self&#x27; https://admin.example.test wss://admin.example.test; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;\"><body data-scheme=\"dark\" data-locales=\"ar\" data-title=\"Shop\"></body></html>\n");
@@ -185,23 +195,24 @@ describe("tool specs", () => {
         }
 
     });
-    it("a project says what its environment deploys: the config lands on every surface, and the media origins a surface names join the page's policy", async () => {
+    it("the media origins a surface names join the page's policy, and a project holds no hook into the environment", async () => {
 
         const temp = stage.tmp();
 
         try {
 
+            mapping(temp, "spec");
             temp.write("src/index.html", "<meta content=\"{{csp}}\">\n");
 
             const mapped = spec.surface({ config: { settings: { locales: ["en"] }, contracts: { baseUrl: "https://desk.example.test", media: ["https://maps.example.test/staticmap"] } }, schema: [spec.screen("home", { path: "/", title: "Home" })] });
             const keyed = spec.part({ platform: "web", defaults: { contracts: { maps: { key: "" } } } });
-            const tasks = { build: [tool.specs("spec"), tool.page("src/index.html", "dist/index.html")] };
-            const project = tool.define({ specs: spec.define({ desk: mapped }), part: keyed, tasks, deploy: ( env ) => ({ contracts: { maps: { key: env.MAPS_KEY ?? "" } } }) });
-            const played = await tool.play(project, ["build"], { root: temp.path, env: { ...quiet, MAPS_KEY: "k-123" }, out: () => undefined });
+            const tasks = { build: [tool.specs("#spec"), tool.page("src/index.html", "dist/index.html")] };
+            const project = tool.define({ specs: spec.define({ desk: mapped }), part: keyed, tasks });
+            const played = await tool.play(project, ["build"], { root: temp.path, env: { MAPS_KEY: "k-123" }, out: () => undefined });
             const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
 
-            expect([played.failed, JSON.parse(read("spec/surface/desk.json")).config.contracts.maps, read("dist/index.html").includes("img-src &#x27;self&#x27; data: https://desk.example.test https://maps.example.test;")]).toEqual([false, { key: "k-123" }, true]);
-            expect(() => tool.define({ tasks: {}, deploy: () => ({}) } as never)).toThrow("deploy is a function of the environment");
+            expect([played.failed, JSON.parse(read("spec/surface/desk.json")).config.contracts.maps, read("dist/index.html").includes("img-src &#x27;self&#x27; data: https://desk.example.test https://maps.example.test;")]).toEqual([false, { key: "" }, true]);
+            expect(() => tool.define({ tasks: {}, deploy: () => ({}) } as never)).toThrow("deploy: a project holds");
 
         } finally {
 
@@ -216,23 +227,24 @@ describe("tool specs", () => {
 
         try {
 
+            mapping(temp, "spec");
             temp.write("src/index.html", "<meta content=\"{{csp}}\">\n");
             temp.write("src/world/data/countries.json", "{\"eg\":\"Egypt\"}");
             temp.write("src/app.ts", "import countries from \"./world/data/countries.json\";\nconsole.log(JSON.stringify(countries));\n");
 
             const desk = spec.surface({ config: { settings: { locales: ["en"] }, contracts: { baseUrl: "https://desk.example.test" } }, schema: [spec.screen("home", { path: "/", title: "Home", on: { load: spec.transfer("admin") } })] });
             const lost = spec.surface({ schema: [spec.screen("home", { path: "/", title: "Home", on: { load: spec.transfer("ghost") } })] });
-            const tasks = { build: [tool.specs("spec"), tool.each([tool.bundle("src/app.ts", "dist/{role}"), tool.page("src/index.html", "dist/{role}/index.html"), tool.emit("dist/{role}/reach.json", ( role: { reach: tool.Reach } ) => role.reach)], ["desk"])] };
-            const played = await tool.play(tool.define({ specs: spec.define({ admin, desk }), part, tasks }), ["build"], { root: temp.path, env: quiet, out: () => undefined });
+            const tasks = { build: [tool.specs("#spec"), tool.each([tool.bundle("src/app.ts", "dist/{role}"), tool.page("src/index.html", "dist/{role}/index.html"), tool.emit("dist/{role}/reach.json", ( role: { reach: tool.Reach } ) => role.reach)], ["desk"])] };
+            const played = await tool.play(tool.define({ specs: spec.define({ admin, desk }), part, tasks }), ["build"], { root: temp.path, out: () => undefined });
             const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
 
             expect([played.failed, JSON.parse(read("spec/current.json")).index.map(( one: { name: string } ) => one.name), JSON.parse(read("spec/surface/desk.json")).links, read("spec/current.ts").includes('"admin": () => import("./surface/admin.json"),'), (( { surfaces: _surfaces, ...rest }: tool.Reach ) => rest)(JSON.parse(read("dist/desk/reach.json")))]).toEqual([false, ["admin"], { admin: "admin" }, false, { names: ["desk", "admin"], addresses: ["https://desk.example.test", "https://admin.example.test"], world: ["countries"] }]);
             expect((JSON.parse(read("dist/desk/reach.json")) as tool.Reach).surfaces.map(( one: tool.Reached ) => [one.name, one.id, one.themes.brand, one.settings.locale])).toEqual([["desk", "desk", "#000000", "en"], ["admin", "admin", "#ff4500", "ar"]]);
             expect([read("dist/desk/index.html").includes("connect-src &#x27;self&#x27; https://desk.example.test wss://desk.example.test https://admin.example.test wss://admin.example.test;"), read("dist/desk/app.js").includes("Egypt"), tool.csp(["https://a.example.test/v1", "https://a.example.test/v2"]).includes("connect-src 'self' https://a.example.test wss://a.example.test;")]).toEqual([true, true, true]);
 
-            const refused = await tool.play(tool.define({ specs: spec.define({ admin, desk: lost }), part, tasks: { build: tool.each(tool.emit("x.txt", ( role: { name: string } ) => role.name), ["desk"]), compile: tool.specs("spec") } }), ["compile"], { root: temp.path, env: quiet, out: () => undefined });
+            const refused = await tool.play(tool.define({ specs: spec.define({ admin, desk: lost }), part, tasks: { build: tool.each(tool.emit("x.txt", ( role: { name: string } ) => role.name), ["desk"]), compile: tool.specs("#spec") } }), ["compile"], { root: temp.path, out: () => undefined });
 
-            expect([refused.failed, refused.flagged.map(( one ) => [one.where, one.rule])]).toEqual([true, [["desk: screens.home.on.load[0]", "surface.unknown"], ["specs spec", "failed"]]]);
+            expect([refused.failed, refused.flagged.map(( one ) => [one.where, one.rule])]).toEqual([true, [["desk: screens.home.on.load[0]", "surface.unknown"], ["specs #spec", "failed"]]]);
             expect(() => tool.csp([])).toThrow("the API uses http or https");
 
         } finally {
@@ -248,7 +260,7 @@ describe("tool specs", () => {
             specs,
             part,
             tasks: {
-                compile: tool.specs(".cache/spec"),
+                compile: tool.specs("#spec"),
                 build: ["compile", tool.each([tool.bundle("src/app.ts", "dist/{role}"), tool.budget({ js: "dist/{role}/*.js" })])],
                 release: tool.env({ ENGINE_ENV: "production", DEBUG: undefined }, "build"),
                 loop: ["again"],
@@ -257,7 +269,7 @@ describe("tool specs", () => {
         });
 
         expect(tool.plan(project, ["release"], ["--all"])).toEqual({
-            lines: ["release", "  env ENGINE_ENV=production -DEBUG", "    build", "      compile", "        specs .cache/spec", "      role admin", "        bundle src/app.ts → dist/admin", "        budget js", "      role courier", "        bundle src/app.ts → dist/courier", "        budget js"],
+            lines: ["release", "  env ENGINE_ENV=production -DEBUG", "    build", "      compile", "        specs #spec", "      role admin", "        bundle src/app.ts → dist/admin", "        budget js", "      role courier", "        bundle src/app.ts → dist/courier", "        budget js"],
             steps: 5,
         });
         expect(tool.plan(project, ["build"]).lines.filter(( line ) => line.includes("role"))).toEqual(["  role admin"]);
@@ -330,7 +342,7 @@ describe("tool specs", () => {
         }
 
     });
-    it("brand lays every surface's own files over the part's public folders, one generated folder per surface", async () => {
+    it("specs writes the compiled module where tsconfig points #spec, and places every surface's files with the entry's security beside the site", async () => {
 
         const temp = stage.tmp();
 
@@ -343,23 +355,48 @@ describe("tool specs", () => {
 
             };
             const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
-            const shop = spec.surface({ schema: [home("en")], config: { settings: { locale: "en", locales: ["en"] } }, brand: { images: { "logo.svg": "mark.png", "more.png": "more.png" }, sounds: { "ping.mp3": "../../escape.mp3", "bell.mp3": "missing.mp3" } } });
+            const shop = spec.surface({ schema: [home("en")], config: { settings: { locale: "en", locales: ["en"] } }, assets: { home: temp.file("specs/shop/assets"), images: { logo: "images/mark.png" }, sounds: { ping: "sounds/missing.mp3" } } });
             const plain = spec.surface({ schema: [home("en")], config: { settings: { locale: "en", locales: ["en"] } } });
-            const project = tool.define({ specs: spec.define({ shop, plain }), part, tasks: { brand: tool.brand("public", "public/_generated", ( name ) => `brands/${name}`) } });
+            const seeds = { assets: { home: temp.file("seeds/assets"), images: { logo: "images/logo.svg", hero: "images/hero.svg" }, security: { "security.txt": "security/security.txt" } } };
+            const project = tool.define({ specs: spec.define({ shop, plain }, { current: "shop" }), part, seeds, paths: { served: "_files", public: "web" }, assets: { root: "{public}", into: "{public}/{served}", entry: { security: "{public}/.well-known" }, places: { paint: "{public}/paint.js" } }, tasks: { compile: tool.specs("#spec"), sheet: tool.styles("#styles", ["src/styles/a.css", "{public}/b.css"]) } });
 
-            put("public/images/logo.svg", "base logo");
-            put("public/images/hero.svg", "base hero");
-            put("public/_generated/stale/old.txt", "stale");
-            put("public/root.txt", "root");
-            put("brands/shop/images/mark.png", "shop mark");
-            put("brands/shop/images/more.png", "shop more");
+            put("tsconfig.json", JSON.stringify({ compilerOptions: { paths: { "#spec": ["./.made/spec/module.ts"], "#styles": ["./.made/styles/index.css"] } } }));
+            put("seeds/assets/images/logo.svg", "seed logo");
+            put("seeds/assets/images/hero.svg", "seed hero");
+            put("seeds/assets/security/security.txt", "Contact: x");
+            put("specs/shop/assets/images/mark.png", "shop mark");
+            put("web/_files/stale/old.txt", "stale");
 
-            const played = await tool.play(project, ["brand"], { root: temp.path, env: quiet, out: () => undefined });
+            const played = await tool.play(project, ["compile"], { root: temp.path, out: () => undefined });
 
-            expect([read("public/_generated/shop/images/logo.svg"), read("public/_generated/shop/images/mark.png"), read("public/_generated/shop/images/more.png"), read("public/_generated/shop/images/hero.svg"), read("public/_generated/plain/images/logo.svg")]).toEqual(["base logo", "shop mark", "shop more", "base hero", "base logo"]);
-            expect([existsSync(temp.file("public/_generated/stale")), existsSync(temp.file("public/_generated/plain/images/mark.png")), existsSync(temp.file("public/_generated/shop/root.txt")), existsSync(temp.file("public/_generated/shop/_generated"))]).toEqual([false, false, false, false]);
-            expect(played.flagged.map(( flag ) => [flag.where, flag.rule])).toEqual([["shop: brand.sounds", "brand"], ["shop: brand.sounds", "brand"]]);
-            expect([() => tool.brand("public", "out", 7 as never), () => tool.brand("", "out", () => "x")].map(( make ) => { try { make(); return ""; } catch ( caught ) { return (caught as { reason?: string }).reason; } })).toEqual(["tool.brand", "tool.brand"]);
+            expect([played.flagged.map(( flag ) => [flag.where, flag.rule]), project.paths, project.assets]).toEqual([[["specs.shop.assets.sounds.ping", "assets"]], { served: "_files", public: "web" }, { root: "web", into: "web/_files", url: "/_files", entry: { security: "web/.well-known" }, places: { paint: "web/paint.js" }, urls: { paint: "/paint.js" } }]);
+            expect([read("web/_files/shop/images/logo.png"), read("web/_files/shop/images/hero.svg"), read("web/_files/plain/images/logo.svg"), read("web/_files/shop/security/security.txt"), read("web/.well-known/security.txt"), existsSync(temp.file("web/_files/stale"))]).toEqual(["shop mark", "seed hero", "seed logo", "Contact: x", "Contact: x", false]);
+            expect([read(".made/spec/module.ts").startsWith('import entry from "./surface/shop.json" with { type: "json" };\n\nexport const compiled = {\n    artifact: '), JSON.parse(read(".made/spec/surface/shop.json")).assets["images.logo"], JSON.parse(read(".made/spec/surface/shop.json")).places]).toEqual([true, "/_files/shop/images/logo.png", { paint: "/paint.js" }]);
+            await expect(tool.play(tool.define({ specs: spec.define({ plain }), part, tasks: { compile: tool.specs("#nowhere") } }), ["compile"], { root: temp.path, out: () => undefined })).resolves.toMatchObject({ failed: true });
+            expect([(await tool.play(project, ["sheet"], { root: temp.path, out: () => undefined })).failed, read(".made/styles/index.css")]).toEqual([false, '@import "../../src/styles/a.css";\n@import "../../web/b.css";\n']);
+            expect([() => tool.styles("#styles", []), () => tool.styles("", ["a.css"])].map(( make ) => { try { make(); return ""; } catch ( caught ) { return (caught as { reason?: string }).reason; } })).toEqual(["tool.styles", "tool.styles"]);
+            expect([() => tool.define({ specs: spec.define({ plain }), part, assets: { into: "x" } as never, tasks: {} }), () => tool.define({ specs: spec.define({ plain }), part, assets: { root: "web", into: "elsewhere" }, tasks: {} }), () => tool.define({ seeds: {}, tasks: {} } as never), () => tool.define({ paths: { a: "{b}", b: "{a}" }, tasks: {} })].map(( make ) => { try { make(); return ""; } catch ( caught ) { return (caught as { reason?: string }).reason; } })).toEqual(["tool.project", "tool.project", "tool.project", "tool.project"]);
+
+        } finally {
+
+            temp.remove();
+
+        }
+
+    });
+    it("the platform a target names chooses every pick, the part's own platform otherwise", async () => {
+
+        const temp = stage.tmp();
+
+        try {
+
+            temp.write("tsconfig.json", JSON.stringify({ compilerOptions: { paths: { "#web": ["./web/current.ts"], "#desk": ["./desk/current.ts"] } } }));
+            const desk = spec.surface({ schema: [home("en")], config: { settings: { locale: "en", locales: ["en"], scheme: spec.pick({ web: "light", desktop: "dark" }) } } });
+            const tasks = { web: tool.specs("#web"), desk: tool.target({ platform: "desktop" }, tool.specs("#desk")) };
+            const project = tool.define({ specs: spec.define({ desk }), part, tasks });
+
+            expect((await tool.play(project, ["web", "desk"], { root: temp.path, out: () => undefined })).failed).toBe(false);
+            expect([JSON.parse(readFileSync(temp.file("web/surface/desk.json"), "utf8")).config.settings.scheme, JSON.parse(readFileSync(temp.file("desk/surface/desk.json"), "utf8")).config.settings.scheme]).toEqual(["light", "dark"]);
 
         } finally {
 

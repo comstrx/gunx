@@ -2,9 +2,8 @@ import type * as device from "engine/device";
 import * as exception from "engine/exception";
 import * as media from "engine/media";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type Outcome, type Permission, permissions, type Tool } from "@/api/probe.ts";
 import { useStage } from "@/hooks/use-stage.ts";
-import { host } from "@/specs/app.ts";
+import { host, type Outcome, type Permission, permissions, type Tool } from "@/specs/index.ts";
 import { held } from "@/stores/device.ts";
 
 export type Probe = {
