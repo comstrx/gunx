@@ -20,7 +20,7 @@ fuzz:config:targets:load () {
         config:targets:get "${name}" tag >/dev/null
         config:targets:get "${name}" branch >/dev/null
         config:targets:get "${name}" logo >/dev/null
-        config:targets:deps "${name}" >/dev/null
+        config:targets:refs "${name}" >/dev/null
         config:targets:engines "${name}" >/dev/null
 
     done < <(config:targets:list)
@@ -91,7 +91,7 @@ fuzz:config:targets:lists () {
 
         count=$(( count + 1 ))
 
-    done < <(config:targets:deps okx)
+    done < <(config:targets:refs okx)
 
     [[ "${count}" == "$(( ${#words[@]} / 2 ))" ]] || return 3
 
@@ -104,18 +104,17 @@ fuzz:config:targets:settle () {
 
     [[ -n "${spec}" ]] || return 0
 
-    TARGETS=( [onex]=1 [onex.repo]="${spec}" [twox]=1 [twox.owner]="${spec}" [onex.deps]=1 [onex.deps.0.repo]="${spec}" )
+    TARGETS=( [onex]=1 [onex.repo]="${spec}" [onex.refs]=1 [onex.refs.0.repo]="${spec}" )
 
-    config:targets:settle || return 3
+    config:targets:settle 2>/dev/null || { [[ "${spec}" != */* && "${spec}" != *:* ]] || return 3; return 0; }
 
     first="${TARGETS[onex.repo]}"
 
-    [[ "${first}" == "${spec}" || "${first}" == /* || "${first}" == https://* ]] || return 3
-    [[ "${TARGETS[onex.deps.0.repo]}" == "${first}" ]] || return 3
-    [[ "${first}" != https://* || "${first}" != *[[:space:]]* ]] || return 3
+    [[ "${first}" == "${spec}" || "${first}" == /* || "${first}" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9_.-]+){2,}$ ]] || return 3
+    [[ "${TARGETS[onex.refs.0.repo]}" == "${first}" ]] || return 3
 
-    config:targets:settle || return 3
+    config:targets:settle 2>/dev/null || return 3
 
-    [[ "${TARGETS[onex.repo]}" == "${first}" && "${TARGETS[onex.deps.0.repo]}" == "${first}" ]] || return 3
+    [[ "${TARGETS[onex.repo]}" == "${first}" && "${TARGETS[onex.refs.0.repo]}" == "${first}" ]] || return 3
 
 }

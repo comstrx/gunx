@@ -15,7 +15,7 @@ module:extract:table () {
     local name="" kind="" path="" home=""
     local -A homes=()
 
-    EXTRACT_HOMES="" EXTRACT_PRODUCTS="" EXTRACT_TUTOR=""
+    EXTRACT_HOMES="" EXTRACT_PRODUCTS=""
 
     while IFS= read -r name; do
 
@@ -24,13 +24,10 @@ module:extract:table () {
         kind="$(config:targets:get "${name}" type)" || return
         path="$(config:targets:get "${name}" path)" || return
 
-        core:list:has "${kind}" "${EXTRACT_KINDS[@]}" || { @err "[deps] ${name}: type is one of ${EXTRACT_KINDS[*]}, not ${kind}"; return; }
-
         homes["${path%%/*}"]=1
         home=""
 
         case "${kind}" in
-            tutor) EXTRACT_TUTOR="${path}" ;;
             fragment)
                 [[ "${path}" == */*/* ]] || { @err "[deps] ${name}: a fragment sits at <products>/<product>/<part>, not at ${path}"; return; }
                 home="${path%/*/*}"
@@ -51,6 +48,11 @@ module:extract:table () {
     (( ${#homes[@]} > 0 )) \
         || { @err "No distribution table: no [deps] in the tool nor in a ${MANIFEST_NAMES[0]} or ${MANIFEST_NAMES[1]} of ${TOOL_ROOT}, and no target described by flags"; return; }
 
+    EXTRACT_PRODUCTS="${EXTRACT_PRODUCTS:-${EXTRACT_HOME}}"
+
+    homes["${EXTRACT_ENGINES}"]=1
+    homes["${EXTRACT_PRODUCTS%%/*}"]=1
+
     for home in "${EXTRACT_STAYS[@]}"; do
         [[ ! -d "${TOOL_ROOT}/${home}" ]] || homes["${home}"]=1
     done
@@ -59,42 +61,73 @@ module:extract:table () {
     EXTRACT_HOMES="${EXTRACT_HOMES//./[.]}"
 
 }
+module:extract:kind () {
+
+    local path="${1:-}"
+
+    case "${path}" in
+        "${EXTRACT_ENGINES}"/*/*|"${EXTRACT_HOME}"/*/*/*) return 1 ;;
+        "${EXTRACT_ENGINES}"/?*)                          @print engine ;;
+        "${EXTRACT_HOME}"/?*/?*)                          @print fragment ;;
+        "${EXTRACT_HOME}"/?*)                             @print product ;;
+        *)                                                return 1 ;;
+    esac
+
+}
 module:extract:whole () {
 
-    local name="${1}" key="" value=""
+    local name="${1}" kind="" path="" label="" folder=""
+    local -a engines=()
 
-    value="$(config:targets:get "${name}" type 2>/dev/null)" || value=""
-    [[ -n "${value}" ]] || { value="${EXTRACT_KIND}"; config:targets:set "${name}" type "${value}" || return; }
+    kind="$(config:targets:get "${name}" type 2>/dev/null)" || kind=""
+    path="$(config:targets:get "${name}" path 2>/dev/null)" || path=""
+    path="${path%/}"
+    label="$(config:targets:get "${name}" name)" || return
 
-    if [[ "${value}" == "${EXTRACT_KIND}" ]]; then
+    [[ "${label}" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]] || { @err "[deps] ${name}: not a name to extract under: ${label}"; return; }
 
-        value="$(config:targets:get "${name}" path 2>/dev/null)" || value=""
-        [[ -n "${value}" ]] || config:targets:set "${name}" path "${EXTRACT_HOME}/${name}" || return
+    if [[ -z "${kind}" && -n "${path}" ]]; then
+
+        kind="$(module:extract:kind "${path}")" \
+            || { @err "[deps] ${name}: ${path} tells no type; an engine sits at ${EXTRACT_ENGINES}/<name>, a product at ${EXTRACT_HOME}/<name>, its part one folder deeper, or pass --type"; return; }
 
     fi
 
-    for key in "${EXTRACT_NEEDS[@]}"; do
+    kind="${kind:-${EXTRACT_KIND}}"
 
-        value="$(config:targets:get "${name}" "${key}" 2>/dev/null)" || value=""
+    core:list:has "${kind}" "${EXTRACT_KINDS[@]}" || { @err "[deps] ${name}: type is one of ${EXTRACT_KINDS[*]}, not ${kind}"; return; }
 
-        [[ -n "${value}" ]] || { @err "[deps] ${name}: no ${key}; write it in the row or pass --${key}"; return; }
+    [[ -n "${path}" || "${kind}" != "${EXTRACT_KIND}" ]] || path="${EXTRACT_HOME}/${name}"
+    [[ -n "${path}" ]] || { @err "[deps] ${name}: no path; write it in the row or pass --path"; return; }
 
-    done
+    config:targets:set "${name}" type "${kind}" || return
+    config:targets:set "${name}" path "${path%/}" || return
+
+    if [[ "${kind}" == product ]]; then
+
+        while IFS= read -r folder; do
+
+            folder="${folder#"${EXTRACT_ENGINES}/"}"
+            folder="${folder%/}"
+
+            [[ -n "${folder}" && "${folder}" != */* ]] \
+                || { @err "[deps] ${name}: engines takes a name or ${EXTRACT_ENGINES}/<name>, not ${folder:-an empty word}"; return; }
+
+            engines+=( "${folder}" )
+
+        done < <(config:targets:engines "${name}")
+
+    fi
+
+    config:targets:fill "${name}" engines "${engines[@]}"
 
 }
 module:extract:wired () {
 
-    local name="" self="" tool="" folder="" repo="" label="" tag="" path="" found=0
-    local -a engines=() folders=()
+    local name="" self="" folder="" src="" repo="" tag="" found=0
+    local -a engines=()
 
     self="$(module:extract:self)" || return
-    tool="$(module:extract:mirror "${self}")" || return
-
-    while IFS= read -r name; do
-        [[ "$(config:targets:get "${name}" type)" != engine ]] || folders+=( "$(config:targets:get "${name}" path)" )
-    done < <(config:targets:list)
-
-    folders=( "${folders[@]##*/}" )
 
     while IFS= read -r name; do
 
@@ -102,31 +135,29 @@ module:extract:wired () {
 
         mapfile -t engines < <(config:targets:engines "${name}")
 
-        [[ ${#engines[@]} -eq 0 || "$(config:targets:get "${name}" type)" == product ]] \
-            || { @err "[deps] ${name}: engines belongs to a product; a tool names its engine in deps"; return; }
-
         for folder in "${engines[@]}"; do
 
-            core:list:has "${folder}" "${folders[@]}" \
-                || { @err "[deps] ${name}: engines names ${folder}, and no engine of the table sits in a folder of that name"; return; }
+            [[ -d "${TOOL_ROOT}/${EXTRACT_ENGINES}/${folder}" ]] \
+                || { @err "[deps] ${name}: engines names ${folder}, and ${EXTRACT_ENGINES}/${folder} is no folder of the root"; return; }
 
         done
 
         found=0
         ! core:list:has "${self##*/}" "${engines[@]}" || found=1
 
-        while IFS=$'\t' read -r label repo tag; do
+        while IFS=$'\t' read -r src repo tag; do
 
-            path="$(module:extract:carrier "${repo}")" || { @err "[deps] ${name}: the dependency ${label:-?} names no mirror of the table"; return; }
+            [[ "${src}" != - && -d "${TOOL_ROOT}/${src}" ]] \
+                || { @err "[deps] ${name}: a reference replaces a folder of the root, and ${src} is none"; return; }
 
-            ! core:list:has "${path##*/}" "${engines[@]}" \
-                || { @err "[deps] ${name}: ${path##*/} is in engines and ${repo} is in deps; one of the two"; return; }
+            [[ "${repo}" != - ]] || { @err "[deps] ${name}: the reference of ${src} names no repository"; return; }
 
-            [[ "${repo}" != "${tool}" ]] || found=1
+            [[ "${src}" != "${self}" ]] || found=1
 
-        done < <(config:targets:deps "${name}")
+        done < <(config:targets:refs "${name}")
 
-        (( found == 1 )) || { @err "[deps] ${name}: its workflows run the bash engine; name ${tool} in its deps"; return; }
+        (( found == 1 )) \
+            || { @err "[deps] ${name}: its workflows run the bash engine; carry it in engines or give a reference for ${self}"; return; }
 
     done < <(config:targets:list)
 
@@ -138,50 +169,44 @@ module:extract:source () {
 }
 module:extract:self () {
 
-    local name="" path=""
+    local name="" path="" folder=""
 
     while IFS= read -r name; do
 
         path="$(config:targets:get "${name}" path)" || return
 
-        [[ -f "${TOOL_ROOT}/${path}/${MANIFEST[paths.entrypoint]}" ]] && config:manifest:find "${TOOL_ROOT}/${path}" >/dev/null \
-            && { @print "${path}"; return 0; }
+        ! module:extract:shell "${path}" || { @print "${path}"; return 0; }
 
     done < <(config:targets:list)
 
-    @err "No target of [deps] is the bash engine under ${TOOL_ROOT}"
+    for folder in "${TOOL_ROOT}/${EXTRACT_ENGINES}"/*/; do
+
+        path="${folder#"${TOOL_ROOT}/"}"
+        path="${path%/}"
+
+        ! module:extract:shell "${path}" || { @print "${path}"; return 0; }
+
+    done
+
+    @err "No bash engine under ${TOOL_ROOT}: no row of [deps] nor a folder of ${EXTRACT_ENGINES}/ holds a ${MANIFEST_NAMES[0]} and ${MANIFEST[paths.entrypoint]}"
 
 }
-module:extract:mirror () {
+module:extract:shell () {
 
-    local name=""
-
-    name="$(module:extract:row "${1}")" || return
-
-    config:targets:get "${name}" repo
+    [[ -f "${TOOL_ROOT}/${1}/${MANIFEST[paths.entrypoint]}" ]] && config:manifest:find "${TOOL_ROOT}/${1}" >/dev/null
 
 }
-module:extract:name () {
+module:extract:tool () {
 
-    local name="${1}" given="" repo=""
+    local name="${1}" self="${2}" src="" repo="" tag=""
 
-    given="$(config:targets:get "${name}" name 2>/dev/null)" || given=""
+    while IFS=$'\t' read -r src repo tag; do
 
-    if [[ -z "${given}" ]]; then
+        [[ "${src}" != "${self}" ]] || { @print "${repo}"$'\t'"${tag}"; return 0; }
 
-        repo="$(config:targets:get "${name}" repo 2>/dev/null)" || repo=""
-        repo="${repo%/}"
-        repo="${repo%.git}"
+    done < <(config:targets:refs "${name}")
 
-        given="${repo##*/}"
-
-    fi
-
-    given="${given:-${name}}"
-
-    [[ "${given}" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]] || { @err "[deps] ${name}: not a name to extract under: ${given}"; return; }
-
-    @print "${given}"
+    @err "[deps] ${name}: no reference for ${self}"
 
 }
 module:extract:row () {
@@ -197,23 +222,19 @@ module:extract:row () {
     @err "No target of [deps] sits at ${path}"
 
 }
-module:extract:carrier () {
+module:extract:local () {
 
-    local repo="${1}" name=""
+    local name="${1}" self="${2}"
 
-    while IFS= read -r name; do
-
-        [[ "$(config:targets:get "${name}" repo)" != "${repo}" ]] || { config:targets:get "${name}" path; return; }
-
-    done < <(config:targets:list)
-
-    @err "No target of [deps] mirrors to ${repo}"
+    module:extract:carries "${name}" "${self}" && ! module:extract:tool "${name}" "${self}" >/dev/null 2>&1
 
 }
 module:extract:carries () {
 
     local name="${1}" path="${2}"
     local -a engines=()
+
+    [[ "${path}" == "${EXTRACT_ENGINES}"/* ]] || return 1
 
     mapfile -t engines < <(config:targets:engines "${name}")
 
@@ -222,19 +243,33 @@ module:extract:carries () {
 }
 module:extract:left () {
 
-    local name="${1}" target="" path="" left=""
+    local name="${1}" target="" path="" folder="" left=""
+    local -A seen=()
 
     [[ "$(config:targets:get "${name}" type)" == product ]] || return 0
 
     while IFS= read -r target; do
 
-        [[ "$(config:targets:get "${target}" type)" == engine ]] || continue
+        [[ "$(config:targets:get "${target}" type)" != engine ]] || seen["$(config:targets:get "${target}" path)"]=1
 
-        path="$(config:targets:get "${target}" path)" || return
+    done < <(config:targets:list)
+
+    for folder in "${TOOL_ROOT}/${EXTRACT_ENGINES}"/*/; do
+
+        [[ -d "${folder}" ]] || continue
+
+        path="${folder#"${TOOL_ROOT}/"}"
+        seen["${path%/}"]=1
+
+    done
+
+    while IFS= read -r path; do
+
+        [[ -n "${path}" ]] || continue
 
         module:extract:carries "${name}" "${path}" || left+="${left:+|}${path//./[.]}"
 
-    done < <(config:targets:list)
+    done < <(printf '%s\n' "${!seen[@]}" | LC_ALL=C sort)
 
     @print "${left}"
 
@@ -243,7 +278,7 @@ module:extract:repository () {
 
     local name="${1}" spec=""
 
-    spec="$(config:targets:get "${name}" repo 2>/dev/null)" || spec=""
+    spec="$(config:targets:get "${name}" repo)" || return
 
     [[ -n "${spec}" ]] || { @err "[deps] ${name}: no repo nor owner; a mirror needs one, in the row or by --repo or --owner"; return; }
 
@@ -252,15 +287,15 @@ module:extract:repository () {
 }
 module:extract:needs () {
 
-    local name="${1}" label="" repo="" tag="" target=""
+    local name="${1}" src="" repo="" tag="" target=""
 
-    while IFS=$'\t' read -r label repo tag; do
+    while IFS=$'\t' read -r src repo tag; do
 
         while IFS= read -r target; do
             [[ "$(config:targets:get "${target}" repo)" != "${repo}" ]] || @print "${target}"
         done < <(config:targets:list)
 
-    done < <(config:targets:deps "${name}")
+    done < <(config:targets:refs "${name}")
 
 }
 module:extract:order () {
@@ -300,13 +335,11 @@ module:extract:order () {
 }
 module:extract:keep () {
 
-    local kind="${1}" part="${2}" path="${3}" left="${4:-}" notes="${EXTRACT_TUTOR}/stack"
+    local kind="${1}" part="${2}" path="${3}" left="${4:-}"
 
     case "${kind}" in
         engine|fragment) [[ "${path}" == "${part}/"* ]] ;;
-        tutor)           [[ "${path}" == "${part}/"* && "${path}" != "${notes}/${EXTRACT_PRODUCTS}/"* ]] ;;
         product)
-            [[ -z "${EXTRACT_TUTOR}" || "${path}" != "${EXTRACT_TUTOR}/"* ]] || return 1
             [[ "${path}" != "${EXTRACT_PRODUCTS}/"* || "${path}" == "${part}/"* ]] || return 1
             [[ -z "${left}" || ! "${path}" =~ ^(${left})/ ]]
         ;;
@@ -351,8 +384,8 @@ module:extract:travels () {
     module:extract:keep "${kind}" "${part}" "${path}" "${left}" && return 0
     [[ "${kind}" != product ]] || return 1
 
-    [[ "${path}" == .github/* ]] && return 0
+    [[ "${path}" == "${EXTRACT_FORGE}"/* ]] && return 0
 
-    [[ "${path}" != */* && "${path}" != CHANGELOG.md && ! -e "${TOOL_ROOT}/${part}/${path}" ]]
+    [[ "${path}" != */* && "${path}" != "${EXTRACT_CHANGELOG}" && ! -e "${TOOL_ROOT}/${part}/${path}" ]]
 
 }

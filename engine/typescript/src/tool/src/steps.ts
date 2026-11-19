@@ -1,11 +1,11 @@
-import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { join, normalize } from "node:path";
 import * as exception from "engine-exception";
 import * as net from "engine-net";
 import * as spec from "engine-spec";
 import * as translate from "engine-translate";
 import * as world from "engine-world";
-import type { Build, BundleOptions, CopyOptions, Fonts, Layers, Made, Processor, RunOptions, Scope, Step, Values, Vars } from "./arch.ts";
+import type { Build, BundleOptions, CopyOptions, Fonts, Layers, Made, Processor, RunOptions, Scope, Sources, Step, Values, Vars } from "./arch.ts";
 import { analyze } from "./architecture.ts";
 import { assets, counted, members, viewIn, walk, worded } from "./core.ts";
 import { step } from "./project.ts";
@@ -240,7 +240,7 @@ export function css ( from: string, to: string, processor: Processor ): Step {
     });
 
 }
-export function page ( from: string, to: string, values: Values = {} ): Step {
+export function page ( from: string, to: string, values: Values = {}, sources: Sources = {} ): Step {
 
     checked(from, "page");
     checked(to, "page");
@@ -250,7 +250,7 @@ export function page ( from: string, to: string, values: Values = {} ): Step {
         const role = viewIn(scope);
         const addresses = (role?.reach.addresses ?? []).filter(net.isEndpoint);
         const media = (role?.reach.surfaces ?? []).flatMap(( one ) => one.media);
-        const known = role === undefined ? {} : { ...role, ...(addresses.length ? { csp: csp(addresses, media.length ? { "img-src": pictured(addresses, media) } : {}) } : {}) };
+        const known = role === undefined ? {} : { ...role, ...(addresses.length ? { csp: csp(addresses, media.length ? { "img-src": pictured(addresses, media) } : {}, sources) } : {}) };
 
         scope.emit(to, render(readFileSync(scope.at(from), "utf8"), { ...known, ...values }));
 
@@ -272,6 +272,51 @@ export function fonts ( into: string, options: Fonts = {} ): Step {
         if ( sheet !== undefined ) scope.emit(sheet, `${world.fontFaces(url)}\n`);
 
         scope.say(`${written} written, served from ${url}`);
+
+    });
+
+}
+export function brand ( from: string, into: string, home: ( name: string ) => string ): Step {
+
+    checked(from, "brand");
+    checked(into, "brand");
+
+    if ( typeof home !== "function" ) throw exception.fault("internal", "tool.brand", { message: "brand takes where a role keeps its brand, such as ( name ) => `specs/${name}/brand`" });
+
+    return step(`brand ${from} → ${into}`, ( scope ) => {
+
+        const build = scope.build;
+
+        if ( build === undefined ) throw exception.fault("internal", "tool.brand", { message: "brand merges every surface's files, so the project needs specs: define({ specs, part, tasks })" });
+
+        const base = existsSync(scope.at(from)) ? readdirSync(scope.at(from), { withFileTypes: true }).filter(( entry ) => entry.isDirectory() && normalize(join(from, entry.name)) !== normalize(into)).map(( entry ) => entry.name) : [];
+        let written = 0;
+
+        rmSync(scope.at(into), { recursive: true, force: true });
+
+        for ( const name of build.names ) {
+
+            const { id, brand: tables } = build.carried(name);
+            const kept = `${into}/${id}`;
+
+            for ( const folder of base ) written += scope.copy(`${from}/${folder}`, `${kept}/${folder}`);
+
+            for ( const [kind, table] of Object.entries(tables as Readonly<Record<string, Readonly<Record<string, string>>>>) ) {
+
+                for ( const file of new Set(Object.values(table)) ) {
+
+                    const source = `${home(name)}/${kind}/${file}`;
+
+                    if ( file.split("/").includes("..") || !existsSync(scope.at(source)) ) scope.flag(`${name}: brand.${kind}`, `${source}: the brand names a file that is not in its folder`, "brand");
+                    else written += scope.copy(source, `${kept}/${kind}/${file}`);
+
+                }
+
+            }
+
+        }
+
+        scope.say(`${counted(build.names.length, "surface")}, ${written} written`);
 
     });
 

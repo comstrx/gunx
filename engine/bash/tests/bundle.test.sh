@@ -4,9 +4,9 @@ fixture:module:bundle:audit:manifest () {
         [name]=infra
         [version]=0.1.0
         [tools.shellcheck]=0.11.0
-        [archive.shellcheck_linux_x86_64]=https://x/a.tar.xz
-        [downloads.shellcheck_linux_x86_64]="$(printf 'a%.0s' {1..64})"
-        [downloads.x]="$(printf 'a%.0s' {1..64})"
+        [srcs.shellcheck_linux_x86_64]=https://x/a.tar.xz
+        [sums.shellcheck_linux_x86_64]="$(printf 'a%.0s' {1..64})"
+        [sums.x]="$(printf 'a%.0s' {1..64})"
         [images.redis]="redis:8@sha256:$(printf 'b%.0s' {1..64})"
     )
 
@@ -32,7 +32,7 @@ test:module:bundle:audit:manifest-refuses-loose-pins () {
     module:bundle:audit:manifest
 
     fixture:module:bundle:audit:manifest
-    MANIFEST[downloads.y]=deadbeef
+    MANIFEST[sums.y]=deadbeef
     @errors 'not a SHA-256 digest' module:bundle:audit:manifest
 
     fixture:module:bundle:audit:manifest
@@ -40,7 +40,7 @@ test:module:bundle:audit:manifest-refuses-loose-pins () {
     @errors 'not pinned by digest' module:bundle:audit:manifest
 
     fixture:module:bundle:audit:manifest
-    MANIFEST[archive.trivy_linux_x86_64]='http://x/t.tar.gz'
+    MANIFEST[srcs.trivy_linux_x86_64]='http://x/t.tar.gz'
     @errors 'needs an https URL and a digest' module:bundle:audit:manifest
 
 }
@@ -216,7 +216,7 @@ test:module:bundle:boot:merges-the-project-manifest () {
 
     for key in "${!MANIFEST[@]}"; do
 
-        [[ "${key}" == deps.*.type && "${MANIFEST[${key}]}" == engine && "${MANIFEST[${key%.type}.deps]:-0}" == 0 ]] || continue
+        [[ "${key}" == deps.*.type && "${MANIFEST[${key}]}" == engine && "${MANIFEST[${key%.type}.refs]:-0}" == 0 ]] || continue
 
         tool="${MANIFEST[${key%.type}.repo]:-${tool}}"
 
@@ -225,13 +225,13 @@ test:module:bundle:boot:merges-the-project-manifest () {
     {
         printf '[deps]\n'
         printf 'selfx = { type = "engine", path = "engine/bash", repo = "%s" }\n' "${tool}"
-        printf 'onex = { type = "engine", path = "engine/rust", repo = "o/onex", deps = [{ name = "engine", repo = "%s" }] }\n' "${tool}"
+        printf 'onex = { type = "engine", path = "engine/rust", repo = "o/onex", refs = [{ src = "engine/bash", repo = "%s" }] }\n' "${tool}"
     } > "${root}/Infra.toml"
 
     {
         printf '[deps]\n'
         printf 'selfx = { type = "engine", path = "engine/bash", repo = "%s" }\n' "${tool}"
-        printf 'twox = { type = "engine", path = "engine/go", repo = "o/twox", deps = [{ name = "engine", repo = "%s" }] }\n' "${tool}"
+        printf 'twox = { type = "engine", path = "engine/go", repo = "o/twox", refs = [{ src = "engine/bash", repo = "%s" }] }\n' "${tool}"
     } > "${file}"
 
     cd -- "${root}/engine/rust" || return
@@ -1079,5 +1079,10 @@ test:module:bundle:load:loads-once () {
     @use core::log
     @use module::gate
     @eq "${LOAD_STATE[core/log.sh]} ${LOAD_STATE[module/gate/index.sh]}" 'loaded loaded'
+
+}
+test:module:bundle:build:a-bundle-names-its-own-checksum () {
+
+    @eq "$(bash "${TOOL_BIN}" checksum 2>/dev/null)" "$(core:fs:file:hash "${TOOL_BIN}")"
 
 }

@@ -59,15 +59,25 @@ specs/<role>/
 └── schema/     the screens, one file each
 ```
 
-**Spec-Driven Roles** · **Web and Desktop from One Tree** · **Themes per Role** · **Right-to-Left and Left-to-Right** · **Typed API Contracts** · **Sessions and a Vault** · **Offline-Aware States** · **Byte Budgets**
+**Spec-Driven Roles** · **Web and Desktop from One Tree** · **Themes per Role** · **Languages in the Address** · **Right-to-Left and Left-to-Right** · **Typed API Contracts** · **Sessions and a Vault** · **Realtime** · **Offline-Aware States** · **Byte Budgets**
 
-| Command                | What it produces                                       |
-| ---------------------- | ------------------------------------------------------ |
-| `bun run dev`          | The website, live, on Next                             |
-| `bun run dev --desk`   | The desktop window, live, in Electrobun                |
-| `bun run build`        | The static website of every role                       |
-| `bun run build --desk` | The desktop page of every role                         |
-| `bun run release`      | The production website, or desktop build with `--desk` |
+| Command                        | What it produces                                    |
+| ------------------------------ | --------------------------------------------------- |
+| `bun run dev`                  | The website, live, on Next                          |
+| `bun run dev --desk`           | The desktop window, live, in Electrobun             |
+| `bun run build`                | The static website of the role, inside budget       |
+| `bun run build --desk`         | The desktop page of the role, inside budget         |
+| `bun run release --all`        | The production website of every role                |
+| `bun run release --desk --all` | The desktop installer of every role                 |
+| `--role <name>` on any of them | The same output, entered through the role you named |
+
+A release is a matrix, not a folder: every role meets every target, and each pair leaves as its own artifact.
+
+```text
+artifacts/<role>/
+├── site/       the static website, ready for any host
+└── desk/       the installer and its update channel
+```
 
 **One vocabulary. Endless possibilities.**
 
@@ -93,9 +103,11 @@ specs/<role>/
 
 **Single Responsibility** · **Unidirectional Layers** · **Explicit Contracts** · **One Fenced Bridge** · **Modular Composition**
 
-Eleven layers, and an import may only travel down. The order is not advice: the build analyzes every file and refuses an import that climbs.
+Eleven layers, and an import may only travel down. The order is not advice: the build analyzes every file and refuses an import that climbs, a cycle, and a file no entry reaches.
 
 The desktop boundary is fenced twice. Only the `app` layer may reach the bridge, and the host beneath it imports nothing from the application at all. The website never carries desktop code, and the desktop bundle never carries Next.
+
+A role may hand the user to another role without leaving the page. The address, the language, the theme, and the back button all follow, and a link that points into another role's screen opens that role directly.
 
 State, forms, storage, networking, and localization are not written here. They come from the engine, so this tree holds only what is specific to a rendered surface.
 
@@ -107,9 +119,11 @@ State, forms, storage, networking, and localization are not written here. They c
 
 **Not a template. A compiler for surfaces.**
 
-A spec is checked before anything is rendered. Unknown options are refused by name, a role that asks for a desktop window without an application identity is refused before a byte is bundled, and every text a screen shows is a message key resolved for the active locale.
+A spec is checked before anything is rendered. Unknown options are refused by name with the nearest valid one, a role that asks for a desktop window without an application identity is refused before a byte is bundled, and every text a screen shows is a message key resolved for the active locale.
 
-The compile step is explicit and repeatable: specs are compiled, fonts are prepared, the theme is emitted as a stylesheet, and the appearance script is written, in that order, before the type checker runs.
+The compile step is explicit and repeatable: specs are compiled, fonts are prepared, the theme is emitted as a stylesheet, and the appearance script is written, in that order, before the type checker runs. The page paints its theme, language, and direction before the first frame, so nothing flashes.
+
+A public role is a real website: its own static pages per language, canonical and alternate links, a sitemap, crawl rules, social cards, and structured data, all derived from the role's own contents. A private role is closed to indexing by default.
 
 Elements are small and closed, components compose them, and features compose components. Each level is tested on its own, down to the loading, empty, error, denied, and stale states.
 
@@ -123,7 +137,7 @@ Elements are small and closed, components compose them, and features compose com
 
 Every build ends by measuring what it produced. The website's script chunks and the desktop page's bundle each have a byte budget, and a build that exceeds its budget fails.
 
-The website is a static export, so a role can be served from a bucket or an edge with no server to keep warm. The desktop page is minified and split, and ships only the code of its own role.
+The website is a static export, so a role can be served from a bucket or an edge with no server to keep warm. The desktop page is minified and split, and ships only the code of its own role. A role reached by a hand-over is loaded on first use, never before.
 
 ```bash
 bun run build
@@ -142,9 +156,11 @@ The budgets are declared once, in the surface's own settings, where a role may t
 
 - **Token custody** is a declared choice of each role, not an accident of the framework.
 - **The vault** keeps sensitive values behind one feature with one way in.
-- **The desktop bridge** is the only path to native capabilities, and only one layer may call it.
-- **Configuration** that differs per deployment arrives from the environment at build time; no secret is written into a spec.
-- **Dependencies** are few, pinned, and audited on every gate.
+- **The desktop window** is confined to its own packaged page: it cannot navigate anywhere else, and an outside link opens in the system browser.
+- **The desktop bridge** is the only path to native capabilities, only one layer may call it, and the host validates everything the page sends.
+- **The content policy** of a desktop page names only the addresses its role reaches and the host it talks to.
+- **Configuration** that differs per deployment arrives from the environment at build time; no secret is written into a spec, and a release refuses an address that is not public and encrypted.
+- **Dependencies** are few, pinned, declared, and audited on every gate.
 
 **No silent failures. No unjustified risks. No shortcuts around safety.**
 
@@ -163,9 +179,9 @@ bun run gate
 | Gate  | What it proves                                                  |
 | ----- | --------------------------------------------------------------- |
 | check | the specs compile, `tsc` passes, and no import climbs a layer   |
-| lint  | Biome in CI mode                                                |
+| lint  | Biome in CI mode, undeclared dependencies included              |
 | test  | elements, components, screens, stores, sessions, and the bridge |
-| build | the website and the desktop page of every role, inside budget   |
+| build | the website and the desktop page of the role, inside budget     |
 | audit | `bun audit` over the frozen dependency graph                    |
 
 A surface is finished when it has been seen: rendered, in both themes, in both directions, in every state.

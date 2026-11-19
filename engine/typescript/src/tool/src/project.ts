@@ -151,14 +151,14 @@ function opted ( project: Project<never>, argv: readonly string[] ): ReadonlySet
     return new Set(asked.filter(( word ) => known.has(word)));
 
 }
-function chosen ( specs: spec.Spec | undefined, argv: readonly string[], fixed: readonly string[] | undefined ): string[] {
+function chosen ( specs: spec.Spec | undefined, argv: readonly string[], fixed: readonly string[] | undefined, entry: string | undefined ): string[] {
 
     if ( specs === undefined ) throw exception.fault("internal", "tool.each", { message: "each plays steps per role, so the project needs specs: define({ specs, part, tasks })" });
 
     const asked = fixed ?? (argv.includes("--all") ? specs.names : argv.filter(( word ) => !word.startsWith("-")));
     const names = asked.map(( word ) => located(specs, word, "tool.each"));
 
-    return names.length ? [...new Set(names)] : [specs.current];
+    return names.length ? [...new Set(names)] : [entry ?? specs.current];
 
 }
 function entered ( specs: spec.Spec | undefined, given: readonly string[] ): { argv: string[]; role: string | undefined } {
@@ -393,7 +393,7 @@ export async function play ( project: Project<never>, names: readonly string[], 
 
         if ( isEach(value) ) {
 
-            for ( const role of chosen(specs, argv, value.roles) ) if ( !(await perform(value.each, task, trail, { ...context, role })) ) return false;
+            for ( const role of chosen(specs, argv, value.roles, context.role) ) if ( !(await perform(value.each, task, trail, { ...context, role })) ) return false;
 
             return true;
 
@@ -517,7 +517,7 @@ export function plan ( project: Project<never>, names: readonly string[], given:
 
         if ( isEach(value) ) {
 
-            for ( const name of chosen(specs, argv, value.roles) ) {
+            for ( const name of chosen(specs, argv, value.roles, role) ) {
 
                 lines.push(`${pad}role ${name}`);
                 draw(value.each, trail, name, depth + 1);

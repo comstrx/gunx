@@ -1,7 +1,8 @@
 import * as spec from "engine/spec";
 import * as validate from "engine/validate";
 import { catalogue, manifests, platform } from "@/api/index.ts";
-import { messages } from "@/specs/messages.ts";
+import ar from "../../messages/ar.json" with { type: "json" };
+import en from "../../messages/en.json" with { type: "json" };
 
 const space = validate.enum(["none", "xs", "sm", "md", "lg", "xl"]);
 
@@ -31,4 +32,5 @@ export const defaults = {
     contents: { name: {} as Readonly<Record<string, string>>, tagline: {} as Readonly<Record<string, string>>, url: "" },
     contracts: { maps: { key: "" }, media: ["https://maps.googleapis.com"], live: { path: "/live" }, baseUrl: "http://localhost:8100" },
 };
+export const messages = { ar, en };
 export const part = spec.part({ platform, blocks, screen, carries: ["session"], features: manifests, catalogue, defaults, messages, maxDepth: 4 });

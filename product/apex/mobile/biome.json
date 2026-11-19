@@ -11,6 +11,7 @@
       "!.expo",
       "!.cache",
       "!public",
+      "!**/*.svg",
       "!android",
       "!ios"
     ]
@@ -28,6 +29,7 @@
       "preset": "recommended",
       "correctness": {
         "noUndeclaredVariables": "error",
+        "noUndeclaredDependencies": "error",
         "noUnusedImports": "error",
         "noUnusedVariables": "error",
         "useImportExtensions": "error"

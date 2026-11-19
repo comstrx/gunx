@@ -204,6 +204,9 @@ describe("world", () => {
         expect(world.fontLinks("/fonts/", ["latn"])).toEqual([{ rel: "preload", as: "font", type: "font/woff2", crossOrigin: "anonymous", href: "/fonts/figtree-latin.woff2" }, { rel: "preload", as: "font", type: "font/woff2", crossOrigin: "anonymous", href: "/fonts/figtree-latin-ext.woff2" }]);
         expect([world.fontLinks().length, world.fontLinks("/f", ["Cyrl"]).length]).toEqual([3, 2]);
         expect(world.fontPreload("/fonts", ["Latn"])).toHaveLength(2);
+        expect(world.fontLinks("/fonts", ["en", "ar-EG"], 1).map(( link ) => link.href)).toEqual(["/fonts/readex-pro-arabic.woff2", "/fonts/figtree-latin.woff2"]);
+        expect(world.fontLinks("/fonts", ["en"], 1).map(( link ) => link.href)).toEqual(["/fonts/figtree-latin.woff2"]);
+        expect([world.fontLinks("/fonts", ["fa"]).length, world.fontLinks("/fonts", [], 0).length, world.fontPreload("/fonts", ["de"], 1).length]).toEqual([3, 0, 1]);
         expect(world.fontPreload()[0]).toBe('<link rel="preload" as="font" type="font/woff2" crossorigin href="/world/font/readex-pro-arabic.woff2">');
 
     });

@@ -6,7 +6,7 @@ module:extract:flags () {
     names=( "${name}" )
     [[ -n "${name}" ]] || mapfile -t names < <(config:targets:list)
 
-    [[ -z "${name}" ]] || config:targets:has "${name}" || config:targets:set "${name}" type "${EXTRACT_KIND}" || return
+    [[ -z "${name}" ]] || config:targets:open "${name}" || return
 
     for key in "${EXTRACT_OWN[@]}"; do
 
@@ -16,7 +16,7 @@ module:extract:flags () {
 
         case "${key}" in
             engines) module:extract:flags:engines "${name}" "${value}" ;;
-            deps)    module:extract:flags:deps "${name}" "${value}" ;;
+            refs)    module:extract:flags:refs "${name}" "${value}" ;;
             *)       config:targets:set "${name}" "${key}" "${value}" ;;
         esac || return
 
@@ -62,27 +62,23 @@ module:extract:flags:engines () {
     config:targets:fill "${name}" engines "${engines[@]}"
 
 }
-module:extract:flags:deps () {
+module:extract:flags:refs () {
 
-    local name="${1}" item="" label=""
+    local name="${1}" item=""
     local -a items=() pairs=()
 
     module:extract:flags:items items "${2-}"
 
     for item in "${items[@]}"; do
 
-        if [[ "${item}" =~ ^([A-Za-z][A-Za-z0-9_-]*):(.+)$ && "${BASH_REMATCH[2]}" != //* ]]; then
+        if [[ "${item}" != ?*:?* || "${item#*:}" == //* ]] || ! core:fs:path:relative "${item%%:*}"; then
 
-            pairs+=( "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" )
-
-        else
-
-            label="${item%/}"
-            label="${label%.git}"
-
-            pairs+=( "${label##*/}" "${item}" )
+            core:error:usage "--refs takes src:repo, a folder of the root then the repository that replaces it, not ${item}"
+            return
 
         fi
+
+        pairs+=( "${item%%:*}" "${item#*:}" )
 
     done
 

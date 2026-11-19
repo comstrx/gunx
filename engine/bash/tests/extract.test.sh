@@ -15,14 +15,10 @@ test:module:extract:keep-selects-the-tree () {
     @fails module:extract:keep engine engine/rust engine/go/go.work
     module:extract:keep fragment product/demo/web product/demo/web/package.json
     @fails module:extract:keep fragment product/demo/web product/demo/api/pyproject.toml
-    module:extract:keep tutor tutor tutor/index.md
-    @fails module:extract:keep tutor tutor tutor/stack/product/demo/index.md
+    @fails module:extract:keep plugin engine/rust engine/rust/Cargo.toml
     module:extract:keep product product/demo engine/rust/Cargo.toml
     module:extract:keep product product/demo product/demo/api/pyproject.toml
-    @fails module:extract:keep product product/demo tutor/index.md
-    @fails module:extract:keep product product/demo tutor/stack/product/demo/index.md
     @fails module:extract:keep product product/demo product/other/api/pyproject.toml
-    @fails module:extract:keep product product/demo tutor/stack/product/other/index.md
     @fails module:extract:keep product product/demo engine/rust/Cargo.toml 'engine/rust|engine/go'
     module:extract:keep product product/demo engine/rusty/Cargo.toml 'engine/rust|engine/go'
     module:extract:keep product product/demo engine/demo/Cargo.toml 'engine/rust|engine/go'
@@ -58,10 +54,11 @@ test:module:extract:knows-what-stays-behind () {
     module:extract:travels product product/demo product/demo/api/uv.lock
     @fails module:extract:travels product product/demo tutor/index.md
     @fails module:extract:travels engine engine/demo tutor/index.md
-    module:extract:travels tutor tutor tutor/index.md
 
 }
 test:module:extract:names-the-pieces () {
+
+    TOOL_ROOT="${TMPDIR}"
 
     fixture:module:extract:table
 
@@ -70,33 +67,38 @@ test:module:extract:names-the-pieces () {
     module:extract:table
 
     @eq "$(module:extract:blocks sidex engine engine/rust)" rust
-    @eq "$(module:extract:blocks sidex tutor tutor)" tutor
     @eq "$(module:extract:blocks facex fragment product/demo/web)" demo-web=web
     @eq "$(module:extract:blocks demo product product/demo | tr '\n' ' ')" 'demo demo demo-* '
     @eq "$(module:extract:shapes DemoX | tr '\n' ' ')" 'demox DEMOX Demox DemoX demoX '
     @eq "$(module:extract:shapes corex | tr '\n' ' ')" 'corex COREX Corex CoreX coreX '
     @eq "$(module:extract:anycase a.b/c-1)" '[Aa][.][Bb]/[Cc]-1'
 
-    @eq "$(module:extract:name demox)" demox
+    @eq "$(config:targets:get demox name)" demox
     @eq "$(module:extract:row engine/demo)" demox
     TARGETS[demox.repo]=github.com/x/other-name.git
-    @eq "$(module:extract:name demox)" other-name
+    config:targets:settle
+    @eq "$(config:targets:get demox name) $(config:targets:get demox owner)" 'other-name github.com/x'
     TARGETS[demox.name]=chosen
-    @eq "$(module:extract:name demox)" chosen
+    config:targets:settle
+    @eq "$(config:targets:get demox name)" chosen
     TARGETS[demox.name]='bad name'
-    @errors 'not a name to extract under' module:extract:name demox
-    unset 'TARGETS[demox.name]'
+    @errors 'demox: not a name to extract under: bad name' module:extract:whole demox
+    TARGETS[demox.name]=demox
     TARGETS[demox.repo]=github.com/x/demox
-    @eq "$(module:extract:left demo)" 'engine/go'
+    @eq "$(module:extract:left demo)" 'engine/go|engine/notes'
     @eq "$(module:extract:left demox)" ''
-    @eq "$(module:extract:mirror engine/demo)" github.com/x/demox
-    @eq "$(module:extract:carrier github.com/x/demox)" engine/demo
+    TARGETS+=( [demox.refs]=1 [demox.refs.0.src]=engine/shell [demox.refs.0.repo]=github.com/x/shellx [demox.refs.0.tag]=v1 )
+    @eq "$(module:extract:tool demox engine/shell)" $'github.com/x/shellx\tv1'
+    @errors 'demox: no reference for engine/none' module:extract:tool demox engine/none
+    @eq "$(module:extract:kind engine/demo) $(module:extract:kind product/demo) $(module:extract:kind product/demo/web)" 'engine product fragment'
+    @fails module:extract:kind tutor
+    @fails module:extract:kind engine/demo/src
+    @fails module:extract:kind product/demo/web/src
     module:extract:carries demo engine/demo
     @fails module:extract:carries demo engine/go
-    @eq "${EXTRACT_HOMES}" 'engine|product|tutor'
+    @eq "${EXTRACT_HOMES}" 'engine|product'
     @eq "${EXTRACT_PRODUCTS}" product
-    @eq "${EXTRACT_TUTOR}" tutor
-    @errors 'No target of [deps] sits at nowhere' module:extract:mirror nowhere
+    @errors 'No target of [deps] sits at nowhere' module:extract:row nowhere
 
 }
 test:module:extract:changelog-cuts-one-block () {
@@ -288,7 +290,7 @@ test:module:extract:renames-from-the-widest-to-the-word () {
     @eq "$(cat "${tree}/.github/CODEOWNERS")" 'demox owner'
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
-        "movedx = { type = \"engine\", path = \"engine/demo\", repo = \"github.com/team/movedx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+        "movedx = { type = \"engine\", path = \"engine/demo\", repo = \"github.com/team/movedx\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     printf 'by acme, at acme/mono and acme/other, mail acme@example.com acme\n' > "${tree}/NOTES.md"
@@ -424,9 +426,9 @@ fixture:module:extract:deps () {
 
     {
         printf '[deps]\n'
-        printf 'demox = { type = "engine", path = "engine/demo", repo = "%s", deps = [{ name = "engine", repo = "%s" }] }\n' "${demo}" "${bash}"
+        printf 'demox = { type = "engine", path = "engine/demo", repo = "%s", refs = [{ src = "engine/bash", repo = "%s" }] }\n' "${demo}" "${bash}"
         printf 'corex = { type = "engine", path = "engine/bash", repo = "%s" }\n' "${bash}"
-        printf 'otherx = { type = "fragment", path = "product/other/web", repo = "%s", deps = [{ name = "engine", repo = "%s" }] }\n' "${other}" "${bash}"
+        printf 'otherx = { type = "fragment", path = "product/other/web", repo = "%s", refs = [{ src = "engine/bash", repo = "%s" }] }\n' "${other}" "${bash}"
         (( $# == 0 )) || printf '%s\n' "$@"
     } > "${TMPDIR}/table.toml"
 
@@ -563,15 +565,15 @@ test:module:extract:refuses-a-crooked-table () {
 
     TARGETS=( [a]=3 [a.type]=engine [a.path]=engine/a [a.repo]=o/a )
     module:extract:table
-    @eq "${EXTRACT_HOMES}|${EXTRACT_PRODUCTS}|${EXTRACT_TUTOR}" 'engine||'
+    @eq "${EXTRACT_HOMES}|${EXTRACT_PRODUCTS}" 'engine|product|product'
 
     TARGETS=( [a]=3 [a.type]=plugin [a.path]=engine/a [a.repo]=o/a )
-    @errors 'type is one of engine fragment tutor product, not plugin' module:extract:table
+    @errors 'type is one of engine fragment product, not plugin' module:extract:table
 
     TARGETS=( [a]=2 [a.type]=engine [a.path]=engine/a )
     module:extract:table
     @errors '[deps] a: no repo nor owner' module:extract:repository a
-    @eq "$(module:extract:name a)" a
+    @eq "$(config:targets:get a name)" a
 
     TARGETS=( [shop]=1 [shop.logo]='' )
     module:extract:table
@@ -595,7 +597,7 @@ test:module:extract:refuses-a-crooked-table () {
     fixture:module:extract:root
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'lonely = { type = "engine", path = "engine/lonely", repo = "lonely" }'
-    @errors "lonely: its workflows run the bash engine; name ${TMPDIR}/corex.git in its deps" module:extract:open
+    @errors 'lonely: its workflows run the bash engine; carry it in engines or give a reference for engine/bash' module:extract:open
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["rust"] }'
     @errors 'demo: engines names rust' module:extract:open
@@ -603,11 +605,34 @@ test:module:extract:refuses-a-crooked-table () {
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["demo"] }'
     @errors 'demo: its workflows run the bash engine' module:extract:open
 
-    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "demo = { type = \"product\", path = \"product/demo\", repo = \"demo\", engines = [\"bash\"], deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
-    @errors 'bash is in engines and' module:extract:open
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "demo = { type = \"product\", path = \"product/demo\", repo = \"demo\", engines = [\"bash\"], refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
+    module:extract:open
+    module:extract:carries demo engine/bash
+    @fails module:extract:local demo engine/bash
+    @eq "$(module:extract:tool demo engine/bash | cut -f1)" "${TMPDIR}/corex.git"
 
-    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'x = { type = "tutor", path = "tutor", repo = "x", engines = ["demo"] }'
-    @errors 'engines belongs to a product' module:extract:open
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["bash"] }'
+    module:extract:open
+    module:extract:local demo engine/bash
+
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "x = { type = \"engine\", path = \"engine/demo\", repo = \"x\", engines = [\"nowhere\"], refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
+    module:extract:open
+    @eq "$(config:targets:engines x)" ''
+
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "x = { type = \"engine\", path = \"engine/demo\", repo = \"x\", refs = [{ src = \"engine/nowhere\", repo = \"${TMPDIR}/corex.git\" }] }"
+    @errors 'x: a reference replaces a folder of the root, and engine/nowhere is none' module:extract:open
+
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'x = { type = "engine", path = "engine/demo", repo = "x", deps = [] }'
+    @errors 'x: unknown key deps' module:extract:open
+
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "demo = { path = \"product/demo\", repo = \"demo\", engines = [\"engine/bash\", \"demo\"] }" "inferx = { path = \"engine/demo\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
+    mkdir -p "${TMPDIR}/source/product/demo"
+    module:extract:open
+    @eq "$(config:targets:get demo type) $(config:targets:get inferx type)" 'product engine'
+    @eq "$(config:targets:engines demo | tr '\n' ' ')" 'bash demo '
+
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx 'oddx = { path = "tools/odd", repo = "oddx" }'
+    @errors 'oddx: tools/odd tells no type' module:extract:open
 
 }
 test:module:extract:push-mirrors-without-force () {
@@ -802,7 +827,7 @@ test:module:extract:extracts-every-target-in-order () {
     fixture:module:extract:root
 
     fixture:module:extract:deps demox "${bash}" otherx \
-        "lastx = { type = \"engine\", path = \"engine/demo\", repo = \"lastx\", deps = [{ name = \"engine\", repo = \"otherx\" }, { name = \"engine\", repo = \"${bash}\" }] }"
+        "lastx = { type = \"engine\", path = \"engine/demo\", repo = \"lastx\", refs = [{ src = \"product/other/web\", repo = \"otherx\" }, { src = \"engine/bash\", repo = \"${bash}\" }] }"
     module:extract:open
 
     @eq "$(module:extract:order | tr '\n' ' ')" 'corex demox otherx lastx '
@@ -824,8 +849,8 @@ test:module:extract:extracts-every-target-in-order () {
     [[ -f "${all}/demox/Cargo.toml" && -f "${all}/corex/bash.toml" && ! -e "${all}/otherx" && ! -e "${all}/lastx" ]] || @err 'the run did not isolate the failure'
 
     TARGETS=(
-        [onex]=4 [onex.type]=engine [onex.path]=engine/one [onex.repo]=o/onex [onex.deps]=1 [onex.deps.0.name]=engine [onex.deps.0.repo]=o/twox
-        [twox]=4 [twox.type]=engine [twox.path]=engine/two [twox.repo]=o/twox [twox.deps]=1 [twox.deps.0.name]=engine [twox.deps.0.repo]=o/onex
+        [onex]=4 [onex.type]=engine [onex.path]=engine/one [onex.repo]=o/onex [onex.refs]=1 [onex.refs.0.src]=engine/two [onex.refs.0.repo]=o/twox
+        [twox]=4 [twox.type]=engine [twox.path]=engine/two [twox.repo]=o/twox [twox.refs]=1 [twox.refs.0.src]=engine/one [twox.refs.0.repo]=o/onex
     )
     @errors 'depend on each other in a circle: onex twox' module:extract:order
 
@@ -857,7 +882,7 @@ test:module:extract:verify-guards-a-product () {
     local tree="${TMPDIR}/product"
 
     fixture:module:extract:root
-    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "other = { type = \"product\", path = \"product/other\", repo = \"other\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+    fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx "other = { type = \"product\", path = \"product/other\", repo = \"other\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     mkdir -p "${TMPDIR}/source/product/gamma" "${tree}/product/other" "${tree}/.github"
@@ -894,8 +919,7 @@ test:module:extract:a-product-carries-the-engines-it-names () {
     printf "\napi:\n  - changed-files:\n      - any-glob-to-any-file: ['product/*/api/**']\n\ntutor:\n  - changed-files:\n      - any-glob-to-any-file: ['tutor/**']\n\ngo:\n  - changed-files:\n      - any-glob-to-any-file: ['engine/go/**']\n" >> "${root}/.github/labeler.yml"
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
-        "notesx = { type = \"tutor\", path = \"tutor\", repo = \"notesx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
-        "sidex = { type = \"engine\", path = \"engine/go\", repo = \"sidex\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "sidex = { type = \"engine\", path = \"engine/go\", repo = \"sidex\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }" \
         'demo = { type = "product", path = "product/demo", repo = "demo", engines = ["bash", "demo"] }'
     module:extract:open
 
@@ -928,7 +952,7 @@ test:module:extract:a-product-reaches-the-bash-engine-by-the-mirror () {
     sha="$(git -C "${TMPDIR}/corex.git" rev-parse main)"
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
-        "demo = { type = \"product\", path = \"product/demo\", repo = \"demo\", engines = [\"demo\"], deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+        "demo = { type = \"product\", path = \"product/demo\", repo = \"demo\", engines = [\"demo\"], refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     tree="$(fixture:module:extract:build demo)"
@@ -976,7 +1000,7 @@ test:module:extract:a-fragment-reaches-its-engine-by-the-mirror () {
     } > "${root}/product/other/api/pyproject.toml"
 
     fixture:module:extract:deps "${engine}" "${TMPDIR}/corex.git" otherx \
-        "partx = { type = \"fragment\", path = \"product/other/api\", repo = \"partx\", deps = [{ name = \"engine\", repo = \"${engine}\" }, { name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+        "partx = { type = \"fragment\", path = \"product/other/api\", repo = \"partx\", refs = [{ src = \"engine/demo\", repo = \"${engine}\" }, { src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     @errors 'has no tag nor a default branch to stand on' fixture:module:extract:build partx
@@ -1007,7 +1031,7 @@ test:module:extract:a-fragment-reaches-its-engine-by-the-mirror () {
     tree="$(fixture:module:extract:build partx)"
     @contains "$(cat "${tree}/pyproject.toml")" "engine = { git = \"file://${engine}\", subdirectory = \"src/engine\", tag = \"v0.10.0\" }"
 
-    TARGETS[partx.deps.0.tag]=0.2.0
+    TARGETS[partx.refs.0.tag]=0.2.0
     tree="$(fixture:module:extract:build partx)"
     @contains "$(cat "${tree}/pyproject.toml")" "subdirectory = \"src/engine\", tag = \"0.2.0\" }"
 
@@ -1019,12 +1043,12 @@ test:module:extract:an-owner-stands-in-for-the-repository () {
     fixture:module:extract:root
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
-        "plainx = { type = \"engine\", path = \"engine/demo\", owner = \"acme\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
-        "namedx = { name = \"chosen\", type = \"engine\", path = \"engine/demo\", owner = \"acme\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+        "plainx = { type = \"engine\", path = \"engine/demo\", owner = \"acme\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "namedx = { name = \"chosen\", type = \"engine\", path = \"engine/demo\", owner = \"acme\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
-    @eq "$(module:extract:name plainx)" plainx
-    @eq "$(module:extract:name namedx)" chosen
+    @eq "$(config:targets:get plainx name)" plainx
+    @eq "$(config:targets:get namedx name)" chosen
     @eq "$(module:extract:repository plainx)" github.com/acme/plainx
     @eq "$(module:extract:repository namedx)" github.com/acme/chosen
     @contains "$(NO_COLOR=1 module:extract:targets 2>/dev/null)" 'chosen'
@@ -1046,10 +1070,10 @@ test:module:extract:a-row-without-a-repo-extracts-but-does-not-push () {
     fixture:module:extract:root
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
-        "barex = { type = \"engine\", path = \"engine/demo\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+        "barex = { type = \"engine\", path = \"engine/demo\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
-    @eq "$(module:extract:name barex)" barex
+    @eq "$(config:targets:get barex name)" barex
     @errors '[deps] barex: no repo nor owner' module:extract:repository barex
 
     CLI_VALUED=( [--to]=true [--tag]=true )
@@ -1065,23 +1089,24 @@ test:module:extract:flags-write-over-a-row-or-open-one () {
 
     fixture:module:extract:root
 
-    CLI_VALUED=( [--type]=true [--path]=true [--repo]=true [--owner]=true [--name]=true [--logo]=true [--engines]=true [--deps]=true [--tag]=true [--branch]=true )
+    CLI_VALUED=( [--type]=true [--path]=true [--repo]=true [--owner]=true [--name]=true [--logo]=true [--engines]=true [--refs]=true [--tag]=true [--branch]=true )
 
     CLI_FLAGS=( [--repo]=acme/elsewhere [--name]=chosen )
     module:extract:open demox
     @eq "$(module:extract:repository demox)" github.com/acme/elsewhere
-    @eq "$(module:extract:name demox)" chosen
+    @eq "$(config:targets:get demox name)" chosen
     @eq "$(config:targets:get demox path)" engine/demo
 
-    CLI_FLAGS=( [--type]=engine [--path]=engine/demo [--owner]=acme [--deps]="engine:${TMPDIR}/corex.git" )
+    CLI_FLAGS=( [--path]=engine/demo [--owner]=acme [--refs]="engine/bash:${TMPDIR}/corex.git" )
     module:extract:open freshx
     @eq "$(module:extract:repository freshx)" github.com/acme/freshx
-    @eq "$(config:targets:deps freshx | cut -f1,2 | tr '\t' '=')" "engine=${TMPDIR}/corex.git"
+    @eq "$(config:targets:get freshx type)" engine
+    @eq "$(config:targets:refs freshx | cut -f1,2 | tr '\t' '=')" "engine/bash=${TMPDIR}/corex.git"
 
     CLI_FLAGS=( [--type]=engine [--owner]=acme )
     @errors '[deps] freshx: no path; write it in the row or pass --path' module:extract:open freshx
 
-    CLI_FLAGS=( [--type]=engine [--path]=engine/demo [--deps]="engine:${TMPDIR}/corex.git" )
+    CLI_FLAGS=( [--type]=engine [--path]=engine/demo [--refs]="engine/bash:${TMPDIR}/corex.git" )
     module:extract:open freshx
     @errors '[deps] freshx: no repo nor owner' module:extract:repository freshx
 
@@ -1103,25 +1128,40 @@ test:module:extract:flags-write-over-a-row-or-open-one () {
     @errors 'nosuch: its workflows run the bash engine' module:extract:open nosuch
 
 }
-test:module:extract:reads-a-dependency-in-every-form () {
+test:module:extract:reads-a-reference-in-every-form () {
 
     fixture:module:extract:root
 
-    module:extract:flags:deps onex 'engine:acme/corex, github.com/acme/sidex ,engine:https://github.com/acme/basex,git@github.com:acme/lastx.git,https://github.com/acme/webx,engine:/srv/pathx.git/'
+    module:extract:flags:refs onex 'engine/bash:acme/corex, engine/demo:github.com/acme/sidex ,engine/go:https://github.com/acme/basex,product/other/web:git@github.com:acme/lastx.git,engine/rust:/srv/pathx.git/,engine/python:namex'
 
-    @eq "$(config:targets:deps onex | cut -f1,2 | tr '\t\n' '= ')" \
-        'engine=acme/corex sidex=github.com/acme/sidex engine=https://github.com/acme/basex lastx=git@github.com:acme/lastx.git webx=https://github.com/acme/webx engine=/srv/pathx.git/ '
+    @eq "$(config:targets:refs onex | cut -f1,2 | tr '\t\n' '= ')" \
+        'engine/bash=acme/corex engine/demo=github.com/acme/sidex engine/go=https://github.com/acme/basex product/other/web=git@github.com:acme/lastx.git engine/rust=/srv/pathx.git/ engine/python=namex '
+
+    @errors 'onex: namex names no owner' config:targets:settle
+
+    TARGETS[onex.owner]=acme
 
     config:targets:settle
 
-    @eq "$(config:targets:deps onex | cut -f1,2 | tr '\t\n' '= ')" \
-        'engine=https://github.com/acme/corex sidex=https://github.com/acme/sidex engine=https://github.com/acme/basex lastx=https://github.com/acme/lastx webx=https://github.com/acme/webx engine=/srv/pathx.git '
+    @eq "$(config:targets:refs onex | cut -f1,2 | tr '\t\n' '= ')" \
+        'engine/bash=github.com/acme/corex engine/demo=github.com/acme/sidex engine/go=github.com/acme/basex product/other/web=github.com/acme/lastx engine/rust=/srv/pathx.git engine/python=github.com/acme/namex '
 
-    module:extract:flags:engines onex ' one, two ,,three '
-    @eq "$(config:targets:engines onex | tr '\n' ' ')" 'one two three '
+    unset 'TARGETS[onex.owner]'
+    TARGETS[onex.repo]=https://gitlab.com/group/onex
+    module:extract:flags:refs onex 'engine/bash:namex'
+    config:targets:settle
+    @eq "$(config:targets:refs onex | cut -f2)" gitlab.com/group/namex
 
-    module:extract:flags:deps onex ''
-    @eq "$(config:targets:deps onex)" ''
+    module:extract:flags:engines onex ' one, engine/two ,,three '
+    @eq "$(config:targets:engines onex | tr '\n' ' ')" 'one engine/two three '
+
+    module:extract:flags:refs onex ''
+    @eq "$(config:targets:refs onex)" ''
+
+    @errors '--refs takes src:repo' module:extract:flags:refs onex 'acme/corex'
+    @errors '--refs takes src:repo' module:extract:flags:refs onex 'https://github.com/acme/corex'
+    @errors '--refs takes src:repo' module:extract:flags:refs onex '../out:acme/corex'
+    @errors '--refs takes src:repo' module:extract:flags:refs onex 'engine/bash:'
 
 }
 test:module:extract:renames-across-hosts () {
@@ -1131,9 +1171,9 @@ test:module:extract:renames-across-hosts () {
     fixture:module:extract:root
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
-        "labx = { type = \"engine\", path = \"engine/demo\", repo = \"gitlab.com/group/sub/labx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
-        "azurex = { type = \"engine\", path = \"engine/demo\", repo = \"https://dev.azure.com/org/project/_git/azurex\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }" \
-        "portx = { name = \"ported\", type = \"engine\", path = \"engine/demo\", repo = \"git.corp.example:8443/Team/portx\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+        "labx = { type = \"engine\", path = \"engine/demo\", repo = \"gitlab.com/group/sub/labx\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "azurex = { type = \"engine\", path = \"engine/demo\", repo = \"https://dev.azure.com/org/project/_git/azurex\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }" \
+        "portx = { name = \"ported\", type = \"engine\", path = \"engine/demo\", repo = \"git.corp.example:8443/Team/portx\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
     module:extract:open
 
     mkdir -p "${tree}"
@@ -1242,7 +1282,7 @@ test:module:extract:every-flag-wins-over-its-row () {
     fixture:module:extract:root
 
     fixture:module:extract:deps demox "${TMPDIR}/corex.git" otherx \
-        "rowx = { name = \"old\", type = \"engine\", path = \"engine/demo\", repo = \"acme/old\", owner = \"old\", logo = \"https://example.com/old.png\", branch = \"old\", tag = \"v1\", deps = [{ name = \"engine\", repo = \"${TMPDIR}/corex.git\" }] }"
+        "rowx = { name = \"old\", type = \"engine\", path = \"engine/demo\", repo = \"acme/old\", owner = \"old\", logo = \"https://example.com/old.png\", branch = \"old\", tag = \"v1\", refs = [{ src = \"engine/bash\", repo = \"${TMPDIR}/corex.git\" }] }"
 
     for key in "${!wanted[@]}"; do
 
@@ -1261,23 +1301,27 @@ test:module:extract:every-flag-wins-over-its-row () {
     CLI_FLAGS=()
     module:extract:open rowx
 
-    @eq "$(config:targets:get rowx tag) $(config:targets:get rowx branch) $(module:extract:name rowx)" 'v1 old old'
+    @eq "$(config:targets:get rowx tag) $(config:targets:get rowx branch) $(config:targets:get rowx name)" 'v1 old old'
 
 }
 test:module:extract:refuses-flags-that-would-bend-the-table () {
 
     fixture:module:extract:root
 
-    CLI_VALUED=( [--type]=true [--path]=true [--engines]=true [--deps]=true [--logo]=true [--name]=true )
+    CLI_VALUED=( [--type]=true [--path]=true [--engines]=true [--refs]=true [--logo]=true [--name]=true )
 
-    CLI_FLAGS=( [--deps]='engine:acme/base x' )
+    CLI_FLAGS=( [--refs]='engine/bash:acme/base x' )
     @errors 'each one word' module:extract:open demox
 
-    CLI_FLAGS=( [--engines]=bash )
-    @errors 'demox: engines belongs to a product' module:extract:open demox
+    CLI_FLAGS=( [--refs]='engine/nowhere:acme/basex' )
+    @errors 'demox: a reference replaces a folder of the root, and engine/nowhere is none' module:extract:open demox
+
+    CLI_FLAGS=( [--engines]=engine/demo/src )
+    module:extract:open demox
+    @eq "$(config:targets:engines demox)" ''
 
     CLI_FLAGS=( [--type]=plugin )
-    @errors 'type is one of engine fragment tutor product, not plugin' module:extract:open demox
+    @errors 'type is one of engine fragment product, not plugin' module:extract:open demox
 
     CLI_FLAGS=( [--path]=/etc )
     @errors 'must name a path inside the root' module:extract:open demox
@@ -1286,8 +1330,7 @@ test:module:extract:refuses-flags-that-would-bend-the-table () {
     @errors 'must name a path inside the root' module:extract:open demox
 
     CLI_FLAGS=( [--name]='two words' )
-    module:extract:open demox
-    @errors 'not a name to extract under' module:extract:name demox
+    @errors 'demox: not a name to extract under: two words' module:extract:open demox
 
     CLI_FLAGS=( [--logo]=$'https://example.com/a\nb' )
     @errors 'holds a control character' module:extract:open demox
@@ -1320,5 +1363,56 @@ test:module:extract:the-lock-step-stands-between-the-tree-and-its-delivery () {
     CLI_FLAGS=( [--to]="${into}/third" [--no-gates]=true )
     @errors 'extract of demox failed at lock' module:extract:extract demox
     [[ ! -e "${into}/third" ]] || @err 'a tree with a broken lock was delivered'
+
+}
+test:module:extract:the-map-holds-what-the-steps-know () {
+
+    local tree="${TMPDIR}/tree" name=""
+
+    mkdir -p "${tree}/${EXTRACT_FLOWS}"
+
+    printf 'a\n' > "${tree}/${EXTRACT_FLOWS}/one.yml"
+    printf 'a\n' > "${tree}/${EXTRACT_FLOWS}/two.yaml"
+    printf 'a\n' > "${tree}/${EXTRACT_FLOWS}/notes.md"
+    mkdir -p "${tree}/${EXTRACT_FLOWS}/folder.yml"
+
+    @eq "$(module:extract:flows:files "${tree}" | sed "s|${tree}/${EXTRACT_FLOWS}/||" | tr '\n' ' ')" 'one.yml two.yaml '
+
+    @eq "${EXTRACT_KINDS[*]}" 'engine fragment product'
+
+    for name in "${EXTRACT_KINDS[@]}"; do
+        [[ "${name}" == "${EXTRACT_KIND}" || "${name}" == engine || "${name}" == fragment ]] || @err "an unknown kind: ${name}"
+    done
+
+    for name in "${EXTRACT_SAMPLES[@]}"; do
+        [[ "${name}" == "${EXTRACT_SECRETS[0]}"* || "${name}" == "${EXTRACT_SECRETS[1]}"* ]] || @err "a sample that is no secrets name: ${name}"
+    done
+
+    for name in "${EXTRACT_LABELS[@]}" "${EXTRACT_LABELER}" "${EXTRACT_UPDATES}" "${EXTRACT_FLOWS}"; do
+        [[ "${name}" == "${EXTRACT_FORGE}"/* ]] || @err "a forge file outside ${EXTRACT_FORGE}: ${name}"
+    done
+
+    @eq "$(module:extract:kind "${EXTRACT_ENGINES}/x") $(module:extract:kind "${EXTRACT_HOME}/x") $(module:extract:kind "${EXTRACT_HOME}/x/y")" 'engine product fragment'
+
+}
+test:module:extract:verify-reads-its-secrets-from-the-map () {
+
+    local tree="${TMPDIR}/tree" name=""
+
+    fixture:module:extract:root
+
+    mkdir -p "${tree}/sub"
+
+    for name in "${EXTRACT_SAMPLES[@]}"; do printf 'x\n' > "${tree}/${name}"; done
+
+    fixture:module:extract:prove "${tree}" demox
+
+    for name in "${EXTRACT_SECRETS[@]}"; do
+
+        printf 'x\n' > "${tree}/sub/${name}.local"
+        @errors "a secrets file in the tree: sub/${name}.local" fixture:module:extract:prove "${tree}" demox
+        rm -f -- "${tree}/sub/${name}.local"
+
+    done
 
 }

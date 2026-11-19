@@ -49,14 +49,14 @@
   "scripts": {
     "lock": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/typescript && pwd)/.bun\" bun install --lockfile-only",
     "deps": "BUN_INSTALL_GLOBAL_DIR=\"$(cd ../../../engine/typescript && pwd)/.bun\" bun install --frozen-lockfile",
-    "tool": "bun node_modules/engine/bin/tool.ts",
+    "tool": "bun node_modules/engine/src/engine/bin/tool.ts",
     "compile": "bun run tool compile",
     "check": "bun run tool check",
     "lint": "bun run tool lint",
     "test": "bun run tool test",
     "build": "bun run tool build",
     "release": "bun run tool release",
-    "start": "bun run tool start",
+    "dev": "bun run tool dev",
     "audit": "bun run tool audit",
     "gate": "bun run deps && bun run tool gate"
   }

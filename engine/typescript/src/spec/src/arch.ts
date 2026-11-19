@@ -178,7 +178,7 @@ export type Compiled = {
 };
 export type Messages = Readonly<Record<string, json.Dictionary>>;
 export type Table = Readonly<Record<string, string>>;
-export type Brand = { icons: Table; images: Table; fonts: Table };
+export type Brand = Readonly<Record<string, Table>>;
 export type Settings = { locales: string[]; locale: string; localization: boolean; scheme: string; world: world.Catalog[]; grants: string[]; storage: { secure: string }; app: { name: string; identifier: string; version: string; slug: string; scheme: string }; home?: string | undefined; login?: string | undefined; account?: string | undefined; [key: string]: unknown };
 export type Toned = { light: Record<string, string>; dark: Record<string, string> };
 export type Themed = { color: Toned; shadow: Toned; radius: Record<string, number | string>; motion: Record<string, number | string>; font: Record<string, string[]> };
@@ -186,7 +186,7 @@ export type Painted = { base: Record<string, string>; dark: Record<string, strin
 export type Contracts = { baseUrl: string; realtime: boolean; media: string[]; wire: api.Overrides; live: { path: string; channel: string; events: { created: string; updated: string; deleted: string }; key: string }; [key: string]: unknown };
 export type Config = { settings: Settings; themes: json.Dictionary; contents: json.Dictionary; contracts: Contracts; features: string[] };
 export type Schema = readonly Screen[] | { screens: readonly Screen[]; signals?: readonly string[] | undefined; on?: Reactions | undefined; triggers?: readonly Trigger[] | undefined };
-export type SurfaceOptions = { id?: string | undefined; config?: object | undefined; schema: Schema; messages?: Messages | undefined; brand?: Partial<Brand> | undefined };
+export type SurfaceOptions = { id?: string | undefined; config?: object | undefined; schema: Schema; messages?: Messages | undefined; brand?: Readonly<Record<string, unknown>> | undefined };
 export type Surface = { readonly id: string | undefined; readonly config: json.Dictionary; readonly screens: readonly Screen[]; readonly signals: readonly string[]; readonly on: Reactions; readonly triggers: readonly Trigger[]; readonly messages: Messages; readonly brand: Brand };
 export type Groups = { readonly [name: string]: Surface | Groups };
 export type SpecOptions = { current?: string | undefined };
@@ -291,6 +291,7 @@ export type App<D extends object = object> = {
     text: ( locale: string, key: string, params?: translate.Params, count?: number ) => string;
     settings: ( screen: string, feature: string ) => json.Dictionary;
     content: ( key: string, locale: string ) => string;
+    asset: ( path: string ) => string;
     indexing: () => Public;
     crawl: () => string;
     graph: ( locale: string ) => string | undefined;
@@ -313,6 +314,7 @@ export type Host<D extends object = object> = {
     carried: () => json.Dictionary;
     bind: ( doors: Doors ) => () => void;
     ready: ( name: string ) => Promise<App<D>>;
+    owner: ( path: string ) => Promise<string | undefined>;
     resume: ( name: string, carried?: json.Dictionary ) => Promise<boolean>;
     transfer: ( name: string, options?: Omit<Moved, "name"> ) => Promise<void>;
 };
@@ -420,5 +422,6 @@ export const namespaces = ["params", "query", "signals", "form", "user", "device
 export const namePattern = /^[a-z][a-z0-9_.-]*$/;
 export const pathPattern = /^\/(?:[a-z0-9-]+|\{[a-z][a-z0-9_]*\}|\*)?(?:\/(?:[a-z0-9-]+|\{[a-z][a-z0-9_]*\}|\*))*$/;
 export const version = 2;
+export const generated = "_generated";
 export const segmentPattern = /^[a-z][a-z0-9_-]*$/;
 export const maxDepth = 64;

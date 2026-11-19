@@ -58,6 +58,11 @@ export function handlersOf ( window: () => Window, info: Info ): Handlers {
     };
 
 }
+export function confined ( name: string ): string {
+
+    return JSON.stringify(["^*", `views://${name}/*`]);
+
+}
 export async function speech (): Promise<Spoken> {
 
     return (await Bun.file(`${VIEWS_FOLDER}/${page}/${spoken}`).json()) as Spoken;
@@ -94,7 +99,8 @@ export async function boot (): Promise<BrowserWindow<unknown>> {
         url: `views://${page}/index.html`,
         frame: { width: told.window.width, height: told.window.height },
         hidden: true,
-        sandbox: true,
+        sandbox: false,
+        navigationRules: confined(page),
         rpc,
     });
 

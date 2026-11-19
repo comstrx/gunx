@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test as it } from "bun:test";
 import { marks, requests } from "../src/render/host/contract.ts";
-import { handlersOf, platformOf, safeUrl } from "../src/render/host/host.ts";
+import { confined, handlersOf, platformOf, safeUrl } from "../src/render/host/host.ts";
 import { calls, windows } from "./setup.ts";
 
 const info = { platform: "linux" as const, arch: "x64", runtime: "1.4.4", name: "Acme Admin", identity: "admin", version: "0.1.0" };
@@ -53,6 +53,7 @@ describe("host", () => {
         expect(platformOf("win32")).toBe("windows");
         expect(platformOf("freebsd")).toBe("unknown");
         expect(safeUrl("http://localhost:8100") && safeUrl("https://a.test") && !safeUrl("ftp://a.test") && !safeUrl("nope")).toBe(true);
+        expect(JSON.parse(confined("page"))).toEqual(["^*", "views://page/*"]);
 
     });
 

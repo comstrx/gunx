@@ -122,23 +122,23 @@ core:git:clean () {
     [[ -z "${state}" ]]
 
 }
+core:git:leaf () {
+
+    local spec="${1:-}"
+
+    spec="${spec%/}"
+    spec="${spec%.git}"
+
+    core:log:print "${spec##*[/:]}"
+
+}
 core:git:name () {
 
     local root="${1}" url=""
 
-    if url="$(git -C "${root}" remote get-url origin 2>/dev/null)" && [[ -n "${url}" ]]; then
+    if url="$(git -C "${root}" remote get-url origin 2>/dev/null)" && [[ -n "${url}" ]]; then core:git:leaf "${url}"; return; fi
 
-        url="${url%/}"
-        url="${url%.git}"
-
-        core:log:print "${url##*[/:]}"
-        return 0
-
-    fi
-
-    root="$(core:git:root "${root}")"
-
-    core:log:print "${root##*/}"
+    core:git:leaf "$(core:git:root "${root}")"
 
 }
 core:git:address () {
@@ -215,7 +215,7 @@ core:git:resolve () {
     [[ -n "${spec}" ]] || { core:error:fail "An empty repository address"; return; }
 
     case "${spec}" in
-        /*|*://*|*@*:*|*.*/*/*) core:git:address "${spec}"; return ;;
+        /*|*://*|*@*:*|*/*/*) core:git:address "${spec}"; return ;;
     esac
 
     [[ "${spec}" =~ ^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)?$ ]] || { core:error:fail "Not a repository address: ${spec}"; return; }
@@ -228,7 +228,14 @@ core:git:resolve () {
 
     [[ "${spec}" == */* ]] || spec="${owner}/${spec}"
 
-    core:log:print "${host}/${spec}"
+    core:git:address "${host}/${spec}"
+
+}
+core:git:link () {
+
+    if [[ "${1:-}" == /* ]]; then core:log:print "file://${1}"
+    else core:log:print "https://${1:-}"
+    fi
 
 }
 core:git:url () {

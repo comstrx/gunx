@@ -1,8 +1,8 @@
 [meta]
 name = "bash-engine"
+description = "The general engine of the work: framework, gates, extraction, mirrors, infrastructure"
 version = "0.1.0"
 bash_version = "5.2"
-description = "The general engine of the work: framework, gates, extraction, mirrors, infrastructure"
 license = "Apache-2.0"
 readme = "README.md"
 authors = ["comstrx"]
@@ -32,10 +32,7 @@ syft = "1.56.0"
 zizmor = "1.32.0"
 taplo = "0.10.0"
 
-[deploy]
-stack = "native"
-
-[archive]
+[srcs]
 shellcheck_linux_x86_64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.x86_64.tar.xz"
 shellcheck_linux_aarch64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.linux.aarch64.tar.xz"
 shellcheck_darwin_x86_64 = "https://github.com/koalaman/shellcheck/releases/download/v{version}/shellcheck-v{version}.darwin.x86_64.tar.xz"
@@ -65,7 +62,7 @@ taplo_linux_aarch64 = "https://github.com/tamasfe/taplo/releases/download/{versi
 taplo_darwin_x86_64 = "https://github.com/tamasfe/taplo/releases/download/{version}/taplo-darwin-x86_64.gz"
 taplo_darwin_aarch64 = "https://github.com/tamasfe/taplo/releases/download/{version}/taplo-darwin-aarch64.gz"
 
-[downloads]
+[sums]
 shellcheck_linux_x86_64 = "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
 shellcheck_linux_aarch64 = "12b331c1d2db6b9eb13cfca64306b1b157a86eb69db83023e261eaa7e7c14588"
 shellcheck_darwin_x86_64 = "3c89db4edcab7cf1c27bff178882e0f6f27f7afdf54e859fa041fca10febe4c6"
@@ -96,71 +93,63 @@ taplo_darwin_x86_64 = "898122cde3a0b1cd1cbc2d52d3624f23338218c91b5ddb71518236a4c
 taplo_darwin_aarch64 = "713734314c3e71894b9e77513c5349835eefbd52908445a0d73b0c7dc469347d"
 
 [deps.bashx]
-name = "bashx"
 type = "engine"
-owner = "comstrx"
-repo = "bashx"
 path = "engine/bash"
-refs = []
-engines = []
+repo = "comstrx/bashx"
 logo = ""
 
 [deps.rustx]
 type = "engine"
 path = "engine/rust"
-repo = "gitlab.com/comstrx/rustx"
-refs = [{ src = "engine/bash", repo = "comstrx/bashx" }]
+repo = "comstrx/rustx"
+refs = [{ src = "engine/bash", repo = "bashx" }]
 logo = ""
 
 [deps.gox]
 type = "engine"
 path = "engine/go"
-repo = "https://enterprise.net/comstrx/gox"
-refs = [{ src = "engine/bash", repo = "comstrx/bashx" }]
+repo = "comstrx/gox"
+refs = [{ src = "engine/bash", repo = "bashx" }]
 logo = ""
 
 [deps.pyx]
-name = "pythonx"
 type = "engine"
 path = "engine/python"
-owner = "comstrx"
-refs = [{ src = "engine/bash", repo = "comstrx/bashx" }]
+repo = "comstrx/pyx"
+refs = [{ src = "engine/bash", repo = "bashx" }]
 logo = ""
 
 [deps.tsx]
 type = "engine"
 path = "engine/typescript"
 repo = "comstrx/tsx"
-refs = [{ src = "engine/bash", repo = "comstrx/bashx" }]
+refs = [{ src = "engine/bash", repo = "bashx" }]
 logo = ""
 
 [deps.apix]
 type = "fragment"
 path = "product/apex/api"
-owner = "comstrx"
-repo = "apix"
+repo = "comstrx/apix"
 refs = [{ src = "engine/bash", repo = "bashx" }, { src = "engine/python", repo = "pyx" }]
 logo = ""
 
 [deps.webx]
 type = "fragment"
 path = "product/apex/web"
-repo = "https://github.com/comstrx/webx"
-refs = [{ src = "engine/bash", repo = "bashx" }, { src = "engine/python", repo = "tsx" }]
+repo = "comstrx/webx"
+refs = [{ src = "engine/bash", repo = "bashx" }, { src = "engine/typescript", repo = "tsx" }]
 logo = ""
 
 [deps.mobx]
 type = "fragment"
 path = "product/apex/mobile"
-repo = "github.com/comstrx/mobx"
-refs = [{ src = "engine/bash", repo = "comstrx/bashx" }, { src = "engine/python", repo = "comstrx/tsx" }]
+repo = "comstrx/mobx"
+refs = [{ src = "engine/bash", repo = "bashx" }, { src = "engine/typescript", repo = "tsx" }]
 logo = ""
 
 [deps.apex]
 type = "product"
 path = "product/apex"
-owner = "comstrx"
 repo = "comstrx/apex"
-refs = []
-engines = ["engine/bash", "python", "engine/typescript"]
+engines = ["bash", "python", "typescript"]
 logo = ""

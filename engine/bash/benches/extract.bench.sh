@@ -1,6 +1,6 @@
 bench:module:extract:keep () {
 
-    EXTRACT_PRODUCTS=product EXTRACT_TUTOR=tutor
+    EXTRACT_PRODUCTS=product
 
     @measure 'module:extract:keep product path' 20 400 module:extract:keep product product/demo engine/demo/src/lib.rs 'engine/rust|engine/go'
 
@@ -68,8 +68,8 @@ bench:module:extract:flags () {
 
     TARGETS=( [benchx]=3 [benchx.type]=engine [benchx.path]=engine/bench [benchx.repo]=o/benchx )
 
-    CLI_VALUED=( [--name]=true [--repo]=true [--owner]=true [--logo]=true [--deps]=true [--tag]=true [--branch]=true )
-    CLI_FLAGS=( [--name]=chosen [--repo]=o/other [--owner]=o [--logo]=https://example.com/l.png [--deps]=engine:o/basex,o/sidex [--tag]=v1 [--branch]=main )
+    CLI_VALUED=( [--name]=true [--repo]=true [--owner]=true [--logo]=true [--refs]=true [--tag]=true [--branch]=true )
+    CLI_FLAGS=( [--name]=chosen [--repo]=o/other [--owner]=o [--logo]=https://example.com/l.png [--refs]=engine/bash:o/basex,engine/side:o/sidex [--tag]=v1 [--branch]=main )
 
     @measure 'module:extract:flags 7 flags' 20 50 module:extract:flags benchx
 

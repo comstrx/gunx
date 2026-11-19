@@ -43,7 +43,7 @@ config:tools:fetchable () {
 
     while IFS= read -r name; do
 
-        [[ -z "${MANIFEST[archive.${name}_${kernel}_${arch}]+x}" ]] || core:log:print "${name}"
+        [[ -z "${MANIFEST[srcs.${name}_${kernel}_${arch}]+x}" ]] || core:log:print "${name}"
 
     done < <(config:tools:names)
 

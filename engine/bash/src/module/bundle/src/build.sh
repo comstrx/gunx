@@ -71,7 +71,11 @@ module:bundle:build:checksum () {
 
     local output=""
 
-    output="$(module:bundle:build:output release)" || return
+    if [[ "${TOOL_BUNDLED:-false}" == true ]]; then output="${TOOL_BIN}"
+    else output="$(module:bundle:build:output release)" || return
+    fi
+
+    [[ -f "${output}" ]] || { core:error:fail "No release bundle at ${output}; build it first"; return; }
 
     core:fs:file:hash "${output}"
 

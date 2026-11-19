@@ -106,9 +106,16 @@ export function Shell ({ path, locale }: { path: string; locale?: string | undef
 
     useEffect(() => {
 
-        if ( lost ) redirect(home);
+        if ( !lost ) return;
 
-    }, [lost, home]);
+        void host.owner(at).then(async ( name ) => {
+
+            if ( name === undefined ) redirect(home);
+            else await host.resume(name);
+
+        }).catch(( caught: unknown ) => host.app.report(caught, "surface.lost"));
+
+    }, [lost, at, home]);
 
     return (
         <Spoken value={locale}>

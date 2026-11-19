@@ -14,6 +14,7 @@ module:extract:gates () {
     for row in "${rows[@]}"; do
 
         IFS=$'\t' read -r chain dir <<< "${row}"
+
         module:gate:one "${chain}" "${dir}" "${types}" "${seconds}" false || failed=1
 
     done
@@ -25,11 +26,13 @@ module:extract:gates () {
 }
 module:extract:lock () {
 
-    module:extract:gates "${1}" "${2}" "${GATE_WRITERS[*]}" || { @err "the lock files of ${2} could not be brought in line with its manifests"; return; }
+    module:extract:gates "${1}" "${2}" "${GATE_WRITERS[*]}" \
+        || { @err "the lock files of ${2} could not be brought in line with its manifests"; return; }
 
 }
 module:extract:gate () {
 
-    module:extract:gates "${1}" "${2}" "${GATE_DEFAULT[*]}" || { @err "gates failed for ${2}"; return; }
+    module:extract:gates "${1}" "${2}" "${GATE_DEFAULT[*]}" \
+        || { @err "gates failed for ${2}"; return; }
 
 }

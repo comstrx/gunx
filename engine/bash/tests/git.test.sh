@@ -260,3 +260,28 @@ test:core:git:syncs-what-a-tree-ships () {
     @errors 'Nothing ships from' core:git:sync "${tree}" "${into}"
 
 }
+test:core:git:links-and-names-an-address () {
+
+    local spec="" once=""
+
+    @eq "$(core:git:link github.com/o/alphax)" https://github.com/o/alphax
+    @eq "$(core:git:link /srv/alphax.git)" file:///srv/alphax.git
+
+    @eq "$(core:git:leaf https://github.com/o/alphax.git/)" alphax
+    @eq "$(core:git:leaf git@github.com:o/alphax.git)" alphax
+    @eq "$(core:git:leaf /srv/alphax.git)" alphax
+    @eq "$(core:git:leaf alphax)" alphax
+
+    for spec in o/alphax.git localhost/o/alphax https://code.example.com:8443/team/alphax.git git@gitlab.com:group/sub/alphax.git /srv/alphax.git/; do
+
+        once="$(core:git:resolve "${spec}" "${TMPDIR}")"
+
+        @eq "$(core:git:resolve "${once}" "${TMPDIR}")" "${once}"
+        @absent "${once#/}" '.git/'
+
+    done
+
+    @eq "$(core:git:resolve o/alphax.git "${TMPDIR}")" "${GIT_HOST}/o/alphax"
+    @eq "$(core:git:resolve localhost/o/alphax "${TMPDIR}")" localhost/o/alphax
+
+}

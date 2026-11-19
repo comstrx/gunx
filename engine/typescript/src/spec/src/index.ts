@@ -1,6 +1,6 @@
 export { boot } from "./app.ts";
 export type { App, AppOptions, Artifact, Asked, Binding, Block, BlockOptions, Brand, Build, Built, Carried, Carry, Catalogue, Compiled, CompiledFeature, CompiledScreen, Config, Confirm, Context, Contracts, Deploy, Doors, Edge, Effect, Effects, Feature, FeatureOptions, Feeder, Flow, Found, Groups, Handing, Handler, Head, Hooks, Host, Issue, Kind, Labels, Listed, Loaders, Located, Manifest, Matched, MenuItem, Messages, Meta, Mounted, Moved, Moves, Navigate, Operation, Options, Painted, Part, PartOptions, Piece, Plan, PlanOptions, Platform, Popup, Port, PortKind, Public, Queue, Reactions, Readable, Reference, Rulebook, Runtime, RuntimeOptions, Scalar, Schema, Screen, ScreenOptions, Settings, Settled, Spec, SpecOptions, Surface, SurfaceOptions, Table, Test, Themed, Toned, Transfer, Translate, Trigger, Value, Visibility, When, Wording } from "./arch.ts";
-export { namespaces, version } from "./arch.ts";
+export { generated, namespaces, version } from "./arch.ts";
 export { build } from "./build.ts";
 export { compile, explain, nearest } from "./compile.ts";
 export { revive, screenOf, serialize } from "./compiled.ts";

@@ -18,3 +18,13 @@ bench:core:git:trunk () {
     @measure 'core:git:trunk of this repository' 20 50 core:git:trunk "${TOOL_ENGINE}"
 
 }
+bench:core:git:leaf () {
+
+    @measure 'core:git:leaf url' 20 400 core:git:leaf https://github.com/owner/alphax.git
+
+}
+bench:core:git:link () {
+
+    @measure 'core:git:link address' 20 400 core:git:link github.com/owner/alphax
+
+}

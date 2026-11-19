@@ -63,14 +63,14 @@ describe("spec tree", () => {
     });
     it("a surface is one frozen object of config, schema, messages and brand, and refuses anything else", () => {
 
-        expect([spec.isSurface(admin), spec.isSurface({ ...admin }), Object.isFrozen(admin), admin.id, client.id, client.signals, client.brand, admin.brand.fonts]).toEqual([true, false, true, undefined, "shop-client", ["cart"], { icons: { logo: "./logo.svg" }, images: {}, fonts: {} }, {}]);
+        expect([spec.isSurface(admin), spec.isSurface({ ...admin }), Object.isFrozen(admin), admin.id, client.id, client.signals, client.brand, admin.brand.fonts]).toEqual([true, false, true, undefined, "shop-client", ["cart"], { icons: { logo: "./logo.svg" } }, undefined]);
         expect([
             () => spec.surface({ schema: [home], extra: 1 } as never),
             () => spec.surface({ schema: 7 } as never),
             () => spec.surface({ schema: [home], id: "Bad Id" }),
             () => spec.surface({ schema: [home], config: [] as never }),
             () => spec.surface({ schema: [home], messages: { en: "hi" } as never }),
-            () => spec.surface({ schema: [home], brand: { logos: {} } as never }),
+            () => spec.surface({ schema: [home], brand: { images: 7 } }),
             () => spec.surface({ schema: [home], brand: { icons: { logo: "" } } }),
             () => spec.surface(7 as never),
         ].map(reasonOf)).toEqual(Array.from({ length: 8 }, () => "spec.surface"));
@@ -165,7 +165,7 @@ describe("spec tree", () => {
         const { app } = host;
         const screen = app.compiled.byName.home as spec.CompiledScreen;
 
-        expect([host.entry, host.names, host.active.getState(), host.of("shop.admin") === app, app.name, app.id, app.address, app.config.themes.brand, app.config.settings.budget.js, app.links, app.brand.icons]).toEqual(["shop.admin", ["shop.admin"], "shop.admin", true, "shop.admin", "shop.admin", "https://api.example.test/v1", "#ff4500", 0, {}, {}]);
+        expect([host.entry, host.names, host.active.getState(), host.of("shop.admin") === app, app.name, app.id, app.address, app.config.themes.brand, app.config.settings.budget.js, app.links, app.brand.icons]).toEqual(["shop.admin", ["shop.admin"], "shop.admin", true, "shop.admin", "shop.admin", "https://api.example.test/v1", "#ff4500", 0, {}, undefined]);
         expect([app.text("en", "hello.title"), app.text("ar", "hello.title"), app.text("fr", "nav.menu"), app.text("en", "nav.ghost"), app.labels("ar", "nav"), app.labels("en", "ghost")]).toEqual(["Hello from the shop", "Hello from the shop", "Menu", "nav.ghost", { menu: "القائمة", yes: "Yes" }, {}]);
         expect(app.labels("ar", "nav")).toBe(app.labels("ar", "nav"));
         expect([app.title(screen, "ar"), app.heading(screen, "en"), app.content("name", "ar"), app.content("url", "en"), app.content("ghost", "en"), app.indexing(), app.paths(), app.site("en")?.url, app.meta(screen, "en").canonical, app.screenAt("/")?.screen.name, app.menu("en", "/").map(( item ) => item.name), app.settings("home", "hello")]).toEqual(["الرئيسية", "Home · Shop", "Shop", "https://shop.example.test", "", { indexable: true, url: "https://shop.example.test" }, ["/"], "https://shop.example.test", "https://shop.example.test", "home", ["home"], {}]);
@@ -284,6 +284,7 @@ describe("spec tree", () => {
         await host.transfer("client", { to: "/welcome" });
         unbound();
         expect([went.at(-1), await host.resume("admin"), host.active.getState(), await host.resume("ghost"), host.active.getState()]).toEqual(["bound /welcome", true, "admin", false, "admin"]);
+        expect([await host.owner("/welcome"), await host.owner("/jobs/9"), await host.owner("/nowhere"), host.active.getState()]).toEqual(["client", "admin", undefined, "admin"]);
         await host.transfer("client", { to: "/welcome" });
         expect(went.at(-1)).toBe("go /welcome");
         expect([host.active.getState(), spec.boot(JSON.parse(JSON.stringify(built.artifact("admin"))), { sinks: [], active: "client" }).app.name, spec.boot(JSON.parse(JSON.stringify(built.artifact("admin"))), { sinks: [], active: "ghost" }).app.name]).toEqual(["client", "client", "admin"]);

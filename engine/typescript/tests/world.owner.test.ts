@@ -27,7 +27,7 @@ it("an omitted catalog refuses explicitly and never becomes ready as an empty ca
         expect(built.success, String(built.logs)).toBe(true);
 
         const child = Bun.spawn([process.execPath, "--eval", [
-            "const world = await import(" + JSON.stringify(built.outputs[0]?.path) + ");",
+            `const world = await import(${JSON.stringify(built.outputs[0]?.path)});`,
             "const out = [];",
             "for (const name of ['countries', 'currencies', 'languages', 'emoji']) {",
             "const reasons = [];",

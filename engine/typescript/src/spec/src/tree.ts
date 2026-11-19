@@ -7,7 +7,6 @@ import { maxDepth, segmentPattern } from "./arch.ts";
 const surfaces = new WeakSet<object>();
 const specs = new WeakSet<object>();
 const holds: readonly string[] = ["id", "config", "schema", "messages", "brand"];
-const kinds: readonly (keyof Brand)[] = ["icons", "images", "fonts"];
 const parts: readonly string[] = ["screens", "signals", "on", "triggers"];
 
 function refused ( reason: string, message: string ): exception.Fault {
@@ -96,12 +95,14 @@ export function surface ( given: SurfaceOptions ): Surface {
 
     if ( given.id !== undefined && (typeof given.id !== "string" || !/^[a-z][a-z0-9_.-]{0,63}$/.test(given.id)) ) throw refused("spec.surface", "id: lowercase letters, digits, dots, dashes and underscores, from a letter");
     if ( given.config !== undefined && !json.isRecord(given.config) ) throw refused("spec.surface", "config: the surface's settings, themes, contents, contracts and features");
-    if ( given.brand !== undefined && !json.isRecord(given.brand) ) throw refused("spec.surface", `brand: tables of ${kinds.join(", ")}`);
+    if ( given.brand !== undefined && !json.isRecord(given.brand) ) throw refused("spec.surface", "brand: the role's messages and its tables of files, such as { messages, images }");
 
-    for ( const key of Object.keys(given.brand ?? {}) ) if ( !kinds.includes(key as keyof Brand) ) throw refused("spec.surface", `brand.${key}: a brand holds ${kinds.join(", ")}`);
+    const { messages: told, ...tables } = given.brand ?? {};
 
-    const brand: Brand = { icons: tabled(given.brand?.icons, "icons"), images: tabled(given.brand?.images, "images"), fonts: tabled(given.brand?.fonts, "fonts") };
-    const made: Surface = Object.freeze({ id: given.id, config: (given.config ?? {}) as json.Dictionary, ...drawn(given.schema), messages: spoken(given.messages), brand: Object.freeze(brand) });
+    for ( const kind of Object.keys(tables) ) if ( !json.safeKey(kind) ) throw refused("spec.surface", `brand.${kind}: a table is named by a plain word`);
+
+    const brand: Brand = Object.fromEntries(Object.entries(tables).map(([kind, table]) => [kind, tabled(table, kind)]));
+    const made: Surface = Object.freeze({ id: given.id, config: (given.config ?? {}) as json.Dictionary, ...drawn(given.schema), messages: spoken(told ?? given.messages), brand: Object.freeze(brand) });
 
     surfaces.add(made);
 

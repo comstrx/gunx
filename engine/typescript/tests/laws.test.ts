@@ -11,7 +11,7 @@ const root = resolve(import.meta.dir, "..");
 const source = resolve(root, "src");
 const members = readdirSync(source, { withFileTypes: true }).filter(( entry ) => entry.isDirectory() && entry.name !== "engine").map(( entry ) => entry.name).sort();
 const workspace = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { catalog: Record<string, string> };
-const facade = JSON.parse(readFileSync(resolve(source, "engine", "package.json"), "utf8")) as Manifest;
+const facade = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as Manifest;
 const reach = /from\s+"engine-([a-z]+)"|import\(\s*"engine-([a-z]+)"\s*\)/g;
 const exported = /^export \* as ([a-z]+) from "engine-([a-z]+)";$/;
 const library = /(?:from|import)\s*\(?\s*"((?!engine-|\.|node:|bun)[^"]+)"/g;
@@ -176,13 +176,20 @@ function cycle ( edges: Map<string, Set<string>> ): string[] {
 
 describe("laws", () => {
 
-    it("workspace: every member is a private package declared once in the facade with a short description", () => {
+    it("workspace: the root is the facade; it names every member by its folder and carries every library a member asks for", () => {
 
-        const declared = Object.keys(facade.dependencies ?? {}).map(( name ) => name.replace(/^engine-/, "")).sort();
+        const held = Object.entries(facade.dependencies ?? {});
+        const declared = held.filter(([name]) => name.startsWith("engine-")).map(([name]) => name.slice(7)).sort();
+        const carried = Object.fromEntries(held.filter(([name]) => !name.startsWith("engine-")));
+        const asked = [...new Set(members.flatMap(( member ) => Object.keys(manifest(member).dependencies ?? {}).filter(( name ) => !name.startsWith("engine-"))))].sort();
         const doors = Object.keys(facade.exports).filter(( key ) => key.startsWith("./") && key !== "./package.json").map(( key ) => key.slice(2)).sort();
 
+        expect(facade.name).toBe("engine");
         expect(declared).toEqual(members);
         expect(doors).toEqual(members);
+        expect(held.filter(([name, version]) => name.startsWith("engine-") && version !== `file:./src/${name.slice(7)}`)).toEqual([]);
+        expect(Object.keys(carried).sort()).toEqual(asked);
+        expect(asked.filter(( name ) => carried[name] !== workspace.catalog[name])).toEqual([]);
 
         for ( const member of members ) {
 

@@ -1,12 +1,12 @@
 fuzz:module:extract:keep () {
 
     local path="" kind=""
-    local -a kinds=( engine fragment tutor product )
+    local -a kinds=( "${EXTRACT_KINDS[@]}" )
 
     path="$(tr -d '\0\n' < "${1}" | head -c 160)"
-    kind="${kinds[$(( $(wc -c < "${1}") % 4 ))]}"
+    kind="${kinds[$(( $(wc -c < "${1}") % ${#kinds[@]} ))]}"
 
-    EXTRACT_PRODUCTS=product EXTRACT_TUTOR=tutor
+    EXTRACT_PRODUCTS=product
 
     module:extract:keep "${kind}" product/demo "${path}" 'engine/rust|engine/go' || true
 
@@ -79,7 +79,10 @@ fuzz:module:extract:name () {
 
     TARGETS=( [rowx]=4 [rowx.type]=engine [rowx.path]=engine/row [rowx.name]="${given}" [rowx.repo]="${given}" )
 
-    out="$(module:extract:name rowx 2>/dev/null)" || return 0
+    config:targets:settle 2>/dev/null || return 0
+    module:extract:whole rowx 2>/dev/null || return 0
+
+    out="$(config:targets:get rowx name)" || return 3
 
     [[ "${out}" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]] || return 3
 
@@ -126,25 +129,25 @@ fuzz:module:extract:shallow () {
 }
 fuzz:module:extract:flags () {
 
-    local text="" line="" label="" repo="" tag="" count=0
+    local text="" src="" repo="" tag="" count=0
     local -a engines=()
 
     text="$(tr -d '\0\n' < "${1}" | head -c 200)"
 
     TARGETS=()
 
-    if module:extract:flags:deps onex "${text}" 2>/dev/null; then
+    if module:extract:flags:refs onex "${text}" 2>/dev/null; then
 
-        while IFS=$'\t' read -r label repo tag; do
+        while IFS=$'\t' read -r src repo tag; do
 
-            [[ -n "${label}" && -n "${repo}" && "${label}${repo}" != *[[:space:],]* ]] || return 3
-            [[ "${label}" != - && "${repo}" != - ]] || [[ "${text}" == *-* ]] || return 3
+            core:fs:path:relative "${src}" || return 3
+            [[ -n "${repo}" && "${repo}" != - && "${repo}" != *[[:space:],]* && -z "${tag}" ]] || return 3
 
             count=$(( count + 1 ))
 
-        done < <(config:targets:deps onex)
+        done < <(config:targets:refs onex)
 
-        [[ "${count}" == "${TARGETS[onex.deps]}" ]] || return 3
+        [[ "${count}" == "${TARGETS[onex.refs]}" ]] || return 3
 
     else
 
@@ -160,9 +163,27 @@ fuzz:module:extract:flags () {
 
     [[ "${#engines[@]}" == "${TARGETS[onex.engines]}" || "${TARGETS[onex.engines]}" == 0 ]] || return 3
 
-    for label in "${engines[@]}"; do
-        [[ -n "${label}" && "${label}" != *[[:space:],]* ]] || return 3
+    for src in "${engines[@]}"; do
+        [[ -n "${src}" && "${src}" != *[[:space:],]* ]] || return 3
     done
+
+}
+fuzz:module:extract:kind () {
+
+    local path="" kind=""
+
+    path="$(tr -d '\0\n' < "${1}" | head -c 120)"
+
+    kind="$(module:extract:kind "${path}")" || return 0
+
+    core:list:has "${kind}" "${EXTRACT_KINDS[@]}" || return 3
+
+    case "${kind}" in
+        engine)   [[ "${path}" == "${EXTRACT_ENGINES}"/* && "${path#"${EXTRACT_ENGINES}/"}" != */* ]] || return 3 ;;
+        product)  [[ "${path}" == "${EXTRACT_HOME}"/* && "${path#"${EXTRACT_HOME}/"}" != */* ]] || return 3 ;;
+        fragment) [[ "${path}" == "${EXTRACT_HOME}"/*/* && "${path#"${EXTRACT_HOME}"/*/}" != */* ]] || return 3 ;;
+        *)        return 3 ;;
+    esac
 
 }
 fuzz:module:extract:whole () {
@@ -175,6 +196,8 @@ fuzz:module:extract:whole () {
     TARGETS=()
 
     config:targets:set "${name}" logo '' 2>/dev/null || return 0
+
+    if [[ ! "${name}" =~ ^[A-Za-z] ]]; then ! module:extract:whole "${name}" 2>/dev/null || return 3; return 0; fi
 
     module:extract:whole "${name}" 2>/dev/null || return 3
 

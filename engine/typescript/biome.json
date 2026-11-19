@@ -119,6 +119,16 @@
       }
     },
     {
+      "includes": ["tests/engine.test.ts", "fuzz/engine.test.ts", "benches/engine.bench.ts"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnresolvedImports": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["src/state/src/bind.ts"],
       "linter": {
         "rules": {

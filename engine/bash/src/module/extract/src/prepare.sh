@@ -1,10 +1,10 @@
 module:extract:changelog () {
 
-    local root="${1}" tree="${2}" line="" text="# Changelog" block=0 name="" spec="" shown="" LC_ALL=C
+    local root="${1}" tree="${2}" line="" text="${EXTRACT_CHANGES}" block=0 name="" spec="" shown="" LC_ALL=C
 
     shift 2
 
-    [[ -f "${root}/CHANGELOG.md" ]] || return 0
+    [[ -f "${root}/${EXTRACT_CHANGELOG}" ]] || return 0
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
 
@@ -39,9 +39,9 @@ module:extract:changelog () {
             ;;
         esac
 
-    done < "${root}/CHANGELOG.md"
+    done < "${root}/${EXTRACT_CHANGELOG}"
 
-    printf '%s\n' "${text}" | core:fs:file:write "${tree}/CHANGELOG.md" 644
+    printf '%s\n' "${text}" | core:fs:file:write "${tree}/${EXTRACT_CHANGELOG}" 644
 
 }
 module:extract:anycase () {
@@ -79,12 +79,12 @@ module:extract:rename () {
     local -a program=() docs=() olds=() news=() seek=()
 
     word="$(module:extract:source)" || return
-    tool="$(module:extract:name "${name}")" || return
+    tool="$(config:targets:get "${name}" name)" || return
     to="$(module:extract:repository "${name}" 2>/dev/null)" || to=""
 
     [[ "${word}" =~ ^[A-Za-z0-9_.-]+$ ]] || { @err "Not a source name: ${word}"; return; }
 
-    from="$(core:git:origin "${TOOL_ROOT}" 2>/dev/null)" && from="$(core:git:address "${from}" 2>/dev/null)" || from=""
+    from="$(core:git:home "${TOOL_ROOT}" 2>/dev/null)" || from=""
 
     seek=( -e "${word}" )
 
@@ -95,7 +95,7 @@ module:extract:rename () {
         other="${to#*/}"
         other="${other%%/*}"
 
-        program+=( -e "s|$(module:extract:anycase "https://${from}")|https://${to}|g" )
+        program+=( -e "s|$(module:extract:anycase "$(core:git:link "${from}")")|$(core:git:link "${to}")|g" )
         program+=( -e "s|$(module:extract:anycase "${from}")|${to}|g" )
         program+=( -e "s|$(module:extract:anycase "${from#*/}")|${to#*/}|g" )
 
@@ -120,26 +120,29 @@ module:extract:rename () {
 
     while IFS= read -r file; do
 
-        [[ "${file}" == "${tree}"/.github/* || "${file}" == *.@(md|yml|yaml|toml) ]] || continue
+        [[ "${file}" == "${tree}/${EXTRACT_FORGE}"/* || "${file}" =~ [.](${EXTRACT_PAPERS})$ ]] || continue
 
         core:fs:file:edit "${file}" -E "${program[@]}" || { @err "Rename failed: ${file#"${tree}/"}"; return; }
 
-        [[ "${file}" != *.@(md|yml|yaml) ]] || docs+=( "${file#"${tree}/"}" )
+        [[ ! "${file}" =~ [.](${EXTRACT_PROSE})$ ]] || docs+=( "${file#"${tree}/"}" )
 
-    done < <(grep -rIilF --exclude-dir=.git "${seek[@]}" -- "${tree}" || true)
+    done < <(grep -rIilF --exclude-dir="${EXTRACT_SKIP}" "${seek[@]}" -- "${tree}" || true)
 
     while IFS= read -r -d '' file; do
 
-        [[ "${file}" == *.@(yml|yaml) ]] || continue
+        [[ "${file}" =~ [.](${EXTRACT_YAML})$ ]] || continue
 
         core:list:has "${file#"${tree}/"}" "${docs[@]}" || docs+=( "${file#"${tree}/"}" )
 
-    done < <(core:fs:tree:files "${tree}/.github")
+    done < <(core:fs:tree:files "${tree}/${EXTRACT_FORGE}")
 
     (( ${#docs[@]} > 0 )) || return 0
-    module:bundle:tool:ready prettier || { @warn "prettier cannot run here; the renamed files keep their old widths"; return 0; }
 
-    core:proc:within "${tree}" @tool prettier --log-level warn --write "${docs[@]}" || { @err "Prettier failed on the renamed files"; return; }
+    module:bundle:tool:ready "${EXTRACT_FORMATTER}" \
+        || { @warn "${EXTRACT_FORMATTER} cannot run here; the renamed files keep their old widths"; return 0; }
+
+    core:proc:within "${tree}" @tool "${EXTRACT_FORMATTER}" "${EXTRACT_FORMAT[@]}" "${docs[@]}" \
+        || { @err "${EXTRACT_FORMATTER} failed on the renamed files"; return; }
 
 }
 module:extract:shallow () {
@@ -154,39 +157,43 @@ module:extract:shallow () {
 
     while IFS= read -r file; do
 
-        [[ "${file}" == *.@(json|jsonc|toml|yml|yaml|mod|work) ]] || continue
+        [[ "${file}" =~ [.](${EXTRACT_PATHS})$ ]] || continue
 
-        core:fs:file:edit "${file}" -E "s#[.][.]/(([.][.]/)*(${EXTRACT_HOMES})/)#\\1#g" || { @err "Cannot shorten the paths of ${file#"${tree}/"}"; return; }
+        core:fs:file:edit "${file}" -E "s#[.][.]/(([.][.]/)*(${EXTRACT_HOMES})/)#\\1#g" \
+            || { @err "Cannot shorten the paths of ${file#"${tree}/"}"; return; }
 
-    done < <(grep -rIlE --exclude-dir=.git "[.][.]/([.][.]/)*(${EXTRACT_HOMES})/" -- "${tree}/${home}" 2>/dev/null || true)
+    done < <(grep -rIlE --exclude-dir="${EXTRACT_SKIP}" "[.][.]/([.][.]/)*(${EXTRACT_HOMES})/" -- "${tree}/${home}" 2>/dev/null || true)
 
     while IFS= read -r file; do
 
-        [[ "${file}" == "${tree}"/.github/* || "${file}" == *.@(md|yml|yaml|toml) ]] || continue
+        [[ "${file}" == "${tree}/${EXTRACT_FORGE}"/* || "${file}" =~ [.](${EXTRACT_PAPERS})$ ]] || continue
 
-        core:fs:file:edit "${file}" -E "s#${home}/(${name}|[*])/#${home}/#g" || { @err "Cannot shorten the paths of ${file#"${tree}/"}"; return; }
+        core:fs:file:edit "${file}" -E "s#${home}/(${name}|[*])/#${home}/#g" \
+            || { @err "Cannot shorten the paths of ${file#"${tree}/"}"; return; }
 
-    done < <(grep -rIlE --exclude-dir=.git "${home}/(${name}|[*])/" -- "${tree}" 2>/dev/null || true)
+    done < <(grep -rIlE --exclude-dir="${EXTRACT_SKIP}" "${home}/(${name}|[*])/" -- "${tree}" 2>/dev/null || true)
 
 }
 module:extract:logo () {
 
-    local tree="${1}" name="${2}" file="${1}/README.md" logo="" line="" text="" placed=0
+    local tree="${1}" name="${2}" file="${1}/${EXTRACT_README}" logo="" line="" text="" badge="" placed=0
 
     logo="$(config:targets:get "${name}" logo)" || return
 
     [[ -n "${logo}" ]] || return 0
-    [[ "${logo}" == https://* && "${logo}" != *[[:space:]\"\<\>]* ]] || { @err "[deps] ${name}: logo is an https address, not ${logo}"; return; }
+
+    core:validate:url "${logo}" || { @err "[deps] ${name}: logo is an https address, not ${logo}"; return; }
 
     [[ -f "${file}" ]] || return 0
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
 
         text+="${line}"$'\n'
+        (( placed == 0 )) && [[ "${line}" == "${EXTRACT_HEADING}"* ]] || continue
 
-        (( placed == 0 )) && [[ "${line}" == '# '* ]] || continue
+        badge="${EXTRACT_BADGE//\{height\}/"${EXTRACT_LOGO}"}"
 
-        text+=$'\n<div align="center">\n  <br/>\n  <img height="'"${EXTRACT_LOGO}"'" src="'"${logo}"$'"/>\n  <br/>\n  <br/>\n</div>\n'
+        text+="${badge//\{src\}/"${logo}"}"
         placed=1
 
     done < "${file}"
@@ -204,9 +211,9 @@ module:extract:strip () {
 
         core:list:has "${name,,}" "${MANIFEST_NAMES[@]}" || continue
 
-        core:parse:toml:drop "${file}" deps || { @err "Strip failed: ${file#"${tree}/"}"; return; }
+        core:parse:toml:drop "${file}" "${EXTRACT_TABLE}" || { @err "Strip failed: ${file#"${tree}/"}"; return; }
 
-    done < <(core:fs:tree:files "${tree}" .toml)
+    done < <(core:fs:tree:files "${tree}" ".${MANIFEST_NAMES[0]##*.}")
 
 }
 module:extract:blocks () {
@@ -214,7 +221,7 @@ module:extract:blocks () {
     local name="${1}" kind="${2}" part="${3}" short=""
 
     case "${kind}" in
-        engine|tutor) @print "${part##*/}" ;;
+        engine)       @print "${part##*/}" ;;
         fragment)     short="${part#"${EXTRACT_PRODUCTS}/"}"; @print "${short/\//-}=${part##*/}" ;;
         product)      config:targets:engines "${name}"; @print "${part##*/}" "${part##*/}-*" ;;
     esac
@@ -242,7 +249,7 @@ module:extract:prepare () {
 
     module:extract:shallow "${tree}" "${kind}" "${part}" || return
     module:extract:flows:apply "${tree}" "${kind}" "${part}" "${name}" || return
-    module:extract:deps "${tree}" "${name}" "${kind}" || return
+    module:extract:refs "${tree}" "${name}" || return
     module:extract:rename "${tree}" "${name}" || return
     module:extract:flows:seal "${tree}" "${part}" "${name}" || return
     module:extract:logo "${tree}" "${name}" || return

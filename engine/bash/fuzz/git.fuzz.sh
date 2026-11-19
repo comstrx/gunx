@@ -48,3 +48,35 @@ fuzz:core:git:deep () {
     [[ "${out}" == /* || ( "${out}" != *://* && "${out}" != *@* && "${out}" != */ && "${out}" == */*/* ) ]] || return 3
 
 }
+fuzz:core:git:settled () {
+
+    local text="" once="" twice="" leaf="" link=""
+
+    text="$(tr -d '\0\n' < "${1}" | head -c 96)"
+
+    once="$(core:git:resolve "${text}" "${TOOL_ENGINE}" 2>/dev/null)" || return 0
+    twice="$(core:git:resolve "${once}" "${TOOL_ENGINE}" 2>/dev/null)" || return 3
+
+    [[ "${twice}" == "${once}" ]] || return 3
+    [[ "${once}" == /* || "${once}" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9_.-]+){2,}$ ]] || return 3
+    [[ "${once}" == /* || "${once}" != *.git ]] || return 3
+
+    leaf="$(core:git:leaf "${once}")"
+    link="$(core:git:link "${once}")"
+
+    [[ "${leaf}" != */* && "${leaf}" != *.git ]] || return 3
+    [[ "${once}" == /* || -n "${leaf}" ]] || return 3
+    [[ "${link}" == "file://${once}" || "${link}" == "https://${once}" ]] || return 3
+
+}
+fuzz:core:git:leaf () {
+
+    local text="" leaf=""
+
+    text="$(tr -d '\0\n' < "${1}" | head -c 96)"
+    leaf="$(core:git:leaf "${text}")" || return 3
+
+    [[ "${leaf}" != */* && "${leaf}" != *:* ]] || return 3
+    [[ -z "${leaf}" || "${text}" == *"${leaf}"* ]] || return 3
+
+}

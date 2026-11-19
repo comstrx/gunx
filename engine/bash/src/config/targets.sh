@@ -1,4 +1,6 @@
 declare -gA TARGETS=()
+declare -ga TARGETS_KEYS=( name type owner repo path refs engines logo branch tag )
+declare -ga TARGETS_REF=( src repo tag )
 
 config:targets:load () {
 
@@ -15,6 +17,7 @@ config:targets:load () {
         name="${key%%.*}"
 
         config:targets:named "${name}" || return
+        config:targets:known "${name}" "${key#"${name}"}" || return
 
         TARGETS["${name}"]="${TARGETS[${name}]:-1}"
 
@@ -34,6 +37,23 @@ config:targets:named () {
     [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || { core:error:fail "[deps] not a target name: ${1:-}"; return; }
 
 }
+config:targets:known () {
+
+    local name="${1}" rest="${2#.}" key="" field=""
+
+    [[ -n "${rest}" ]] || return 0
+
+    key="${rest%%.*}"
+
+    core:list:has "${key}" "${TARGETS_KEYS[@]}" || { core:error:fail "[deps] ${name}: unknown key ${key}; a row holds ${TARGETS_KEYS[*]}"; return; }
+
+    [[ "${key}" == refs && "${rest}" == refs.*.* ]] || return 0
+
+    field="${rest##*.}"
+
+    core:list:has "${field}" "${TARGETS_REF[@]}" || { core:error:fail "[deps] ${name}: unknown key ${field} in refs; a reference holds ${TARGETS_REF[*]}"; return; }
+
+}
 config:targets:inside () {
 
     core:fs:path:relative "${2:-}" || { core:error:fail "[deps] ${1:-} must name a path inside the root: ${2:-}"; return; }
@@ -44,13 +64,20 @@ config:targets:has () {
     [[ -n "${1:-}" && -n "${TARGETS[${1}]+x}" ]]
 
 }
+config:targets:open () {
+
+    config:targets:named "${1:-}" || return
+
+    TARGETS["${1}"]="${TARGETS[${1}]:-1}"
+
+}
 config:targets:set () {
 
     local name="${1:-}" key="${2:-}" value="${3-}"
 
     config:targets:named "${name}" || return
 
-    [[ "${key}" =~ ^[a-z]+$ ]] || { core:error:fail "[deps] ${name}: not a key: ${key}"; return; }
+    core:list:has "${key}" "${TARGETS_KEYS[@]}" || { core:error:fail "[deps] ${name}: unknown key ${key}; a row holds ${TARGETS_KEYS[*]}"; return; }
     [[ "${value}" != *[[:cntrl:]]* ]] || { core:error:fail "[deps] ${name}: ${key} holds a control character"; return; }
 
     [[ "${key}" != path ]] || config:targets:inside "${name}" "${value}" || return
@@ -85,26 +112,29 @@ config:targets:fill () {
 }
 config:targets:link () {
 
-    local name="${1:-}" index=0
+    local name="${1:-}" index=0 word=""
 
-    (( $# >= 1 && ( $# - 1 ) % 2 == 0 )) || { core:error:fail "[deps] a target, then a name and a repository for every dependency"; return; }
+    (( $# >= 1 && ( $# - 1 ) % 2 == 0 )) || { core:error:fail "[deps] a target, then a path and a repository for every reference"; return; }
 
     shift
 
-    for index in "$@"; do
-        [[ -n "${index}" && "${index}" != *[[:space:][:cntrl:]]* ]] || { core:error:fail "[deps] ${name}: a dependency is a name and a repository, each one word"; return; }
+    for word in "$@"; do
+        [[ -n "${word}" && "${word}" != *[[:space:][:cntrl:]]* ]] || { core:error:fail "[deps] ${name}: a reference is a path and a repository, each one word"; return; }
     done
 
+    for (( index = 1; index <= $#; index += 2 )); do
+        config:targets:inside "${name}" "${!index}" || return
+    done
+
+    config:targets:fill "${name}" refs || return
+
+    TARGETS["${name}.refs"]=$(( $# / 2 ))
     index=0
-
-    config:targets:fill "${name}" deps || return
-
-    TARGETS["${name}.deps"]=$(( $# / 2 ))
 
     while (( $# > 0 )); do
 
-        TARGETS["${name}.deps.${index}.name"]="${1}"
-        TARGETS["${name}.deps.${index}.repo"]="${2}"
+        TARGETS["${name}.refs.${index}.src"]="${1}"
+        TARGETS["${name}.refs.${index}.repo"]="${2}"
 
         index=$(( index + 1 ))
         shift 2
@@ -114,45 +144,74 @@ config:targets:link () {
 }
 config:targets:address () {
 
-    local spec="${1:-}" address=""
-
-    address="$(core:git:resolve "${spec}" "${TOOL_ROOT:-}" 2>/dev/null)" || { core:log:print "${spec}"; return 0; }
-
-    [[ "${address}" != /* ]] || { core:log:print "${address}"; return 0; }
-
-    address="$(core:git:address "https://${address}" 2>/dev/null)" || { core:log:print "${spec}"; return 0; }
-
-    core:log:print "https://${address}"
+    core:git:resolve "${1:-}" "${TOOL_ROOT:-}" 2>/dev/null || core:log:print "${1:-}"
 
 }
 config:targets:settle () {
 
-    local name="" key="" spec=""
+    local name="" key="" repo="" owner="" label=""
     local -A known=()
 
     while IFS= read -r name; do
 
-        spec="${TARGETS[${name}.repo]:-}"
+        repo="${TARGETS[${name}.repo]:-}"
+        owner="${TARGETS[${name}.owner]:-}"
+        owner="${owner%/}"
+        label="${TARGETS[${name}.name]:-}"
 
-        [[ -n "${spec}" || -z "${TARGETS[${name}.owner]:-}" ]] || spec="${TARGETS[${name}.owner]%/}/${TARGETS[${name}.name]:-${name}}"
-        [[ -n "${spec}" ]] || continue
+        if [[ -z "${repo}" ]]; then repo="${owner:+${owner}/${label:-${name}}}"
+        elif [[ -n "${owner}" && "${repo}" != */* && "${repo}" != *:* ]]; then repo="${owner}/${repo}"
+        fi
 
-        [[ -n "${known[${spec}]+x}" ]] || known["${spec}"]="$(config:targets:address "${spec}")"
+        if [[ -n "${repo}" ]]; then
 
-        TARGETS["${name}.repo"]="${known[${spec}]}"
+            [[ -n "${known[${repo}]+x}" ]] || known["${repo}"]="$(config:targets:address "${repo}")"
+
+            repo="${known[${repo}]}"
+
+            [[ -n "${label}" ]] || label="$(core:git:leaf "${repo}")"
+            if [[ -z "${owner}" && "${repo%/}" == */* ]]; then
+
+                owner="${repo%/}"
+                owner="${owner%/*}"
+
+            fi
+
+            TARGETS["${name}.repo"]="${repo}"
+
+        fi
+
+        TARGETS["${name}.name"]="${label:-${name}}"
+
+        [[ -z "${owner}" ]] || TARGETS["${name}.owner"]="${owner}"
 
     done < <(config:targets:list)
 
     for key in "${!TARGETS[@]}"; do
 
-        [[ "${key}" == *.deps.*.repo ]] || continue
+        if [[ "${key}" == *.refs.*.src ]]; then TARGETS["${key}"]="${TARGETS[${key}]%/}"; continue; fi
 
-        spec="${TARGETS[${key}]}"
-        [[ -n "${spec}" ]] || continue
+        [[ "${key}" == *.refs.*.repo ]] || continue
 
-        [[ -n "${known[${spec}]+x}" ]] || known["${spec}"]="$(config:targets:address "${spec}")"
+        repo="${TARGETS[${key}]}"
+        name="${key%%.*}"
 
-        TARGETS["${key}"]="${known[${spec}]}"
+        [[ -n "${repo}" ]] || continue
+
+        if [[ "${repo}" != */* && "${repo}" != *:* ]]; then
+
+            owner="${TARGETS[${name}.owner]:-}"
+
+            [[ -n "${owner}" ]] \
+                || { core:error:fail "[deps] ${name}: ${repo} names no owner; give the row an owner or a repo, or write owner/${repo}"; return; }
+
+            repo="${owner}/${repo}"
+
+        fi
+
+        [[ -n "${known[${repo}]+x}" ]] || known["${repo}"]="$(config:targets:address "${repo}")"
+
+        TARGETS["${key}"]="${known[${repo}]}"
 
     done
 
@@ -173,7 +232,8 @@ config:targets:get () {
     [[ -n "${name}" && -n "${TARGETS[${name}]+x}" ]] || { core:error:fail "Unknown target: ${name}; see targets"; return; }
 
     case "${key}" in
-        tag|logo|owner) core:log:print "${TARGETS[${name}.${key}]:-}"; return 0 ;;
+        tag|logo|owner|repo) core:log:print "${TARGETS[${name}.${key}]:-}"; return 0 ;;
+        name)                core:log:print "${TARGETS[${name}.name]:-${name}}"; return 0 ;;
         branch) core:log:print "${TARGETS[${name}.branch]:-$(core:git:trunk "${TOOL_ROOT:-}")}"; return 0 ;;
     esac
 
@@ -182,27 +242,16 @@ config:targets:get () {
     core:log:print "${TARGETS[${name}.${key}]}"
 
 }
-config:targets:deps () {
+config:targets:refs () {
 
-    local name="${1}" count=0 index=0 repo="" label=""
+    local name="${1}" count=0 index=0
 
-    count="${TARGETS[${name}.deps]:-0}"
+    count="${TARGETS[${name}.refs]:-0}"
     core:num:natural "${count}" || return 0
 
     while (( index < count )); do
 
-        repo="${TARGETS[${name}.deps.${index}.repo]:-}"
-        label="${TARGETS[${name}.deps.${index}.name]:-}"
-
-        if [[ -z "${label}" ]]; then
-
-            label="${repo%/}"
-            label="${label%.git}"
-            label="${label##*/}"
-
-        fi
-
-        printf '%s\t%s\t%s\n' "${label:--}" "${repo:--}" "${TARGETS[${name}.deps.${index}.tag]:-}"
+        printf '%s\t%s\t%s\n' "${TARGETS[${name}.refs.${index}.src]:--}" "${TARGETS[${name}.refs.${index}.repo]:--}" "${TARGETS[${name}.refs.${index}.tag]:-}"
 
         index=$(( index + 1 ))
 

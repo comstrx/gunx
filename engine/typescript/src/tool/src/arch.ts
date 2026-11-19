@@ -92,3 +92,4 @@ export type Bounded = { name: string; patterns: string[]; total: number | undefi
 export type Layers = Omit<Rules, "root">;
 export type Values = Readonly<Record<string, unknown>>;
 export type Directives = Readonly<Record<string, string>>;
+export type Sources = Readonly<Record<string, readonly string[]>>;

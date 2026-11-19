@@ -1,6 +1,8 @@
 import * as translate from "engine/translate";
+import * as world from "engine/world";
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
+import { preload } from "react-dom";
 import { host } from "@/specs/app.ts";
 import "@/styles/globals.css";
 
@@ -9,6 +11,7 @@ const locale = host.app.compiled.surface.locale;
 const open = host.app.indexing();
 const icon = host.app.content("icon", locale);
 const surfaces = JSON.stringify(host.index);
+const fonts = world.fontLinks("/fonts", host.index.flatMap(( listed ) => listed.settings.locales), 1);
 
 export const metadata: Metadata = {
     title: { default: name, template: `%s · ${name}` },
@@ -21,11 +24,12 @@ export const viewport: Viewport = { colorScheme: "light dark", width: "device-wi
 
 export default function Layout ({ children }: { children: ReactNode } ) {
 
+    for ( const font of fonts ) preload(font.href, { as: font.as, type: font.type, crossOrigin: font.crossOrigin });
+
     return (
         <html lang={locale} dir={translate.direction(locale)} suppressHydrationWarning>
             <head>
                 <script src="/appearance.js" data-surface={host.entry} data-surfaces={surfaces} data-address={host.app.config.settings.localization ? "path" : undefined} />
-                {["readex-pro-arabic", "figtree-latin"].map(( file ) => <link key={file} rel="preload" as="font" type="font/woff2" crossOrigin="anonymous" href={`/fonts/${file}.woff2`} />)}
             </head>
             <body>
                 {children}

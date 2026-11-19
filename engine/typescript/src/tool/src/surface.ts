@@ -3,10 +3,11 @@ import * as exception from "engine-exception";
 import * as json from "engine-json";
 import * as net from "engine-net";
 import type * as world from "engine-world";
-import type { Directives, Values } from "./arch.ts";
+import type { Directives, Sources, Values } from "./arch.ts";
 
 const files: Readonly<Record<string, world.Catalog>> = { "countries.json": "countries", "currencies.json": "currencies", "languages.json": "languages", "emojis.json": "emoji" };
 const placeholder = /{{\s*([\w-]+(?:\.[\w-]+)*)\s*}}/g;
+const single = /^[^\s,;]+$/;
 
 function scalar ( value: unknown ): boolean {
 
@@ -37,13 +38,13 @@ export function pictured ( api: string | readonly string[], media: readonly stri
     return sourced(api, "data:", media);
 
 }
-export function csp ( api: string | readonly string[], directives: Directives = {} ): string {
+export function csp ( api: string | readonly string[], directives: Directives = {}, sources: Sources = {} ): string {
 
     const reached = [...new Set((typeof api === "string" ? [api] : api).flatMap(origins))];
 
     if ( reached.length === 0 ) throw exception.fault("validation", "tool.csp", { message: "the API uses http or https" });
 
-    return net.contentSecurityPolicy({
+    const policy: Record<string, string> = {
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self'",
@@ -55,7 +56,17 @@ export function csp ( api: string | readonly string[], directives: Directives = 
         "base-uri": "'none'",
         "form-action": "'none'",
         ...directives,
-    });
+    };
+
+    for ( const [name, more] of Object.entries(sources) ) {
+
+        if ( !Array.isArray(more) || !more.every(( source ) => typeof source === "string" && single.test(source)) ) throw exception.fault("validation", "tool.csp", { message: `${name}: a source is one word with no space, comma or semicolon` });
+
+        policy[name] = [policy[name] ?? "", ...more].join(" ").trim();
+
+    }
+
+    return net.contentSecurityPolicy(policy);
 
 }
 export function render ( template: string, values: Values ): string {

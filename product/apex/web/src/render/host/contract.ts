@@ -20,5 +20,6 @@ export type Bridge = {
 export const requests = ["info", "title", "open"] as const satisfies readonly Request[];
 export const marks = ["ready"] as const satisfies readonly Mark[];
 export const page = "page";
+export const socket = "ws://127.0.0.1:*";
 export const spoken = "host.json";
 export const timeout = 10000;

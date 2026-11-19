@@ -28,7 +28,7 @@ module:extract:pushes () {
 }
 module:extract:notes () {
 
-    local file="${1}/CHANGELOG.md" tag="${2}" line="" inside=0
+    local file="${1}/${EXTRACT_CHANGELOG}" tag="${2}" line="" inside=0
 
     [[ -f "${file}" ]] || return 0
 
@@ -69,7 +69,8 @@ module:extract:extract () {
 }
 module:extract:one () {
 
-    local name="${1}" into="${2:-}" root="${TOOL_ROOT}" tree="" kind="" repository="" remote="" branch="" release="" latest="" message="" identity="" state="" result="" push=false
+    local name="${1}" into="${2:-}" root="${TOOL_ROOT}" tree="" kind="" repository=""
+    local remote="" branch="" release="" latest="" message="" identity="" state="" result="" push=false
 
     EXTRACT_STAGE=extract EXTRACT_DONE=""
 
@@ -85,7 +86,7 @@ module:extract:one () {
         remote="$(core:git:url "${repository}")" || return
         identity="$(core:git:identity "${root}")" || return
         release="$(module:extract:tag "${name}")" || return
-        message="$(core:cli:value --message)" || message="Track ${release:-$(core:git:head "${root}")}" || return
+        message="$(core:cli:value --message)" || message="${EXTRACT_TRACK} ${release:-$(core:git:head "${root}")}" || return
 
         [[ -z "${release}" ]] || ! core:git:ref "${remote}" "refs/tags/${release}" >/dev/null \
             || { @err "${name}: ${repository} already carries the tag ${release}"; return; }
@@ -307,8 +308,15 @@ module:extract:targets () {
         state=present
         [[ -d "${root}/${part}" ]] || state=missing
 
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${target}" "$(config:targets:get "${target}" type)" "${part}" "$(module:extract:name "${target}")" \
-            "$(module:extract:repository "${target}" 2>/dev/null || @print -)" "$(config:targets:get "${target}" branch)" "$(config:targets:get "${target}" tag)" "${state}"
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "${target}" \
+            "$(config:targets:get "${target}" type)" \
+            "${part}" \
+            "$(config:targets:get "${target}" name)" \
+            "$(module:extract:repository "${target}" 2>/dev/null || @print -)" \
+            "$(config:targets:get "${target}" branch)" \
+            "$(config:targets:get "${target}" tag)" \
+            "${state}"
 
     done < <(config:targets:list) | core:ui:grid
 

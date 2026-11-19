@@ -33,7 +33,7 @@ Mobile Surface inverts that. The application code is written once and knows noth
 git clone https://github.com/comstrx/gunx.git
 cd gunx
 bun run deps
-bun run start
+bun run dev
 ```
 
 Bun 1.4.4 or newer, with the Android toolchain for a device build. Every release is a `vX.Y.Z` tag of this repository; the newest one is on the [releases page](https://github.com/comstrx/gunx/releases/latest).
@@ -51,15 +51,17 @@ specs/<role>/
 └── schema/     the screens, one file each
 ```
 
-**Spec-Driven Roles** · **Native Navigation** · **Themes per Role** · **Right-to-Left and Left-to-Right** · **Typed API Contracts** · **Sessions and a Vault** · **Offline-Aware States** · **A Byte Budget**
+**Spec-Driven Roles** · **Native Navigation** · **Themes per Role** · **Right-to-Left and Left-to-Right** · **Typed API Contracts** · **Sessions and a Vault** · **Realtime** · **Deep Links** · **Offline-Aware States** · **A Byte Budget**
 
 **Native capabilities, behind one bridge** · Camera · Pickers · Location · Notifications · Haptics · Audio and Video · Clipboard · Secure Storage · Screen-Capture Guard
 
-| Command           | What it produces                                    |
-| ----------------- | --------------------------------------------------- |
-| `bun run start`   | The development server, for a device or an emulator |
-| `bun run build`   | The Hermes bundle of the application, inside budget |
-| `bun run release` | The Android release build                           |
+| Command                        | What it produces                                    |
+| ------------------------------ | --------------------------------------------------- |
+| `bun run dev`                  | The development server, for a device or an emulator |
+| `bun run build`                | The Hermes bundle of the role, inside budget        |
+| `bun run build --all`          | The Hermes bundle of every role, each in its folder |
+| `bun run release`              | The Android release build of the role               |
+| `--role <name>` on any of them | The same output, entered through the role you named |
 
 **One vocabulary. Endless possibilities.**
 
@@ -85,11 +87,13 @@ specs/<role>/
 
 **Single Responsibility** · **Unidirectional Layers** · **Explicit Contracts** · **One Fenced Bridge** · **Modular Composition**
 
-Eleven layers, and an import may only travel down. The order is not advice: the build analyzes every file and refuses an import that climbs.
+Eleven layers, and an import may only travel down. The order is not advice: the build analyzes every file and refuses an import that climbs, a cycle, and a file no entry reaches.
 
 React Native itself is fenced. Only the hooks, the styles, and the elements may import it, so a feature is written against elements, never against the framework, and reads the same on every surface.
 
 Native modules meet the application at one bridge. Only the `app` layer may reach it, and the host beneath it imports nothing from the application at all.
+
+A role may hand the user to another role inside the same app. The language, the theme, and the hardware back button all follow, and a deep link that points into another role's screen opens that role directly.
 
 **No circular dependencies. No duplicated foundations. No unnecessary complexity.**
 
@@ -100,6 +104,8 @@ Native modules meet the application at one bridge. Only the `app` layer may reac
 **Not a template. A compiler for apps.**
 
 A spec is checked before anything is rendered, and every text a screen shows is a message key resolved for the active locale. The engine's ports are bound to their native implementations once, at boot: storage, secure storage, randomness, the device, and the camera.
+
+The application's identity is not typed twice. Its name, identifier, version, and link scheme are read from the compiled role, so the app a build produces is the app the spec declared.
 
 Elements are small and closed, components compose them, and features compose components. Each level is tested on its own, down to the loading, empty, error, denied, and stale states.
 
@@ -119,7 +125,7 @@ Every build ends by measuring the Hermes bytecode it produced against a byte bud
 bun run build
 ```
 
-Hermes bytecode starts without parsing JavaScript on the device, and the engine underneath is built to do less work: bounded lanes, windowed selection, and virtual layouts that render what is visible.
+Hermes bytecode starts without parsing JavaScript on the device, a role carries only the world catalogs it names, and the engine underneath is built to do less work: bounded lanes, windowed selection, and virtual layouts that render what is visible.
 
 **Optimization is universal in ambition, evidence-driven in execution.**
 
@@ -132,9 +138,10 @@ Hermes bytecode starts without parsing JavaScript on the device, and the engine 
 - **Token custody** is a declared choice of each role, and secrets go to the platform's secure storage, not to plain preferences.
 - **The vault** keeps sensitive values behind one feature with one way in.
 - **Screen capture** can be refused on the screens that show what must not leave.
+- **Permissions** are asked when a feature needs them, and a refusal is a designed state, not a crash.
 - **The bridge** is the only path to native capabilities, and only one layer may call it.
-- **Configuration** that differs per deployment arrives from the environment at build time; no secret is written into a spec.
-- **Dependencies** are pinned and audited on every gate.
+- **Configuration** that differs per deployment arrives from the environment at build time; no secret is written into a spec, and a release refuses an address that is not public and encrypted.
+- **Dependencies** are pinned, declared, and audited on every gate.
 
 **No silent failures. No unjustified risks. No shortcuts around safety.**
 
@@ -153,9 +160,9 @@ bun run gate
 | Gate  | What it proves                                                  |
 | ----- | --------------------------------------------------------------- |
 | check | the specs compile, `tsc` passes, and no import climbs a layer   |
-| lint  | Biome in CI mode                                                |
+| lint  | Biome in CI mode, undeclared dependencies included              |
 | test  | elements, components, screens, stores, sessions, and the bridge |
-| build | the Hermes bundle, inside budget                                |
+| build | the Hermes bundle of the role, inside budget                    |
 | audit | `bun audit` over the frozen dependency graph                    |
 
 Native claims require native execution: the tests prove the logic, and only a device proves the app.

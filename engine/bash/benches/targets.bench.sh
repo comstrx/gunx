@@ -29,8 +29,9 @@ bench:config:targets:settle () {
 
         TARGETS["row${index}"]=1
         TARGETS["row${index}.repo"]="o/row${index}"
-        TARGETS["row${index}.deps"]=1
-        TARGETS["row${index}.deps.0.repo"]=o/row0
+        TARGETS["row${index}.refs"]=1
+        TARGETS["row${index}.refs.0.src"]=engine/row0
+        TARGETS["row${index}.refs.0.repo"]=o/row0
 
     done
 

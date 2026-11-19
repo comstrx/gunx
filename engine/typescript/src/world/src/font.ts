@@ -14,6 +14,7 @@ const arabicFallback = ["Noto Naskh Arabic", "Tahoma"];
 const displays: readonly string[] = ["auto", "swap", "optional", "block", "fallback"];
 const arabic: ReadonlySet<string> = new Set(["ar", "ckb", "fa", "ks", "lrc", "mzn", "ps", "sd", "ug", "ur"]);
 const spaced = /\s/;
+const script = /^[A-Za-z]{4}$/;
 const plain = /^[\w\-./:~%@+,=?&#]*$/;
 const stacks = new Map<string, string>();
 
@@ -46,9 +47,14 @@ function linked ( address: string ): string {
     return `url("${out}")`;
 
 }
+function written ( locale: string ): string {
+
+    return scripted(locale) ?? (arabic.has(baseOf(locale)) ? "Arab" : "Latn");
+
+}
 function wanted ( scripts: readonly string[] ): Family[] {
 
-    const asked = scripts.map(cased);
+    const asked = scripts.map(( name ) => (script.test(name.trim()) ? cased(name) : written(name)));
 
     return families.filter(( family ) => asked.length === 0 || family.scripts.length === 0 || family.scripts.some(( script ) => asked.includes(script)));
 
@@ -99,22 +105,21 @@ export function fontStack ( script: "Arab" | "Latn" | "any" = "any" ): string {
     return made;
 
 }
-export function fontLinks ( folder = fontFolder, scripts: readonly string[] = [] ): FontLink[] {
+export function fontLinks ( folder = fontFolder, scripts: readonly string[] = [], faces = Number.POSITIVE_INFINITY ): FontLink[] {
 
     const root = rootOf(word(folder));
+    const kept = Number.isFinite(faces) ? Math.max(0, Math.trunc(faces)) : undefined;
 
-    return wanted(scripts).flatMap(( family ) => family.files.map(( face ): FontLink => ({ rel: "preload", as: "font", type: "font/woff2", crossOrigin: "anonymous", href: `${root}/${face.file}` })));
+    return wanted(scripts).flatMap(( family ) => family.files.slice(0, kept).map(( face ): FontLink => ({ rel: "preload", as: "font", type: "font/woff2", crossOrigin: "anonymous", href: `${root}/${face.file}` })));
 
 }
-export function fontPreload ( folder = fontFolder, scripts: readonly string[] = [] ): string[] {
+export function fontPreload ( folder = fontFolder, scripts: readonly string[] = [], faces = Number.POSITIVE_INFINITY ): string[] {
 
-    return fontLinks(folder, scripts).map(( link ) => `<link rel="${link.rel}" as="${link.as}" type="${link.type}" crossorigin href="${string.escapeHtml(link.href)}">`);
+    return fontLinks(folder, scripts, faces).map(( link ) => `<link rel="${link.rel}" as="${link.as}" type="${link.type}" crossorigin href="${string.escapeHtml(link.href)}">`);
 
 }
 export function fontFor ( locale: string ): string {
 
-    const script = scripted(locale) ?? (arabic.has(baseOf(locale)) ? "Arab" : "Latn");
-
-    return fontStack(script === "Arab" ? "Arab" : "Latn");
+    return fontStack(written(locale) === "Arab" ? "Arab" : "Latn");
 
 }

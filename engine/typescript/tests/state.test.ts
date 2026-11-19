@@ -1141,7 +1141,10 @@ describe("state", () => {
         let release: (() => void) | undefined;
         const slow = state.feed<{ id: string }>({ key: ( item ) => item.id, load: ( cursor ) => new Promise(( resolve ) => { release = () => resolve({ items: [{ id: `${cursor ?? "s"}` }], next: cursor === null ? "p2" : null }); }) });
 
-        await Promise.all([slow.more(), (release?.(), Promise.resolve())]);
+        const first = slow.more();
+
+        release?.();
+        await first;
         expect(slow.getState().items.map(( item ) => item.id)).toEqual(["s"]);
 
         const refreshing = slow.refresh();

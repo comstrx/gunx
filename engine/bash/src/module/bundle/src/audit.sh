@@ -12,11 +12,11 @@ module:bundle:audit:manifest () {
             tools.*)
                 [[ "${MANIFEST[${key}]}" =~ ^[0-9]+(\.[0-9]+)*$ || -n "${MANIFEST[${key}.version]+x}" ]] || core:validate:semver "${MANIFEST[${key}]}" \
                     || { core:error:fail "${key} is not a pinned version: ${MANIFEST[${key}]}" || failed=1; } ;;
-            downloads.*)
+            sums.*)
                 core:validate:sha256 "${MANIFEST[${key}]}" \
                     || { core:error:fail "${key} is not a SHA-256 digest" || failed=1; } ;;
-            archive.*)
-                [[ "${MANIFEST[${key}]}" == https://* && -n "${MANIFEST[downloads.${key#archive.}]+x}" ]] \
+            srcs.*)
+                [[ "${MANIFEST[${key}]}" == https://* && -n "${MANIFEST[sums.${key#srcs.}]+x}" ]] \
                     || { core:error:fail "${key} needs an https URL and a digest" || failed=1; } ;;
             images.*)
                 [[ "${MANIFEST[${key}]}" =~ @sha256:[0-9a-f]{64}$ ]] \

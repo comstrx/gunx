@@ -21,9 +21,20 @@ describe("spec contents", () => {
         const offers = app.meta(app.compiled.byName.offers as spec.CompiledScreen, "en");
         const named = ( meta: spec.Meta, name: string ): string | undefined => meta.tags.map(( tag ) => ("name" in tag && tag.name === name) || ("property" in tag && tag.property === name) ? tag.content : undefined).find(( content ) => content !== undefined);
 
-        expect([home.description, offers.description, home.keywords, named(home, "keywords"), named(home, "og:image"), named(home, "twitter:site"), named(home, "twitter:card"), home.canonical]).toEqual(["The whole market in one place", "Every offer of the week", ["market", "fresh"], "market, fresh", "https://shop.example.test/images/share.png", "@shop", "summary_large_image", "https://shop.example.test"]);
+        expect([home.description, offers.description, home.keywords, named(home, "keywords"), named(home, "og:image"), named(home, "twitter:site"), named(home, "twitter:card"), home.canonical]).toEqual(["The whole market in one place", "Every offer of the week", ["market", "fresh"], "market, fresh", "https://shop.example.test/_generated/shop/images/share.png", "@shop", "summary_large_image", "https://shop.example.test"]);
         expect(home.tags.some(( tag ) => "rel" in tag && tag.rel === "canonical")).toBe(true);
         expect(booted({ name: "Shop", tagline: "Fresh every day", url: "https://shop.example.test" }).meta(app.compiled.byName.home as spec.CompiledScreen, "en").description).toBe("Fresh every day");
+
+    });
+    it("a file is named by its public path and answered from the surface's generated folder, the brand's file in its place", () => {
+
+        const built = spec.build(spec.define({ shop: spec.surface({ schema: screens, config: { contents: { logo: "/images/logo.svg", icon: "https://cdn.example.test/icon.svg" } }, brand: { messages: { en: { hello: "Hi" } }, images: { "logo.svg": "mark.png", "extra.png": "extra.png" } } }) }), part);
+        const app = spec.boot(JSON.parse(JSON.stringify(built.artifact("shop"))), { sinks: [] }).app;
+
+        expect(spec.generated).toBe("_generated");
+        expect([app.asset("/images/logo.svg"), app.asset("images/hero.gif"), app.asset("/videos/intro/a.mp4"), app.asset("robots.txt")]).toEqual(["/_generated/shop/images/mark.png", "/_generated/shop/images/hero.gif", "/_generated/shop/videos/intro/a.mp4", "/_generated/shop/robots.txt"]);
+        expect([app.asset(""), app.asset("https://cdn.example.test/a.png"), app.asset("data:image/png;base64,AA"), app.asset("//cdn.example.test/a.png"), app.asset("/constructor/x")]).toEqual(["", "https://cdn.example.test/a.png", "data:image/png;base64,AA", "//cdn.example.test/a.png", "/_generated/shop/constructor/x"]);
+        expect([app.content("logo", "en"), app.content("icon", "en"), app.text("en", "hello"), app.brand.images]).toEqual(["/_generated/shop/images/mark.png", "https://cdn.example.test/icon.svg", "Hi", { "logo.svg": "mark.png", "extra.png": "extra.png" }]);
 
     });
     it("the role's identity is told as structured data: its logo, contacts, address and social pages", () => {
@@ -33,7 +44,7 @@ describe("spec contents", () => {
         const things = Array.isArray(told) ? told : told["@graph"] ?? [told as Record<string, unknown>];
         const found = things.find(( thing ) => thing["@type"] === "Organization");
 
-        expect(found).toMatchObject({ name: "Shop", url: "https://shop.example.test", logo: "https://shop.example.test/images/logo.svg", description: "Fresh every day", email: "hello@shop.example.test", telephone: "+20 100 000 0000", address: "12 Market Street, Cairo", sameAs: ["https://github.com/shop"] });
+        expect(found).toMatchObject({ name: "Shop", url: "https://shop.example.test", logo: "https://shop.example.test/_generated/shop/images/logo.svg", description: "Fresh every day", email: "hello@shop.example.test", telephone: "+20 100 000 0000", address: "12 Market Street, Cairo", sameAs: ["https://github.com/shop"] });
         expect(things.some(( thing ) => thing["@type"] === "WebSite")).toBe(true);
         expect(booted({ name: "Shop" }).graph("en")).toBeUndefined();
 

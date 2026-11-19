@@ -2,7 +2,7 @@ import * as json from "engine-json";
 import * as list from "engine-list";
 import * as string from "engine-string";
 import type { Facet, Filter, Folded, Operator, Parsed, Piece, Scalar, Scope, Segment, Wanted } from "./arch.ts";
-import { count, ordered } from "./index_.ts";
+import { count, ordered } from "./search.ts";
 
 const filterPattern = /^(-?)([a-zA-Z_][a-zA-Z0-9_.]*)(>=|<=|!=|:|=|>|<)/;
 const decimal = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;

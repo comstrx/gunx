@@ -6,11 +6,13 @@ import * as parse from "engine-parse";
 import * as seo from "engine-seo";
 import * as translate from "engine-translate";
 import type { App, AppOptions, Artifact, Asked, Brand, Carried, CompiledScreen, Context, Doors, Effect, Fed, Feeder, Host, Labels, Listed, Located, Messages, Meta, Mounted, Moved, Popup, Public, Runtime, RuntimeOptions, Settled } from "./arch.ts";
-import { version } from "./arch.ts";
+import { generated, version } from "./arch.ts";
 import { open as opened, revive } from "./compiled.ts";
 import { match, menuOf, readable, runtime, spoken, titleOf } from "./runtime.ts";
 
 const tagged = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/;
+const outer = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
+const pictured: readonly string[] = ["logo", "icon"];
 
 function refused ( message: string ): exception.Fault {
 
@@ -121,11 +123,26 @@ function made<D extends object> ( name: string, carried: Carried, options: AppOp
         return sheet;
 
     }
+    function asset ( path: string ): string {
+
+        if ( typeof path !== "string" || path === "" || outer.test(path) ) return typeof path === "string" ? path : "";
+
+        const clean = path.replace(/^\/+/, "");
+        const cut = clean.indexOf("/");
+        const kind = clean.slice(0, Math.max(cut, 0));
+        const name = clean.slice(cut + 1);
+        const tables = carried.brand as unknown as Brand;
+        const table = Object.hasOwn(tables, kind) ? tables[kind] : undefined;
+        const over = table !== undefined && Object.hasOwn(table, name) ? table[name] : undefined;
+
+        return `/${generated}/${carried.id}/${kind === "" ? name : `${kind}/${over ?? name}`}`;
+
+    }
     function content ( key: string, locale: string ): string {
 
         const held: unknown = Object.hasOwn(config.contents, key) ? config.contents[key] : undefined;
 
-        if ( typeof held === "string" ) return held;
+        if ( typeof held === "string" ) return pictured.includes(key) ? asset(held) : held;
         if ( !json.isRecord(held) ) return "";
 
         const spoken: unknown = Object.hasOwn(held, locale) ? held[locale] : held[fallback];
@@ -148,7 +165,7 @@ function made<D extends object> ( name: string, carried: Carried, options: AppOp
 
         const { url } = indexing();
 
-        return url === undefined ? undefined : { name: content("name", locale), url, locale, locales: localized ? tongues : [locale], default: localized ? fallback : locale, hide: true, description: told(locale), image: worded(found().image), twitter: worded(found().twitter) };
+        return url === undefined ? undefined : { name: content("name", locale), url, locale, locales: localized ? tongues : [locale], default: localized ? fallback : locale, hide: true, description: told(locale), image: worded(asset(worded(found().image) ?? "")), twitter: worded(found().twitter) };
 
     }
     function href ( path: string, locale: string ): string {
@@ -391,6 +408,7 @@ function made<D extends object> ( name: string, carried: Carried, options: AppOp
         text,
         settings: ( screen, feature ) => live.settings(screen, feature),
         content,
+        asset,
         indexing,
         crawl,
         graph,
@@ -510,6 +528,21 @@ export function boot<D extends object = object> ( artifact: unknown, options: Ap
         };
 
     }
+    async function owner ( path: string ): Promise<string | undefined> {
+
+        if ( typeof path !== "string" ) return undefined;
+
+        const here = active.get();
+
+        for ( const name of [here, ...names.filter(( other ) => other !== here)] ) {
+
+            if ( (await ready(name)).screenAt(path) !== undefined ) return name;
+
+        }
+
+        return undefined;
+
+    }
     async function resume ( name: string, carried?: json.Dictionary ): Promise<boolean> {
 
         if ( typeof name !== "string" || !names.includes(name) ) return false;
@@ -573,6 +606,7 @@ export function boot<D extends object = object> ( artifact: unknown, options: Ap
         carried: () => (handed !== undefined && handed.to === active.get() ? handed.map : {}),
         bind,
         ready,
+        owner,
         resume,
         transfer,
     };

@@ -17,6 +17,8 @@ export default {
     app: { name: host.identifier.split(".").slice(1).join("-"), identifier: host.identifier, version: host.version, description: host.name },
     build: {
         mainProcess: "bun",
+        buildFolder: `build/${host.identity}`,
+        artifactFolder: `artifacts/${host.identity}/desk`,
         bun: { entrypoint: "src/render/host/index.ts", minify: true, sourcemap: false },
         copy: { "dist/current": "views/page" },
         mac: { bundleCEF: false },

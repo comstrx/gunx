@@ -37,6 +37,8 @@ declare module "electrobun" {
         app: { name: string; identifier: string; version: string; description?: string | undefined };
         build?: {
             mainProcess?: "bun" | "cottontail" | undefined;
+            buildFolder?: string | undefined;
+            artifactFolder?: string | undefined;
             bun?: { entrypoint?: string | undefined; minify?: boolean | undefined; sourcemap?: boolean | undefined } | undefined;
             copy?: Record<string, string> | undefined;
             mac?: Platform | undefined;
@@ -55,6 +57,7 @@ declare module "electrobun/main" {
         frame: { x?: number | undefined; y?: number | undefined; width: number; height: number };
         rpc?: T | undefined;
         hidden?: boolean | undefined;
+        navigationRules: string | null;
         sandbox: boolean;
     };
 

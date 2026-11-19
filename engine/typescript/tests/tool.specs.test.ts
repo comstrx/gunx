@@ -1,5 +1,6 @@
 import { describe, expect, test as it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import * as spec from "engine/spec";
 import * as stage from "engine/test";
 import * as tool from "engine/tool";
@@ -103,10 +104,13 @@ describe("tool specs", () => {
             expect((await play([], "current")).failed).toBe(false);
             expect([seen, readFileSync(temp.file("current.txt"), "utf8"), JSON.parse(readFileSync(temp.file("dist/courier/view.json"), "utf8")).dir, JSON.parse(readFileSync(temp.file("dist/courier/view.json"), "utf8")).index]).toEqual([["admin", "courier", "admin", "courier", "pinned courier"], "admin #ff4500\n", "ltr", [["courier", ["locales", "locale", "scheme", "world"]]]]);
             await expect(play(["ghost"])).rejects.toMatchObject({ reason: "tool.each", message: "ghost: no surface carries this name; roles: admin, courier" });
+            expect((await play(["--role", "courier"])).failed).toBe(false);
+            expect((await play(["--role", "courier", "admin"])).failed).toBe(false);
+            expect(seen.slice(-2)).toEqual(["courier", "admin"]);
 
             const refused = await play(["courier"], "build", tool.define({ specs: broken, part, tasks }));
 
-            expect([refused.failed, refused.flagged[0]?.message, seen.length]).toEqual([true, "courier: 1 problem in the spec; the specs step shows them", 5]);
+            expect([refused.failed, refused.flagged[0]?.message, seen.length]).toEqual([true, "courier: 1 problem in the spec; the specs step shows them", 7]);
 
             const bare = tool.define({ tasks: { each: tool.each(tool.emit("x.txt", "x")), token: tool.emit("dist/{role}.txt", "x") } });
 
@@ -318,6 +322,44 @@ describe("tool specs", () => {
 
             expect([kept.failed, kept.written]).toEqual([false, 0]);
             expect(() => tool.spoken("")).toThrow("spoken: a path is a non-empty string");
+
+        } finally {
+
+            temp.remove();
+
+        }
+
+    });
+    it("brand lays every surface's own files over the part's public folders, one generated folder per surface", async () => {
+
+        const temp = stage.tmp();
+
+        try {
+
+            const put = ( path: string, text: string ): void => {
+
+                mkdirSync(dirname(temp.file(path)), { recursive: true });
+                writeFileSync(temp.file(path), text);
+
+            };
+            const read = ( path: string ): string => readFileSync(temp.file(path), "utf8");
+            const shop = spec.surface({ schema: [home("en")], config: { settings: { locale: "en", locales: ["en"] } }, brand: { images: { "logo.svg": "mark.png", "more.png": "more.png" }, sounds: { "ping.mp3": "../../escape.mp3", "bell.mp3": "missing.mp3" } } });
+            const plain = spec.surface({ schema: [home("en")], config: { settings: { locale: "en", locales: ["en"] } } });
+            const project = tool.define({ specs: spec.define({ shop, plain }), part, tasks: { brand: tool.brand("public", "public/_generated", ( name ) => `brands/${name}`) } });
+
+            put("public/images/logo.svg", "base logo");
+            put("public/images/hero.svg", "base hero");
+            put("public/_generated/stale/old.txt", "stale");
+            put("public/root.txt", "root");
+            put("brands/shop/images/mark.png", "shop mark");
+            put("brands/shop/images/more.png", "shop more");
+
+            const played = await tool.play(project, ["brand"], { root: temp.path, env: quiet, out: () => undefined });
+
+            expect([read("public/_generated/shop/images/logo.svg"), read("public/_generated/shop/images/mark.png"), read("public/_generated/shop/images/more.png"), read("public/_generated/shop/images/hero.svg"), read("public/_generated/plain/images/logo.svg")]).toEqual(["base logo", "shop mark", "shop more", "base hero", "base logo"]);
+            expect([existsSync(temp.file("public/_generated/stale")), existsSync(temp.file("public/_generated/plain/images/mark.png")), existsSync(temp.file("public/_generated/shop/root.txt")), existsSync(temp.file("public/_generated/shop/_generated"))]).toEqual([false, false, false, false]);
+            expect(played.flagged.map(( flag ) => [flag.where, flag.rule])).toEqual([["shop: brand.sounds", "brand"], ["shop: brand.sounds", "brand"]]);
+            expect([() => tool.brand("public", "out", 7 as never), () => tool.brand("", "out", () => "x")].map(( make ) => { try { make(); return ""; } catch ( caught ) { return (caught as { reason?: string }).reason; } })).toEqual(["tool.brand", "tool.brand"]);
 
         } finally {
 

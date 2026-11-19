@@ -360,7 +360,7 @@ describe("fuzz form", () => {
 
                 expect(sent).toBe(fail ? undefined : qty);
 
-                if ( last && last.failed && last.qty === qty ) expect(key).toBe(last.key);
+                if ( last?.failed && last.qty === qty ) expect(key).toBe(last.key);
                 else if ( last ) expect(key).not.toBe(last.key);
 
                 last = { key, qty, failed: fail };

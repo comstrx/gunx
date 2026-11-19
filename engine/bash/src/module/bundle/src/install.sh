@@ -6,8 +6,8 @@ module:bundle:install:tool () {
     kernel="$(core:sys:kernel)" || return
     arch="$(core:sys:arch)" || return
 
-    url="$(config:manifest:get "archive.${name}_${kernel}_${arch}")" || return
-    digest="$(config:manifest:get "downloads.${name}_${kernel}_${arch}")" || return
+    url="$(config:manifest:get "srcs.${name}_${kernel}_${arch}")" || return
+    digest="$(config:manifest:get "sums.${name}_${kernel}_${arch}")" || return
     member="$(config:tools:get "${name}" binary "${name}")" || return
     home="$(module:bundle:tool:home)" || return
 

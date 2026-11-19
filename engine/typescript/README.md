@@ -19,9 +19,9 @@ A TypeScript foundation engineered to run the same mechanisms on **the web, the 
 
 A product with a website, a mobile app, and a desktop app usually owns three copies of the same client logic, each shaped by the framework it happened to be written in. They drift, and every fix is made three times.
 
-TypeScript Engine separates what a client does from where it runs. Thirty-seven members provide portable mechanisms behind one `engine` facade, and none of them imports a framework runtime. The framework, the native adapter, and the product's policy belong to the application that consumes them.
+TypeScript Engine separates what a client does from where it runs. Thirty-seven members provide portable mechanisms behind one `engine` door, and none of them imports a framework runtime. The framework, the native adapter, and the product's policy belong to the application that consumes them.
 
-Developed and proven with Bun; consumed by Next, Expo, and Electrobun surfaces through the same imports.
+Developed and proven with Bun; consumed by Next, Expo, and Electrobun applications through the same imports.
 
 **Write the mechanism once. Bind it where it runs.**
 
@@ -29,28 +29,28 @@ Developed and proven with Bun; consumed by Next, Expo, and Electrobun surfaces t
 
 ## 📦 Download
 
-**One repository. One tag per release. One linked package.**
+**One repository. One tag per release. One line to depend on it.**
 
-The engine is consumed as a linked package:
-
-```bash
-git clone https://github.com/comstrx/gunx.git
-cd gunx
-bun install
-bun run link
-```
+The repository root is the package. Name a tag and the whole engine arrives, ready to import:
 
 ```json
-{ "dependencies": { "engine": "link:engine" } }
-```
-
-```bash
-BUN_INSTALL_GLOBAL_DIR="/path/to/gunx/.bun" bun install
+{ "dependencies": { "engine": "github:comstrx/gunx#v0.1.0" } }
 ```
 
 ```ts
 import * as cache from "engine/cache";
 import * as state from "engine/state";
+```
+
+Every member has its own sub-path, so an application imports exactly the members it uses and its bundler ships nothing else.
+
+To work on the engine itself:
+
+```bash
+git clone https://github.com/comstrx/gunx.git
+cd gunx
+bun install
+bun run gate
 ```
 
 Bun 1.4.4 or newer. Every release is a `vX.Y.Z` tag of this repository; the newest one is on the [releases page](https://github.com/comstrx/gunx/releases/latest).
@@ -77,7 +77,7 @@ Bun 1.4.4 or newer. Every release is a `vX.Y.Z` tag of this repository; the newe
 | Supplied API and surface contracts            | `api` `spec`                       |
 | Hosted development and data generation        | `tool` `test` `fake`               |
 
-`spec` turns a declared surface, its configuration, schema, and messages, into a running role. `tool` is the build and verification runner the surfaces share. `world` owns the catalogs a global product needs: languages, currencies, flags, emoji, colors, icons, and appearance.
+`spec` turns a declared surface, its configuration, schema, and messages, into a running role. `tool` is the build and verification runner every application shares. `world` owns the catalogs a global product needs: languages, countries, currencies, flags, emoji, colors, icons, fonts, and appearance.
 
 **One vocabulary. Endless possibilities.**
 
@@ -90,7 +90,7 @@ Bun 1.4.4 or newer. Every release is a `vX.Y.Z` tag of this repository; the newe
 ```text
         Next · Expo · Electrobun · Your Runtime
                           │
-               engine — the one facade
+                engine — the one door
                           │
          thirty-seven members · one job each
                           │
@@ -101,7 +101,9 @@ Bun 1.4.4 or newer. Every release is a `vX.Y.Z` tag of this repository; the newe
 
 **Single Responsibility** · **Unidirectional Dependencies** · **Explicit Contracts** · **Platform Independence** · **Modular Composition**
 
-Every member keeps its public definitions in `src/arch.ts`, and its `src/index.ts` only exports. Members never import each other's implementation files, and only `api`, `spec`, and `tool` interpret a contract supplied by the application.
+The engine is a real workspace, not a folder of files. Every member is its own package: it declares the siblings and any library it leans on, keeps its public definitions in `src/arch.ts`, and exports through `src/index.ts` alone. Members stand on a ladder of eight rungs and lean only downward, so the dependency graph is a law, not a diagram.
+
+Only `api`, `spec`, and `tool` interpret a contract supplied by the application. Every other member is a general mechanism that knows nothing about any product.
 
 Platform capabilities arrive through ports. The application installs an implementation at boot, keeps the disposer it gets back, and releases it when the owner ends:
 
@@ -113,7 +115,7 @@ const renderer: state.Renderer = { ref: useRef, read: useSyncExternalStore };
 const bound = state.bind(source, serverSnapshot, renderer);
 ```
 
-Browser and React Native resolution of the facade carries only the portable members. Hosted utilities live behind the explicit `engine/tool` and `engine/test` doors and never reach a client bundle.
+Browser and React Native resolution of the door carries only the portable members. Hosted utilities live behind the explicit `engine/tool` and `engine/test` sub-paths and never reach a client bundle.
 
 **No circular dependencies. No duplicated foundations. No unnecessary complexity.**
 
@@ -125,9 +127,9 @@ Browser and React Native resolution of the facade carries only the portable memb
 
 Units are part of every contract: a storage entry's time to live is in seconds; timers, deadlines, and queue delays are in milliseconds. Bounds are explicit as well: a work lane rejects when it is full rather than queuing without limit, and concurrent iteration has a stated width.
 
-Failure is a value with a name. A catalog that was not loaded refuses with a reason instead of pretending to be empty, a malformed amount is rejected instead of rendered as zero, and a write acknowledges persistence separately from the observers that react to it.
+Failure is a value with a name. Every fault is raised, caught, and told through one member, so no failure is swallowed and none arrives untyped. A catalog that was not loaded refuses with a reason instead of pretending to be empty, a malformed amount is rejected instead of rendered as zero, and a write acknowledges persistence separately from the observers that react to it.
 
-The compiler runs in strict mode with exact optional properties and unchecked index access closed. Source laws verify dependency direction, library ownership, portable host boundaries, and file structure, and every export is named by a test.
+The compiler runs in strict mode with exact optional properties and unchecked index access closed. Twelve source laws run as tests on every gate: the workspace and its door, the dependency graph, the ladder, one home per library, portable host boundaries, unified failure, file structure, and a named proof for every export.
 
 **Maximum capability. Minimum friction. Absolute engineering discipline.**
 
@@ -137,7 +139,7 @@ The compiler runs in strict mode with exact optional properties and unchecked in
 
 **Do less work. Prove it on a clock.**
 
-Selection does not sort what it will not show: `list.best` keeps a window of the requested size. Text operations stop at their budget, byte length is counted without allocating a buffer, and virtual layouts render what is visible.
+Selection does not sort what it will not show: `list.best` keeps a window of the requested size. Text operations stop at their budget, byte length is counted without allocating a buffer, and virtual layouts render what is visible. Catalogs load on first ask, so a role pays only for the world data it names.
 
 Every member owns a benchmark:
 
@@ -159,9 +161,10 @@ No number is printed here on purpose. Performance is a property of your device a
 - **Sessions** use the storage the application supplies. The engine does not pretend that browser storage is a credential vault: token custody is chosen at the platform boundary.
 - **Networking** ignores forwarded identity and scheme unless the host states its trusted proxy chain, and URL guards constrain origins and redirects.
 - **Realtime** bounds pending requests and treats an authentication close as terminal.
+- **Content policies** are built from the addresses a role really reaches, and a source that could smuggle a second directive is refused.
 - **Exports** can guard spreadsheet formulas, and strict validation reports when a content security policy refuses code generation.
 
-Every member carries a property-based fuzz file, and the dependency graph is audited on every gate.
+Every member carries a property-based fuzz file, every installed library must hold an allowed license, and the dependency graph is audited on every gate.
 
 **No silent failures. No unjustified risks. No shortcuts around safety.**
 
@@ -178,14 +181,14 @@ bun run gate
 bun run bench
 ```
 
-| Gate   | What it proves                                              |
-| ------ | ----------------------------------------------------------- |
-| check  | `tsc` in strict mode over the workspace                     |
-| lint   | Biome in CI mode                                            |
-| test   | one test file per member, the source laws and the lifecycle |
-| safety | the suite again under a constrained heap                    |
-| audit  | `bun audit` over the frozen dependency graph                |
-| semver | the exported surface against the last released tag          |
+| Gate    | What it proves                                                   |
+| ------- | ---------------------------------------------------------------- |
+| install | the lockfile is frozen and reproduces the workspace              |
+| check   | `tsc` in strict mode over every member and every proof           |
+| lint    | Biome in CI mode, runtime-agnostic members included              |
+| test    | every member's contract, the source laws and the lifecycle       |
+| fuzz    | one property-based file per member, on the inputs nobody planned |
+| audit   | `bun audit` over the dependency graph, at the lowest severity    |
 
 Native claims require native execution: a production build, a Hermes export, and a browser run are each useful evidence with distinct limits.
 
