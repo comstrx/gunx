@@ -13,17 +13,17 @@
     "src/*"
   ],
   "catalog": {
-    "@biomejs/biome": "2.6.6",
+    "@biomejs/biome": "2.6.7",
     "@types/bun": "1.4.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "fast-check": "4.10.2",
     "mitata": "1.0.34",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "typescript": "7.0.2",
     "zod": "4.6.7",
-    "zustand": "5.0.16",
+    "zustand": "5.1.0",
     "unicode-segmenter": "0.17.3"
   },
   "exports": {
@@ -112,7 +112,7 @@
     "mitata": "1.0.34",
     "unicode-segmenter": "0.17.3",
     "zod": "4.6.7",
-    "zustand": "5.0.16"
+    "zustand": "5.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "catalog:",
